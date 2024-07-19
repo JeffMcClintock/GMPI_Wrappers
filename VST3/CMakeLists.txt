@@ -73,8 +73,8 @@ ${gmpi_ui_folder}/backends/DrawingFrameWin.h
 ${gmpi_ui_folder}/backends/DrawingFrameWin.cpp
 ${gmpi_ui_folder}/backends/DirectXGfx.h
 ${gmpi_ui_folder}/backends/DirectXGfx.cpp
-${gmpi_ui_folder}/helpers/TimerManager.h
-${gmpi_ui_folder}/helpers/TimerManager.cpp
+${gmpi_ui_folder}/helpers/Timer.h
+${gmpi_ui_folder}/helpers/Timer.cpp
 )
 
 # adelay.def

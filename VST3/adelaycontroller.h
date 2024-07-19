@@ -15,20 +15,21 @@
 #include "MpParameter.h"
 #include "conversion.h"
 
+struct pluginInfoSem;
 
-namespace Steinberg {
-	namespace Vst {
-		class VST3Controller;
-	}
+namespace wrapper {
+	class VST3Controller;
 }
 
+namespace wrapper
+{ 
 class MpParameterVst3 : public MpParameter_native
 {
-	Steinberg::Vst::VST3Controller* vst3Controller = {};
+	wrapper::VST3Controller* vst3Controller = {};
 	int hostTag = -1;	// index as set in SE, not nesc sequential.
 
 public:
-	MpParameterVst3(Steinberg::Vst::VST3Controller* controller, int ParameterTag, bool isInverted);
+	MpParameterVst3(wrapper::VST3Controller* controller, int ParameterTag, bool isInverted);
 	
 	int getNativeTag() override { return hostTag; }
 
@@ -47,20 +48,15 @@ public:
 	bool isInverted_ = false;
 };
 
-struct pluginInfoSem;
-
-namespace Steinberg {
-namespace Vst {
-
 // Manages plugin parameters.
 //-----------------------------------------------------------------------------
 class VST3Controller :
-	public EditController,
-	public IMidiMapping,
 	public MpController,
-	public IUnitInfo,
-	public INoteExpressionController,
-	public INoteExpressionPhysicalUIMapping
+	public Steinberg::Vst::EditController,
+	public Steinberg::Vst::IMidiMapping,
+	public Steinberg::Vst::IUnitInfo,
+	public Steinberg::Vst::INoteExpressionController,
+	public Steinberg::Vst::INoteExpressionPhysicalUIMapping
 {
 	static const int numMidiControllers = 130; // usual 128 + Bender.
 	bool isInitialised;
@@ -78,21 +74,21 @@ public:
 	VST3Controller(pluginInfoSem& pinfo);
 	~VST3Controller();
 
-	tresult PLUGIN_API initialize (FUnknown* context) override;
-	tresult PLUGIN_API connect(IConnectionPoint* other) override;
-	tresult PLUGIN_API notify( IMessage* message ) override;
-	virtual IPlugView* PLUGIN_API createView (FIDString name) override;
+	Steinberg::tresult PLUGIN_API initialize (FUnknown* context) override;
+	Steinberg::tresult PLUGIN_API connect(IConnectionPoint* other) override;
+	Steinberg::tresult PLUGIN_API notify(Steinberg::Vst::IMessage* message ) override;
+	virtual Steinberg::IPlugView* PLUGIN_API createView (Steinberg::FIDString name) override;
 
-	virtual tresult PLUGIN_API setComponentState (IBStream* state) override;
+	virtual Steinberg::tresult PLUGIN_API setComponentState (Steinberg::IBStream* state) override;
 
 	//testing.
-	tresult PLUGIN_API setState(IBStream* state) override
+	Steinberg::tresult PLUGIN_API setState(Steinberg::IBStream* state) override
 	{
-		return kResultOk;
+		return Steinberg::kResultOk;
 	}
-	tresult PLUGIN_API getState(IBStream* state) override
+	Steinberg::tresult PLUGIN_API getState(Steinberg::IBStream* state) override
 	{
-		return kResultOk;
+		return Steinberg::kResultOk;
 	}
 	void ParamGrabbed(MpParameter_native* param) override;
 	void ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice = 0);
@@ -108,72 +104,72 @@ public:
 		return {};
 	}
 
-	virtual tresult PLUGIN_API setParamNormalized( ParamID tag, ParamValue value ) override;
+	virtual Steinberg::tresult PLUGIN_API setParamNormalized(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue value ) override;
 
 	// IDependent
-	virtual void PLUGIN_API update( FUnknown* changedUnknown, int32 message ) override;
+	virtual void PLUGIN_API update( FUnknown* changedUnknown, Steinberg::int32 message ) override;
 
 	// MIDI Mapping.
-	tresult PLUGIN_API getMidiControllerAssignment (int32 busIndex, int16 channel, CtrlNumber midiControllerNumber, ParamID& tag/*out*/) override;
+	Steinberg::tresult PLUGIN_API getMidiControllerAssignment (Steinberg::int32 busIndex, Steinberg::int16 channel, Steinberg::Vst::CtrlNumber midiControllerNumber, Steinberg::Vst::ParamID& tag/*out*/) override;
 
 //	static FUnknown* createInstance (void*) { return (IEditController*)new VST3Controller (); }
 
 	//-----------------------------
 	DELEGATE_REFCOUNT (EditController)
-	tresult PLUGIN_API queryInterface (const char* iid, void** obj) override;
+	Steinberg::tresult PLUGIN_API queryInterface (const char* iid, void** obj) override;
 	//-----------------------------
 
     //---from INoteExpressionController
-    int32 PLUGIN_API getNoteExpressionCount (int32 busIndex, int16 channel) SMTG_OVERRIDE;
-    tresult PLUGIN_API getNoteExpressionInfo (int32 busIndex, int16 channel, int32 noteExpressionIndex, NoteExpressionTypeInfo& info) SMTG_OVERRIDE;
-    tresult PLUGIN_API getNoteExpressionStringByValue (int32 busIndex, int16 channel, NoteExpressionTypeID id, NoteExpressionValue valueNormalized , String128 string) SMTG_OVERRIDE;
-    tresult PLUGIN_API getNoteExpressionValueByString (int32 busIndex, int16 channel, NoteExpressionTypeID id, const TChar* string, NoteExpressionValue& valueNormalized) SMTG_OVERRIDE;
+	Steinberg::int32 PLUGIN_API getNoteExpressionCount (Steinberg::int32 busIndex, Steinberg::int16 channel) SMTG_OVERRIDE;
+    Steinberg::tresult PLUGIN_API getNoteExpressionInfo (Steinberg::int32 busIndex, Steinberg::int16 channel, Steinberg::int32 noteExpressionIndex, Steinberg::Vst::NoteExpressionTypeInfo& info) SMTG_OVERRIDE;
+    Steinberg::tresult PLUGIN_API getNoteExpressionStringByValue (Steinberg::int32 busIndex, Steinberg::int16 channel, Steinberg::Vst::NoteExpressionTypeID id, Steinberg::Vst::NoteExpressionValue valueNormalized , Steinberg::Vst::String128 string) SMTG_OVERRIDE;
+    Steinberg::tresult PLUGIN_API getNoteExpressionValueByString (Steinberg::int32 busIndex, Steinberg::int16 channel, Steinberg::Vst::NoteExpressionTypeID id, const Steinberg::Vst::TChar* string, Steinberg::Vst::NoteExpressionValue& valueNormalized) SMTG_OVERRIDE;
 
 	/** Fills the list of mapped [physical UI (in) - note expression (out)] for a given bus index
  * and channel. */
-	tresult PLUGIN_API getPhysicalUIMapping(int32 busIndex, int16 channel,
-		PhysicalUIMapList& list) override;
+	Steinberg::tresult PLUGIN_API getPhysicalUIMapping(Steinberg::int32 busIndex, Steinberg::int16 channel,
+		Steinberg::Vst::PhysicalUIMapList& list) override;
 
 
 	// IUnitInfo
 	//------------------------------------------------------------------------
 	/** Returns the flat count of units. */
-	int32 PLUGIN_API getUnitCount() override { return 1; }
+	Steinberg::int32 PLUGIN_API getUnitCount() override { return 1; }
 
 	/** Gets UnitInfo for a given index in the flat list of unit. */
-	tresult PLUGIN_API getUnitInfo(int32 unitIndex, UnitInfo& info /*out*/) override
+	Steinberg::tresult PLUGIN_API getUnitInfo(Steinberg::int32 unitIndex, Steinberg::Vst::UnitInfo& info /*out*/) override
 	{
-		info.id = kRootUnitId;
+		info.id = Steinberg::Vst::kRootUnitId;
 		info.name[0] = 0;
-		info.parentUnitId = kNoParentUnitId;
+		info.parentUnitId = Steinberg::Vst::kNoParentUnitId;
 		info.programListId = 0;
-		return kResultOk;
+		return Steinberg::kResultOk;
 	}
 
 	/** Component intern program structure. */
 	/** Gets the count of Program List. */
-	int32 PLUGIN_API getProgramListCount() override { return 1; } // number of program lists. Always 1.
+	Steinberg::int32 PLUGIN_API getProgramListCount() override { return 1; } // number of program lists. Always 1.
 
 	/** Gets for a given index the Program List Info. */
-	tresult PLUGIN_API getProgramListInfo(int32 listIndex, ProgramListInfo& info /*out*/) override
+	Steinberg::tresult PLUGIN_API getProgramListInfo(Steinberg::int32 listIndex, Steinberg::Vst::ProgramListInfo& info /*out*/) override
 	{
 		if (listIndex == 0)
 		{
-			info.id = kRootUnitId;
+			info.id = Steinberg::Vst::kRootUnitId;
 			info.name[0] = 0;
 //			info.programCount = (Steinberg::int32) factoryPresetNames.size();
 			info.programCount = (Steinberg::int32) presets.size();
-			return kResultOk;
+			return Steinberg::kResultOk;
 		}
-		return kResultFalse;
+		return Steinberg::kResultFalse;
 	}
 
 	/** Gets for a given program list ID and program index its program name. */
-	tresult PLUGIN_API getProgramName(ProgramListID listId, int32 programIndex, String128 name /*out*/) override
+	Steinberg::tresult PLUGIN_API getProgramName(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex, Steinberg::Vst::String128 name /*out*/) override
 	{
 		const int kVstMaxProgNameLen = 24;
 //		if (programIndex < (int32)factoryPresetNames.size())
-		if (programIndex < (int32)presets.size())
+		if (programIndex < (Steinberg::int32)presets.size())
 		{
 //			for (int i = 0; i < kVstMaxProgNameLen && i <= (int)factoryPresetNames[programIndex].size(); ++i)
 			for (int i = 0; i < kVstMaxProgNameLen && i <= (int)presets[programIndex].name.size(); ++i)
@@ -181,49 +177,49 @@ public:
 //				name[i] = factoryPresetNames[programIndex][i];
 				name[i] = presets[programIndex].name[i];
 			}
-			return kResultOk;
+			return Steinberg::kResultOk;
 		}
-		return kResultFalse;
+		return Steinberg::kResultFalse;
 	}
 
 	/** Gets for a given program list ID, program index and attributeId the associated attribute value. */
-	virtual tresult PLUGIN_API getProgramInfo(ProgramListID listId, int32 programIndex,
-		CString attributeId /*in*/, String128 attributeValue /*out*/) override
+	Steinberg::tresult PLUGIN_API getProgramInfo(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex,
+		Steinberg::Vst::CString attributeId /*in*/, Steinberg::Vst::String128 attributeValue /*out*/) override
 	{
-		return kResultFalse; // no idea what this is for.
+		return Steinberg::kResultFalse; // no idea what this is for.
 
 		//attributeValue[0] = 0;
 		//return kResultOk;
 	}
 
 	/** Returns kResultTrue if the given program index of a given program list ID supports PitchNames. */
-	virtual tresult PLUGIN_API hasProgramPitchNames(ProgramListID listId, int32 programIndex) override { return kResultFalse; }
+	virtual Steinberg::tresult PLUGIN_API hasProgramPitchNames(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex) override { return Steinberg::kResultFalse; }
 
 	/** Gets the PitchName for a given program list ID, program index and pitch.
 	If PitchNames are changed the Plug-in should inform the host with IUnitHandler::notifyProgramListChange. */
-	virtual tresult PLUGIN_API getProgramPitchName(ProgramListID listId, int32 programIndex,
-		int16 midiPitch, String128 name /*out*/) override {
-		return kResultFalse;
+	virtual Steinberg::tresult PLUGIN_API getProgramPitchName(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex,
+		Steinberg::int16 midiPitch, Steinberg::Vst::String128 name /*out*/) override {
+		return Steinberg::kResultFalse;
 	}
 
 	// Parameter overrides.
-	int32 PLUGIN_API getParameterCount() override
+	Steinberg::int32 PLUGIN_API getParameterCount() override
 	{
 		return static_cast<int>(vst3Parameters.size());
 	}
-	tresult PLUGIN_API getParameterInfo(int32 paramIndex, ParameterInfo& info) override;
-	tresult PLUGIN_API getParamStringByValue(ParamID tag, ParamValue valueNormalized, String128 string) override;
-	tresult PLUGIN_API getParamValueByString(ParamID tag, TChar* string, ParamValue& valueNormalized) override
+	Steinberg::tresult PLUGIN_API getParameterInfo(Steinberg::int32 paramIndex, Steinberg::Vst::ParameterInfo& info) override;
+	Steinberg::tresult PLUGIN_API getParamStringByValue(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized, Steinberg::Vst::String128 string) override;
+	Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized) override
 	{
 		if (auto p = getDawParameter(tag); p)
 		{
 			valueNormalized = p->convertNormalized(p->stringToNormalised(ToWstring(string)));
-			return kResultOk;
+			return Steinberg::kResultOk;
 		}
 
-		return kInvalidArgument;
+		return Steinberg::kInvalidArgument;
 	}
-	ParamValue PLUGIN_API normalizedParamToPlain(ParamID tag, ParamValue valueNormalized) override
+	Steinberg::Vst::ParamValue PLUGIN_API normalizedParamToPlain(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override
 	{
 		if (auto p = getDawParameter(tag); p)
 		{
@@ -232,7 +228,7 @@ public:
 
 		return 0.0;
 	}
-	ParamValue PLUGIN_API plainParamToNormalized(ParamID tag, ParamValue plainValue) override
+	Steinberg::Vst::ParamValue PLUGIN_API plainParamToNormalized(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue plainValue) override
 	{
 		if (auto p = getDawParameter(tag); p)
 		{
@@ -241,7 +237,7 @@ public:
 
 		return 0.0;
 	}
-	ParamValue PLUGIN_API getParamNormalized(ParamID tag) override
+	Steinberg::Vst::ParamValue PLUGIN_API getParamNormalized(Steinberg::Vst::ParamID tag) override
 	{
 		if (auto p = getDawParameter(tag); p)
 		{
@@ -255,18 +251,18 @@ public:
 
 	// units selection --------------------
 	/** Gets the current selected unit. */
-	UnitID PLUGIN_API getSelectedUnit() override { return 0; }
+	Steinberg::Vst::UnitID PLUGIN_API getSelectedUnit() override { return 0; }
 
 	/** Sets a new selected unit. */
-	tresult PLUGIN_API selectUnit(UnitID unitId) override { return kResultOk; }
+	Steinberg::tresult PLUGIN_API selectUnit(Steinberg::Vst::UnitID unitId) override { return Steinberg::kResultOk; }
 
 	/** Gets the according unit if there is an unambiguous relation between a channel or a bus and a unit.
 	This method mainly is intended to find out which unit is related to a given MIDI input channel. */
-	tresult PLUGIN_API getUnitByBus(MediaType type, BusDirection dir, int32 busIndex,
-		int32 channel, UnitID& unitId /*out*/) override
+	Steinberg::tresult PLUGIN_API getUnitByBus(Steinberg::Vst::MediaType type, Steinberg::Vst::BusDirection dir, Steinberg::int32 busIndex,
+		Steinberg::int32 channel, Steinberg::Vst::UnitID& unitId /*out*/) override
 	{
 		unitId = 0;
-		return kResultFalse;
+		return Steinberg::kResultFalse;
 	}
 
 	/** Receives a preset data stream.
@@ -274,7 +270,7 @@ public:
 	stream is the program specified by list-Id and program index (first and second parameter)
 	- If the component supports unit data (IUnitData), the destination is the unit specified by the first
 	parameter - in this case parameter programIndex is < 0). */
-	tresult PLUGIN_API setUnitProgramData(int32 listOrUnitId, int32 programIndex, IBStream* data) override { return kResultOk; }
+	Steinberg::tresult PLUGIN_API setUnitProgramData(Steinberg::int32 listOrUnitId, Steinberg::int32 programIndex, Steinberg::IBStream* data) override { return Steinberg::kResultOk; }
 
 	void ResetProcessor() override;
 
@@ -309,9 +305,8 @@ public:
 
 	MpParameter_native* makeNativeParameter(int ParameterTag, bool isInverted) override
 	{
-		auto param = new MpParameterVst3(
+		auto param = new wrapper::MpParameterVst3(
 			this,
-//			static_cast<int>(vst3Parameters.size()),
 			ParameterTag,
 			isInverted
 		);
@@ -333,6 +328,5 @@ public:
 	void initUi(gmpi::api::IParameterObserver* gui);
 };
 
-}} // namespaces
-
+}
 #endif

@@ -14,6 +14,9 @@
 #include "mfc_emulation.h"
 #endif
 
+namespace wrapper
+{
+
 std::string normalizedToRaw(gmpi::PinDatatype datatype, float fnormalized, double maximum, double minimum, const std::wstring& enumList)
 {
 	const double normalized = static_cast<double>(fnormalized);
@@ -780,13 +783,6 @@ DawPreset const* ProcessorStateMgr::retainPreset(DawPreset const* preset)
 	return preset;
 }
 
-void ProcessorStateMgr::init(tinyxml2::XMLNode* parameters_xml)
-{
-	const std::lock_guard<std::mutex> lock{ presetMutex };
-
-	::init(parametersInfo, parameters_xml);
-}
-
 void init(std::map<int32_t, paramInfo>& parametersInfo, tinyxml2::XMLNode* parameters_xml)
 {
 	// int strictIndex = 0;
@@ -916,6 +912,13 @@ void init(std::map<int32_t, paramInfo>& parametersInfo, tinyxml2::XMLNode* param
 #endif
 }
 
+void ProcessorStateMgr::init(tinyxml2::XMLNode* parameters_xml)
+{
+	const std::lock_guard<std::mutex> lock{ presetMutex };
+
+	wrapper::init(parametersInfo, parameters_xml);
+}
+
 void ProcessorStateMgrVst3::init(tinyxml2::XMLNode* parameters_xml)
 {
 	ProcessorStateMgr::init(parameters_xml);
@@ -930,4 +933,5 @@ void ProcessorStateMgrVst3::init(tinyxml2::XMLNode* parameters_xml)
 	}
 
 	StartTimer(177);
+}
 }

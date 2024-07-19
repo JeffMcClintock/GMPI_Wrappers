@@ -35,6 +35,9 @@
 
 #endif
 
+namespace wrapper
+{
+
 using platform_string = std::basic_string<_TCHAR, std::char_traits<_TCHAR>, std::allocator<_TCHAR>>;
 
 #if SE_PLATFORM_STRING_IS_WIDE
@@ -117,4 +120,4 @@ using platform_string = std::basic_string<_TCHAR, std::char_traits<_TCHAR>, std:
 	}
 #endif
 
-
+}

@@ -2,6 +2,8 @@
 #include <string>
 #include "Common.h"
 
+namespace wrapper
+{
 class my_input_stream
 {
 public:
@@ -60,3 +62,4 @@ public:
     my_output_stream& operator<<(const gmpi::Blob& val);
 };
 
+}

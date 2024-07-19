@@ -9,7 +9,8 @@
 #define SET_BITS(flag,bit_mask) ((flag) |= (bit_mask))
 
 #define SET_FLAG_STATE(flag,bit_mask,state) (state) ? (flag |= (bit_mask)) : (flag &= (0xffffffff ^(bit_mask)))
-
+namespace wrapper
+{
 double StringToDouble(const std::wstring& string);
 int StringToInt(const std::wstring& string, int p_base = 10);
 int StringToInt(const char* string, int p_base = 10);
@@ -150,3 +151,4 @@ void XmlSplitString(const char* s, std::vector<std::string>& returnValue);
 const char* FixNullCharPtr( const char* c );
 
 bool CreateFolderRecursive( std::wstring folderPath );
+}

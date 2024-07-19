@@ -31,69 +31,72 @@
 
 #include "xplatform.h"
 
-class FileFinder
+namespace wrapper
 {
-public:
-	struct FileFinderItem
+	class FileFinder
 	{
-		platform_string filename;
-		platform_string fullPath;
-		bool isFolder = false;
-
-		bool isDots() const
+	public:
+		struct FileFinderItem
 		{
-			return filename == _T(".") || filename == _T("..");
+			platform_string filename;
+			platform_string fullPath;
+			bool isFolder = false;
+
+			bool isDots() const
+			{
+				return filename == _T(".") || filename == _T("..");
+			}
+		};
+
+#if defined(_WIN32)
+		FileFinder(const wchar_t* folderPath);
+		FileFinder& operator=(const TCHAR* folderPath)
+		{
+			first(folderPath);
+			return *this;
 		}
+#endif
+
+		FileFinder(const char* folderPath);
+		~FileFinder();
+
+		FileFinder& operator++()
+		{
+			next();
+			return *this;
+		}
+
+		void first(const platform_string& folderPath);
+		void next();
+		bool done()
+		{
+			return done_;
+		}
+		const FileFinderItem& operator*() const
+		{
+			return current_;
+		}
+		FileFinderItem& currentItem()
+		{
+			return current_;
+		}
+
+	private:
+#if defined(_WIN32)
+		HANDLE directoryHandle;
+		WIN32_FIND_DATA fdata;
+#else
+		DIR* directoryHandle;
+		dirent* entry = nullptr;
+#endif
+
+		FileFinderItem current_;
+		platform_string searchPath;
+		bool done_;
+		bool last_;
+#if !defined(_WIN32)
+		platform_string extension;
+#endif
 	};
 
-#if defined(_WIN32)
-    FileFinder(const wchar_t* folderPath);
-    FileFinder& operator=(const TCHAR* folderPath)
-    {
-        first(folderPath);
-        return *this;
-    }
-#endif
-
-    FileFinder(const char* folderPath);
-	~FileFinder();
-
-	FileFinder& operator++()
-	{
-		next();
-		return *this;
-	}
-
-	void first( const platform_string& folderPath );
-	void next();
-	bool done()
-	{
-		return done_;
-	}
-	const FileFinderItem& operator*() const
-	{
-		return current_;
-	}
-	FileFinderItem& currentItem()
-	{
-		return current_;
-	}
-
-private:
-#if defined(_WIN32)
-	HANDLE directoryHandle;
-    WIN32_FIND_DATA fdata;
-#else
-	DIR* directoryHandle;
-    dirent* entry = nullptr;
-#endif
-
-	FileFinderItem current_;
-	platform_string searchPath;
-    bool done_;
-    bool last_;
-#if !defined(_WIN32)
-	platform_string extension;
-#endif
-};
-
+}

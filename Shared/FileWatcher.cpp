@@ -10,6 +10,8 @@
 #endif
 
 using namespace std;
+namespace wrapper
+{
 
 namespace file_watcher
 {
@@ -206,4 +208,5 @@ void fse_handle_events(
 #endif
 	}
 
+}
 }

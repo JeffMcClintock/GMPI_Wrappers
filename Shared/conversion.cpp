@@ -25,6 +25,9 @@
 
 using namespace std;
 
+namespace wrapper
+{
+
 //VST ID
 // Preferred method. ASCII characters.
 int32_t id_to_long(const std::string id)
@@ -1217,4 +1220,5 @@ const char* FixNullCharPtr( const char* c )
 	if( c )
 		return c;
 	return "";
+}
 }

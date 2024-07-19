@@ -3,6 +3,8 @@
 #include "my_input_stream.h"
 #include "./lock_free_fifo.h"
 
+namespace wrapper
+{
 class my_msg_que_input_stream :
 	public my_input_stream
 {
@@ -22,3 +24,4 @@ private:
 	InterThreadQueBase* m_que;
 };
 
+}

@@ -8,7 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <vector>
-#include "helpers/TimerManager.h"
+#include "helpers/Timer.h"
 #include "../Shared/FileWatcher.h"
 #include "interThreadQue.h"
 #include "MpParameter.h"
@@ -20,6 +20,10 @@ namespace SynthEdit2
 {
 	class IPresenter;
 }
+
+namespace wrapper
+{
+
 #if 0 // TODO
 // Manages SEM plugin's controllers.
 class ControllerManager : public gmpi::api::IParameterObserver
@@ -148,7 +152,7 @@ private:
 
 protected:
 	std::map<int32_t, paramInfo> parametersInfo;		// for parsing xml presets
-	::UndoManager undoManager;
+	UndoManager undoManager;
 
     bool isInitialized = {};
 
@@ -362,3 +366,5 @@ void initializeGui(gmpi::IMpParameterObserver* gui, int32_t parameterHandle, gmp
 	virtual void OnLatencyChanged() {}
 	virtual MpParameter_native* makeNativeParameter(int ParameterTag, bool isInverted = false) = 0;
 };
+
+} // namespace wrapper

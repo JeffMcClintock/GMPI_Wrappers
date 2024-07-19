@@ -3,6 +3,8 @@
 #include "my_input_stream.h"
 #include "lock_free_fifo.h"
 #include "../Shared/conversion.h"
+namespace wrapper
+{
 
 class my_msg_que_output_stream : public my_output_stream
 {
@@ -34,3 +36,4 @@ public:
 private:
 	IWriteableQue* m_que;
 };
+}

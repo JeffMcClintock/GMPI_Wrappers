@@ -7,6 +7,9 @@
 #include "GmpiApiEditor.h"
 #include "VST3EditorBase.h"
 
+namespace wrapper
+{
+
 #if 0
 namespace Steinberg
 {
@@ -40,7 +43,7 @@ class SEVSTGUIEditorWin : public VST3EditorBase //Steinberg::FObject, public Ste
 	GmpiGuiHosting::DrawingFrame drawingframe;
 
 public:
-    SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, Steinberg::Vst::VST3Controller* controller, int width, int height);
+    SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* controller, int width, int height);
 	~SEVSTGUIEditorWin();
 
 //	void onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const void* data, int32_t size);
@@ -72,3 +75,4 @@ public:
 	REFCOUNT_METHODS (Steinberg::FObject)
 #endif
 };
+}

@@ -14,6 +14,8 @@ typedef int nativeHandle;
 #include "../shared/FileWatcher.h"
 */
 
+namespace wrapper
+{
 namespace file_watcher
 {
 	class FileWatcher
@@ -31,3 +33,4 @@ namespace file_watcher
 	};
 }
 
+}

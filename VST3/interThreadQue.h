@@ -5,6 +5,9 @@
 #include "my_msg_que_output_stream.h"
 #include "QueClient.h"
 
+namespace wrapper
+{
+
 class interThreadQueUser
 {
 public:
@@ -260,3 +263,4 @@ private:
 	int recievingMessageLength;
 };
 
+}

@@ -107,6 +107,9 @@ SMTG_EXPORT_SYMBOL IPluginFactory* PLUGIN_API GetPluginFactory ()
 bool InitModule() { return true; }
 bool DeinitModule() { return true; }
 
+namespace wrapper
+{
+
 MyVstPluginFactory* MyVstPluginFactory::GetInstance()
 {
 	static MyVstPluginFactory singleton;
@@ -410,7 +413,7 @@ tresult MyVstPluginFactory::createInstance (FIDString cid, FIDString iid, void**
 		}
 		else if(classId == Steinberg::FUID(ctrlUUid))
 		{
-			instance = static_cast<Steinberg::Vst::IEditController*>(new VST3Controller(sem));
+			instance = static_cast<Steinberg::Vst::IEditController*>(new wrapper::VST3Controller(sem));
 			break;
 		}
 	}
@@ -713,7 +716,7 @@ void MyVstPluginFactory::RegisterPin(
 	}
 }
 
-void MyVstPluginFactory::RegisterXml(const platform_string& pluginPath, const char* xml)
+void MyVstPluginFactory::RegisterXml(const /*platform_*/std::string& pluginPath, const char* xml)
 {
 	tinyxml2::XMLDocument doc;
 	doc.Parse(xml);
@@ -901,7 +904,7 @@ typedef gmpi::ReturnCode (*MP_DllEntry)(void**);
 
 bool MyVstPluginFactory::initializeFactory()
 {
-	platform_string pluginPath;
+	/*platform_*/std::string pluginPath;
 #if 0
 	// load SEM dynamic.
 	const auto semFolderSearch = BundleInfo::instance()->getSemFolder() + L"/*.gmpi";
@@ -1078,16 +1081,5 @@ std::string MyVstPluginFactory::getVendorName()
 	return vendorName_;
 }
 
-//std::wstring MyVstPluginFactory::GetOutputsName(int index)
-//{
-//	it_enum_list it( Utf8ToWstring( pluginInfo_.outputNames ));
-//
-//	it.FindIndex(index);
-//	if( !it.IsDone() )
-//	{
-//		return ( *it )->text;
-//	}
-//
-//	return L"AudioOutput";
-//}
+}
 

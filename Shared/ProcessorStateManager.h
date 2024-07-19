@@ -12,6 +12,13 @@
 /*
 #include "ProcessorStateManager.h"
 */
+namespace tinyxml2
+{
+	class XMLNode;
+}
+
+namespace wrapper
+{
 
 struct paramInfo
 {
@@ -37,11 +44,6 @@ struct paramValue
 
 	gmpi::PinDatatype dataType = gmpi::PinDatatype::Float32;
 };
-
-namespace tinyxml2
-{
-	class XMLNode;
-}
 
 struct DawPreset
 {
@@ -144,3 +146,4 @@ public:
 //	void serviceQueue();
 };
 #endif
+}

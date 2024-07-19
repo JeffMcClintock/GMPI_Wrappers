@@ -63,7 +63,8 @@ struct pluginInfoSem
 	std::vector<pinInfoSem> guiPins;
 	std::vector<paramInfoSem> parameters;
 
-	platform_string pluginPath;
+//	platform_string pluginPath;
+	std::string pluginPath;
 };
 
 inline int countPins(pluginInfoSem const& plugin, gmpi::PinDirection direction, gmpi::PinDatatype datatype)
@@ -158,7 +159,7 @@ public:
 
 private:
 	void initialize();
-	void RegisterXml(const platform_string& pluginPath, const char* xml);
+	void RegisterXml(const /*platform_*/ std::string& pluginPath, const char* xml);
 	void RegisterPin(tinyxml2::XMLElement* pin, std::vector<pinInfoSem>* pinlist, gmpi::api::PluginSubtype plugin_sub_type,
 		int nextPinId);
 	bool initializeFactory();

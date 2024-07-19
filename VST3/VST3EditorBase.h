@@ -6,13 +6,11 @@
 #include "GmpiApiEditor.h"
 #include "helpers/GraphicsRedrawClient.h"
 
-namespace Steinberg
+struct pluginInfoSem;
+
+namespace wrapper
 {
-namespace Vst
-{
-	class VST3Controller;
-}
-}
+class VST3Controller;
 
 class ParameterHelper : public gmpi::api::IParameterObserver, public gmpi::api::IEditorHost
 {
@@ -37,8 +35,8 @@ class VST3EditorBase : public Steinberg::FObject, public Steinberg::IPlugView
 	friend class ParameterHelper;
 
 protected:
-	struct pluginInfoSem const& info;
-	Steinberg::Vst::VST3Controller* controller = {};
+	pluginInfoSem const& info;
+	wrapper::VST3Controller* controller = {};
     int width, height;
     
 	gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
@@ -46,7 +44,7 @@ protected:
 	ParameterHelper helper;
 
 public:
-	VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, Steinberg::Vst::VST3Controller* pcontroller, int pwidth, int pheight);
+	VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight);
 	~VST3EditorBase();
 
 	void onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const void* data, int32_t size);
@@ -77,3 +75,4 @@ public:
 	END_DEFINE_INTERFACES (Steinberg::FObject)
 	REFCOUNT_METHODS (Steinberg::FObject)
 };
+}

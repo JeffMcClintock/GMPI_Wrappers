@@ -2,6 +2,9 @@
 #include "unicode_conversion.h"
 #include "../shared/string_utilities.h"
 
+namespace wrapper
+{
+
 using namespace JmUnicodeConversions;
 
 platform_string getExtension(platform_string filename)
@@ -139,4 +142,5 @@ void FileFinder::next()
 #endif
 
 	current_.fullPath = combinePathAndFile( StripFilename(searchPath), current_.filename);
+}
 }

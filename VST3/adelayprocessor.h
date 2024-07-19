@@ -15,14 +15,13 @@
 #include "lock_free_fifo.h"
 #include "interThreadQue.h"
 #include "dynamic_linking.h"
-//#include "RefCountMacros.h"
 
 static const int MidiControllersParameterId = 10000;
 
 enum class VoiceAllocationHint {Keyboard, MPE};
 
-//namespace Steinberg {
-//namespace Vst {
+namespace wrapper
+{
 
 // to work around Steinberg Interfaces having incompatible addRef etc
 class GmpiBaseClass :public gmpi::api::IProcessorHost
@@ -212,6 +211,6 @@ protected:
 	}
 };
 
-//}} // namespaces
+}
 
 #endif

@@ -2,6 +2,9 @@
 #include "adelaycontroller.h"
 #include "MyVstPluginFactory.h"
 
+namespace wrapper
+{
+
 ParameterHelper::ParameterHelper(VST3EditorBase* editor)
 {
 	editor_ = editor;
@@ -33,7 +36,7 @@ int32_t ParameterHelper::getHandle()
 }
 
 // TODO !!! pass IUnknown to constructor, then QueryInterface for IDrawingClient
-VST3EditorBase::VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, Steinberg::Vst::VST3Controller* pcontroller, int pwidth, int pheight) :
+VST3EditorBase::VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
 	controller(pcontroller)
 	, width(pwidth)
 	, height(pheight)
@@ -74,3 +77,4 @@ void VST3EditorBase::onParameterUpdate(int32_t parameterHandle, gmpi::Field fiel
 	}
 }
 
+}

@@ -5,6 +5,8 @@
 /*
 #include "StagingMemoryBuffer.h"
 */
+namespace wrapper
+{
 
 class StagingMemoryBuffer : public IWriteableQue
 {
@@ -43,3 +45,4 @@ public:
 		 // for compatibility only.
 	}
 };
+}

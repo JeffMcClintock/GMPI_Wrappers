@@ -21,7 +21,8 @@ using namespace JmUnicodeConversions;
 /*
 For fastest conversion, set USE_SIMD_UTF_CONVERSION to 1 and include simdutf.cpp in the build.
 */
-
+namespace wrapper
+{
 namespace JmUnicodeConversions
 {
 
@@ -204,4 +205,5 @@ inline std::wstring Utf8ToWstring(const char* p_string)
         return r;
     }
 #endif
+}
 }
