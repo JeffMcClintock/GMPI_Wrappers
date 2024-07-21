@@ -19,6 +19,7 @@
 static const int MidiControllersParameterId = 10000;
 
 enum class VoiceAllocationHint {Keyboard, MPE};
+struct pluginInfoSem;
 
 namespace wrapper
 {
@@ -85,7 +86,7 @@ typedef int64_t timestamp_t;
 class SeProcessor : public Steinberg::Vst::AudioEffect, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
 {
 public:
-	SeProcessor (struct pluginInfoSem& pinfo);
+	SeProcessor (pluginInfoSem& pinfo);
 	~SeProcessor ();
 	
 	Steinberg::tresult PLUGIN_API initialize (FUnknown* context) override;

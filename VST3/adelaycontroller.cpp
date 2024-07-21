@@ -57,10 +57,15 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
 using namespace std;
 using namespace tinyxml2;
 */
+using namespace Steinberg;
+using namespace Steinberg::Vst;
 
 typedef gmpi::ReturnCode(*MP_DllEntry)(void**);
 
-using namespace JmUnicodeConversions;
+namespace wrapper
+{
+
+//using namespace JmUnicodeConversions;
 
 #if 0
 void SafeMessagebox(
@@ -74,7 +79,7 @@ void SafeMessagebox(
 }
 #endif
 
-MpParameterVst3::MpParameterVst3(Steinberg::Vst::VST3Controller* controller, /*int strictIndex, */int ParameterTag, bool isInverted) :
+MpParameterVst3::MpParameterVst3(VST3Controller* controller, /*int strictIndex, */int ParameterTag, bool isInverted) :
 	MpParameter_native(controller),
 	vst3Controller(controller),
 	isInverted_(isInverted),
@@ -99,9 +104,6 @@ void MpParameterVst3::updateProcessor(gmpi::Field fieldId, int32_t voice)
 	}
 }
 
-
-namespace Steinberg {
-namespace Vst {
 
 VST3Controller::VST3Controller(pluginInfoSem& pinfo) :
 	isInitialised(false)
@@ -300,7 +302,7 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 
 				if (!param.meta_data.empty())
 				{
-					it_enum_list it(::Utf8ToWstring(param.meta_data));
+					it_enum_list it(Utf8ToWstring(param.meta_data));
 
 					pminimum = it.RangeLo();
 					pmaximum = it.RangeHi();
@@ -624,7 +626,7 @@ tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& info)
 	info.flags = Steinberg::Vst::ParameterInfo::kCanAutomate;
 	info.defaultNormalizedValue = 0.0;
 
-	auto temp = ToUtf16(p->name_);
+	auto temp = JmUnicodeConversions::ToUtf16(p->name_);
 	
 	_tstrncpy(info.shortTitle, (const TChar*)temp.c_str(), static_cast<Steinberg::uint32>(std::size(info.shortTitle)));
 	_tstrncpy(info.title, (const TChar*)temp.c_str(), static_cast<Steinberg::uint32>(std::size(info.title)));
@@ -655,7 +657,7 @@ tresult PLUGIN_API VST3Controller::getParamStringByValue(ParamID tag, ParamValue
 	if (auto p = getDawParameter(tag); p)
 	{
 		const auto s_wide = p->normalisedToString(p->convertNormalized(valueNormalized));
-		const auto s_UTF16 = ToUtf16(s_wide);
+		const auto s_UTF16 = JmUnicodeConversions::ToUtf16(s_wide);
 		strncpy16(string, (const TChar*) s_UTF16.c_str(), 128);
 
 		return kResultOk;
@@ -1040,5 +1042,4 @@ tresult PLUGIN_API VST3Controller::getPhysicalUIMapping(int32 busIndex, int16 ch
 	return kResultFalse;
 }
 
-}// namespaces
-} // namespaces
+}

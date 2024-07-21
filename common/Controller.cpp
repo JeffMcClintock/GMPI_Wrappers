@@ -32,6 +32,8 @@
 #endif
 
 using namespace std;
+namespace wrapper
+{
 
 MpController::~MpController()
 {
@@ -2215,4 +2217,5 @@ void MpController::ImportBankXml(const char* xmlfilename)
 void MpController::setModified(bool presetIsModified)
 {
 	(*getHostParameter(HC_PROGRAM_MODIFIED)) = presetIsModified;
+}
 }

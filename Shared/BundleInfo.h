@@ -22,6 +22,8 @@ BundleInfo::instance()->getResource("whatever");
 #include <AudioUnit/AudioUnit.h>
 #endif
 
+namespace wrapper
+{
 class BundleInfo
 {
 public:
@@ -85,5 +87,5 @@ public:
 	int32_t getPluginId(); // 4-char VST2 code to identify presets.
     const pluginInformation& getPluginInfo();
 };
-
+}
 #endif /* BundleInstance_h */

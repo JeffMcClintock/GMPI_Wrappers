@@ -19,10 +19,14 @@ InterfaceObject* new_InterfaceObjectC(int p_id, struct pin_description2& p_plugs
 #endif
 
 // Meyer's singleton. see also GmpiResourceManager_editor.cpp
+namespace wrapper
+{
+
 GmpiResourceManager* GmpiResourceManager::Instance()
 {
 	static GmpiResourceManager obj;
 	return &obj;
+}
 }
 
 void SafeMessagebox(

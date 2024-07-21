@@ -1,7 +1,8 @@
 #pragma once
 
+namespace wrapper
+{
 class QueClient
-
 {
 public:
 	QueClient(){}
@@ -13,3 +14,4 @@ public:
 	bool inQue_ = false;
 	bool dirty_ = false;
 };
+}

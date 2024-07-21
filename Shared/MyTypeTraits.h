@@ -5,7 +5,8 @@
 //#include "mp_sdk_common.h"
 #include "Common.h"
 
-//typedef std::vector<uint8_t> MpBlob;
+namespace wrapper
+{
 
 // helpers to convert any parameter value to raw bytes
 template<class U> struct VariableLengthStorageTraits
@@ -158,3 +159,4 @@ void MyTypeTraits<gmpi::Blob>::MfcArchiveRead( class CArchive& ar, gmpi::Blob& v
 }
 
 #endif
+}

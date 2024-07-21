@@ -7,6 +7,9 @@
 //#include "mp_sdk_gui2.h"
 #include "GmpiApiCommon.h"
 
+namespace wrapper
+{
+
 enum class GmpiResourceType
 {
 	Image,
@@ -31,3 +34,4 @@ public:
 //TODO	virtual int32_t OpenUri(const char* fullUri, gmpi::IProtectedFile2** returnStream);
 };
 
+}

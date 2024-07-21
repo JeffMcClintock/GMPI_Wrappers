@@ -5,6 +5,8 @@
 #include "conversion.h"
 
 using namespace std;
+namespace wrapper
+{
 
 template<>
 void MyTypeTraits<std::wstring>::parse(const wchar_t *stringValue, std::wstring &returnValue)
@@ -158,4 +160,5 @@ std::string MyTypeTraits<double>::toXML( const double& value )
 	std::ostringstream oss;
 	oss << value;
 	return oss.str();
+}
 }

@@ -7,7 +7,9 @@
 //#include "mp_api.h"
 #include <sstream>
 #include <vector>
-//#include "se_datatypes.h" // kill this
+
+namespace wrapper
+{
 
 // Return actual address of a value's data.
 // Advantage: Does NO memory allocation.
@@ -228,4 +230,5 @@ inline int getDataTypeSize(gmpi::PinDatatype datatype)
 
 	assert(false); // TODO
 	return 0;
+}
 }

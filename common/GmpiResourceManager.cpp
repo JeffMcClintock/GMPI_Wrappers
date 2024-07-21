@@ -9,6 +9,8 @@
 #include "unicode_conversion.h"
 
 using namespace std;
+namespace wrapper
+{
 using namespace JmUnicodeConversions;
 
 bool ResourceExists(const std::wstring& path)
@@ -302,3 +304,4 @@ int32_t GmpiResourceManager::OpenUri(const char* fullUri, gmpi::IProtectedFile2*
 	return *returnStream != nullptr ? (gmpi::MP_OK) : (gmpi::MP_FAIL);
 }
 #endif
+}

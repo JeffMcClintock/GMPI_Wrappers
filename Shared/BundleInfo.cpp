@@ -13,6 +13,8 @@
 #include "BinaryData.h"
 #endif
 
+namespace wrapper
+{
 using namespace JmUnicodeConversions;
 
 #if defined( _WIN32 )
@@ -551,4 +553,5 @@ void BundleInfo::initPluginInfo()
          }
     }
 #endif
+}
 }

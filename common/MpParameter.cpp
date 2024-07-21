@@ -13,6 +13,8 @@ using namespace std;
 
 #define MIDI_LEARN_MENU_ITEMS L"Learn=1, UnLearn"
 
+namespace wrapper
+{
 
 bool MpParameter_base::setParameterRaw(gmpi::Field paramField, int32_t size, const void* data, int32_t voice)
 {
@@ -753,4 +755,5 @@ void MpParameter_native::onGrabbedChanged()
 
 		controller_->ParamGrabbed(this);
 	}
+}
 }

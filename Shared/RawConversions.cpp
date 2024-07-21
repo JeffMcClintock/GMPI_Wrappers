@@ -4,6 +4,9 @@
 #include "se_datatypes.h"
 #include "unicode_conversion.h"
 
+namespace wrapper
+{
+
 using namespace JmUnicodeConversions;
 
 // caller must free memory
@@ -382,3 +385,4 @@ memcpy( temp2, value.getData(), value.getSize() );
 return temp2;
 }
 */
+}

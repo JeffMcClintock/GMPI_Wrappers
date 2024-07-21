@@ -4,6 +4,8 @@
 //#include "mp_sdk_common.h"
 //#include "mfc_emulation.h"
 
+namespace wrapper
+{
 
 my_input_stream& my_input_stream::operator>>(gmpi::Blob& val)
 {
@@ -49,3 +51,4 @@ my_output_stream& my_output_stream::operator<<(const gmpi::Blob& val)
     return *this;
 };
 
+}

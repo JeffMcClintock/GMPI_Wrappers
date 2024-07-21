@@ -107,9 +107,6 @@ SMTG_EXPORT_SYMBOL IPluginFactory* PLUGIN_API GetPluginFactory ()
 bool InitModule() { return true; }
 bool DeinitModule() { return true; }
 
-namespace wrapper
-{
-
 MyVstPluginFactory* MyVstPluginFactory::GetInstance()
 {
 	static MyVstPluginFactory singleton;
@@ -400,7 +397,7 @@ tresult MyVstPluginFactory::createInstance (FIDString cid, FIDString iid, void**
 
 		if (/*interfaceId == IComponent::iid ||*/ classId == Steinberg::FUID(procUUid))
 		{
-			auto i = new SeProcessor(sem);
+			auto i = new wrapper::SeProcessor(sem);
 			/* Now done by detecting MIDI input
 					if( pluginInfo_.subCategories_.find( "Instrument" ) != std::string::npos )
 					{
@@ -461,15 +458,15 @@ void MyVstPluginFactory::RegisterPin(
 	pind.id = nextPinId;
 	pin->QueryIntAttribute("id", &(pind.id));
 	// name
-	pind.name = FixNullCharPtr(pin->Attribute("name"));
+	pind.name = wrapper::FixNullCharPtr(pin->Attribute("name"));
 
 	// datatype
-	std::string pin_datatype = FixNullCharPtr(pin->Attribute("datatype"));
-	std::string pin_rate = FixNullCharPtr(pin->Attribute("rate"));
+	std::string pin_datatype = wrapper::FixNullCharPtr(pin->Attribute("datatype"));
+	std::string pin_rate = wrapper::FixNullCharPtr(pin->Attribute("rate"));
 
 	// Datatype.
 	int temp;
-	if (XmlStringToDatatype(pin_datatype, temp))
+	if (wrapper::XmlStringToDatatype(pin_datatype, temp))
 	{
 		assert(0 <= temp && temp < (int)gmpi::PinDatatype::Blob);
 		pind.datatype = (gmpi::PinDatatype)temp;
@@ -492,7 +489,7 @@ void MyVstPluginFactory::RegisterPin(
 	}
 
 	// default
-	pind.default_value = FixNullCharPtr(pin->Attribute("default"));
+	pind.default_value = wrapper::FixNullCharPtr(pin->Attribute("default"));
 
 	if (pin_rate.compare("audio") == 0)
 	{
@@ -514,7 +511,7 @@ void MyVstPluginFactory::RegisterPin(
 	}
 
 	// direction
-	const std::string pin_direction = FixNullCharPtr(pin->Attribute("direction"));
+	const std::string pin_direction = wrapper::FixNullCharPtr(pin->Attribute("direction"));
 
 	if (pin_direction.compare("out") == 0)
 	{
@@ -574,7 +571,7 @@ void MyVstPluginFactory::RegisterPin(
 	//}
 
 	// host-connect
-	pind.hostConnect = FixNullCharPtr(pin->Attribute("hostConnect"));
+	pind.hostConnect = wrapper::FixNullCharPtr(pin->Attribute("hostConnect"));
 
 	// parameterField.
 	if (!pind.hostConnect.empty() || parameterId != -1)
@@ -638,7 +635,7 @@ void MyVstPluginFactory::RegisterPin(
 	}
 #endif
 	// meta data
-	pind.meta_data = FixNullCharPtr(pin->Attribute("metadata"));
+	pind.meta_data = wrapper::FixNullCharPtr(pin->Attribute("metadata"));
 	
 	// notes
 //	pind.notes = Utf8ToWstring(pin->Attribute("notes"));
@@ -770,13 +767,13 @@ void MyVstPluginFactory::RegisterXml(const /*platform_*/std::string& pluginPath,
 				// I.D.
 				paramE->QueryIntAttribute("id", &(param.id));
 				// Datatype.
-				std::string pin_datatype = FixNullCharPtr(paramE->Attribute("datatype"));
+				std::string pin_datatype = wrapper::FixNullCharPtr(paramE->Attribute("datatype"));
 				// Name.
-				param.name = FixNullCharPtr(paramE->Attribute("name"));
+				param.name = wrapper::FixNullCharPtr(paramE->Attribute("name"));
 				// File extension or enum list.
-				param.meta_data = FixNullCharPtr(paramE->Attribute("metadata"));
+				param.meta_data = wrapper::FixNullCharPtr(paramE->Attribute("metadata"));
 				// Default.
-				param.default_value = FixNullCharPtr(paramE->Attribute("default"));
+				param.default_value = wrapper::FixNullCharPtr(paramE->Attribute("default"));
 
 #if 0
 				// Automation.
@@ -795,7 +792,7 @@ void MyVstPluginFactory::RegisterXml(const /*platform_*/std::string& pluginPath,
 #endif
 				// Datatype.
 				int temp;
-				if (XmlStringToDatatype(pin_datatype, temp))//&& temp != DT_CLASS)
+				if (wrapper::XmlStringToDatatype(pin_datatype, temp))//&& temp != DT_CLASS)
 				{
 					param.datatype = (gmpi::PinDatatype)temp;
 				}
@@ -1079,7 +1076,5 @@ bool MyVstPluginFactory::GetOutputsAsStereoPairs()
 std::string MyVstPluginFactory::getVendorName()
 {
 	return vendorName_;
-}
-
 }
 

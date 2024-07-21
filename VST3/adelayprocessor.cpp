@@ -27,8 +27,8 @@ using namespace Steinberg::Vst;
 
 typedef gmpi::ReturnCode(*MP_DllEntry)(void**);
 
-//namespace Steinberg {
-//namespace Vst {
+namespace wrapper
+{
 
 //-----------------------------------------------------------------------------
 SeProcessor::SeProcessor (pluginInfoSem& pinfo)
@@ -1485,4 +1485,5 @@ float SeProcessor::getSampleRate()
 int32_t SeProcessor::getHandle()
 {
 	return 0; // only one plugin, can have handle zero.
+}
 }

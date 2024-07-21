@@ -8,6 +8,8 @@
 #undef max
 #undef min
 
+namespace wrapper
+{
 
 interThreadQue::interThreadQue(int p_que_size ) :
 	fifo_(p_que_size)
@@ -139,3 +141,4 @@ bool interThreadQue::isUncomitted()
 }
 #endif
 
+}
