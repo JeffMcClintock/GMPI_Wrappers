@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 
-set(ADAPTORS_COMMON_FOLDER ${CMAKE_CURRENT_SOURCE_DIR}/common)
+include_directories(
+${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-add_subdirectory(VST3)
+add_subdirectory(wrapper)
 
