@@ -27,3 +27,24 @@ SMTG_EXPORT_SYMBOL Steinberg::IPluginFactory* PLUGIN_API GetPluginFactory()
 {
 	return MyVstPluginFactory::GetInstance();
 }
+
+extern "C"
+{
+static int moduleCounter{ 0 }; // counting for InitDll/ExitDll pairs
+
+SMTG_EXPORT_SYMBOL bool InitDll()
+{
+	if (++moduleCounter == 1)
+		return true; // InitModule();
+	return true;
+}
+
+SMTG_EXPORT_SYMBOL bool ExitDll()
+{
+	if (--moduleCounter == 0)
+		return true; // DeinitModule();
+	if (moduleCounter < 0)
+		return false;
+	return true;
+}
+}

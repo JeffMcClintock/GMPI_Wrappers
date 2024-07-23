@@ -75,7 +75,7 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::checkSizeConstraint(Steinberg::
         gmpi::drawing::Size desiredSize{ availableSize };
 		pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
 
-        if (availableSize == desiredSize)
+        if (availableSize.width == desiredSize.width && availableSize.height == desiredSize.height)
         {
             return Steinberg::kResultTrue;
         }

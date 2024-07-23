@@ -79,6 +79,15 @@ inline int countPins(pluginInfoSem const& plugin, gmpi::PinDirection direction, 
 	);
 }
 
+inline std::string calcSubCategories(pluginInfoSem const& plugin)
+{
+	if (countPins(plugin, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) > 0)
+	{
+		return "Instrument|Synth";
+	}
+	return "Fx";
+}
+
 inline auto getPinName(pluginInfoSem const& plugin, gmpi::PinDirection direction, int index) -> std::string
 {
 	int i = 0;

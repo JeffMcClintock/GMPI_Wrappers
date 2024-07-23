@@ -231,7 +231,6 @@ tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
 	}
 
 	std::string version{ "1.0.0" }; // for now
-	std::string subCategories{ "" }; // for now
 
 	const int pluginIndex = index / 2;
 	const int classIndex = index % 2;
@@ -250,17 +249,19 @@ tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
 	strncpy8 (info->vendor, vendorName_.c_str(), PClassInfo2::kVendorSize );
 	strncpy8 (info->version, /*pluginInfo_.version_*/version.c_str(), PClassInfo2::kVersionSize );
 
+	const auto subCategories = calcSubCategories(sem);
+
 	switch(classIndex)
 	{
 	case 0:
 		info->classFlags = Vst::kDistributable;
-		strncpy8 (info->subCategories, /*pluginInfo_.subCategories_*/subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
+		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
 		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
 		memcpy (info->cid, &procUUid/*(pluginInfo_.processorId.toTUID())*/, sizeof (TUID));
 		break;
 	case 1:
 		info->classFlags = 0;
-		strncpy8 (info->subCategories, "", PClassInfo2::kSubCategoriesSize );
+		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
 		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
 		memcpy (info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID())*/, sizeof (TUID));
 		break;
@@ -322,7 +323,6 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 	}
 
 	std::string version{ "1.0.0" }; // for now
-	std::string subCategories{ "" }; // for now
 
 	const int pluginIndex = index / 2;
 	const int classIndex = index % 2;
@@ -333,18 +333,19 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 	Steinberg::TUID ctrlUUid{};
 	textIdtoUuid(sem.id, false, procUUid);
 	textIdtoUuid(sem.id, true, ctrlUUid);
+	const auto subCategories = calcSubCategories(sem);
 
 	switch(classIndex)
 	{
 	case 0:
 		info->classFlags = Vst::kDistributable;
-		strncpy8 (info->subCategories, /*pluginInfo_.subCategories_*/subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
+		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
 		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
 		memcpy(info->cid, &procUUid/*(pluginInfo_.processorId.toTUID())*/, sizeof(TUID));
 		break;
 	case 1:
 		info->classFlags = 0;
-		strncpy8 (info->subCategories, "", PClassInfo2::kSubCategoriesSize );
+		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
 		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
 		memcpy(info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID())*/, sizeof(TUID));
 		break;
@@ -398,12 +399,6 @@ tresult MyVstPluginFactory::createInstance (FIDString cid, FIDString iid, void**
 		if (/*interfaceId == IComponent::iid ||*/ classId == Steinberg::FUID(procUUid))
 		{
 			auto i = new wrapper::SeProcessor(sem);
-			/* Now done by detecting MIDI input
-					if( pluginInfo_.subCategories_.find( "Instrument" ) != std::string::npos )
-					{
-						i->setSynth();
-					}
-			*/
 			i->setControllerClass(ctrlUUid); // associate with controller.
 			instance = (IAudioProcessor*)i;
 			break;

@@ -380,17 +380,27 @@ void SeProcessor::reInitialise()
 					{}             // data_/oversizeData_
 				}
 			);
-			events.push(
-				{
-					{},            // next (populated later)
-					0,             // timeDelta
-					gmpi::api::EventType::PinStreamingStart,
-					{},            // pinIdx
-					{},            // size_
-					{}             // data_/oversizeData_
-				}
-			);
 
+			int inIdx = 0;
+			int outIdx = 0;
+			for (auto& pin : info.dspPins)
+			{
+				if (pin.datatype != gmpi::PinDatatype::Audio || pin.direction != gmpi::PinDirection::In)
+					continue;
+
+				events.push(
+					{
+						{},            // next (populated later)
+						0,             // timeDelta
+						gmpi::api::EventType::PinStreamingStart,
+						pin.id,        // pinIdx
+						{},            // size_
+						{}             // data_/oversizeData_
+					}
+				);
+			}
+
+#if 0
 			gmpi::api::Event e
 			{
 				{},            // next (populated later)
@@ -406,6 +416,7 @@ void SeProcessor::reInitialise()
 			auto dst = reinterpret_cast<uint8_t*>(& e.data_);
 			std::copy(src, src + sizeof(parameterValue), dst);
 			events.push(e);
+#endif
 		}
 
 #if 0 // TODO
@@ -1110,18 +1121,30 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 		}
 	}
 
+	// setup buffers
+	{
+		int inIdx = 0;
+		int outIdx = 0;
+		for (auto& pin : info.dspPins)
+		{
+			if (pin.datatype != gmpi::PinDatatype::Audio)
+				continue;
+
+			if (pin.direction == gmpi::PinDirection::In)
+			{
+				plugin_->setBuffer(pin.id, inputBuffers[inIdx++]);
+			}
+			else
+			{
+				plugin_->setBuffer(pin.id, outputBuffers[outIdx++]);
+			}
+		}
+
+		assert(inIdx == inputBuffers.size());
+		assert(outIdx == outputBuffers.size());
+	}
+
 	// Process audio.
-int assumedId = 0; // TODO !!! get actual pin IDs
-	for (int i = 0; i < numChannelsIn; ++i)
-	{
-		plugin_->setBuffer(assumedId++, inputBuffers[0]);
-	}
-
-	for (int i = 0; i < numChannelsOut; ++i)
-	{
-		plugin_->setBuffer(assumedId++, outputBuffers[0]);
-	}
-
 	plugin_->process(data.numSamples, events.head());
 
 	events.clear();
