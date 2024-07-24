@@ -988,10 +988,10 @@ bool MyVstPluginFactory::initializeFactory()
 		{
 			gmpi::shared_ptr<gmpi::api::IUnknown> com_object;
  //           auto r = dll_entry_point(com_object.asIMpUnknownPtr());
-            auto r = MP_GetFactory(com_object.asIMpUnknownPtr());
+            auto r = MP_GetFactory(com_object.put_void());
 
 //			r = com_object->queryInterface(gmpi::MP_IID_SHELLFACTORY, vst_factory.asIMpUnknownPtr());
-			r = com_object->queryInterface(&gmpi::api::IPluginFactory::guid, gmpi_factory.asIMpUnknownPtr());
+			r = com_object->queryInterface(&gmpi::api::IPluginFactory::guid, gmpi_factory.put_void());
 		}
 
 		if (/*!vst_factory &&*/ !gmpi_factory)

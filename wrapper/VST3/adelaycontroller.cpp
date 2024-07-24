@@ -506,10 +506,10 @@ IPlugView* PLUGIN_API VST3Controller::createView (FIDString name)
 #endif
 			gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
 			//auto r = dll_entry_point(factoryBase.asIMpUnknownPtr());
-            auto r = MP_GetFactory(factoryBase.asIMpUnknownPtr());
+            auto r = MP_GetFactory(factoryBase.put_void());
 
 			gmpi::shared_ptr<gmpi::api::IPluginFactory> factory;
-			auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.asIMpUnknownPtr());
+			auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.put_void());
 
 			if (!factory || r != gmpi::ReturnCode::Ok)
 			{
@@ -517,13 +517,13 @@ IPlugView* PLUGIN_API VST3Controller::createView (FIDString name)
 			}
 
 			gmpi::shared_ptr<gmpi::api::IUnknown> pluginUnknown;
-			r2 = factory->createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Editor, pluginUnknown.asIMpUnknownPtr());
+			r2 = factory->createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Editor, pluginUnknown.put_void());
 			if (!pluginUnknown || r != gmpi::ReturnCode::Ok)
 			{
 				return {};
 			}
 
-			if (auto editor = pluginUnknown.As<gmpi::api::IEditor>(); editor)
+			if (auto editor = pluginUnknown.as<gmpi::api::IEditor>(); editor)
 			{
 				// TODO currently in pixels, should be DIPs???
 				int width{ 200 };

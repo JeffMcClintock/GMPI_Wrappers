@@ -323,11 +323,11 @@ void SeProcessor::reInitialise()
 #endif
         
 		gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
-//		auto r = dll_entry_point(factoryBase.asIMpUnknownPtr());
-        auto r = MP_GetFactory(factoryBase.asIMpUnknownPtr());
+//		auto r = dll_entry_point(factoryBase.put());
+        auto r = MP_GetFactory(factoryBase.put_void());
         
 		gmpi::shared_ptr<gmpi::api::IPluginFactory> factory;
-		auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.asIMpUnknownPtr());
+		auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.put_void());
 
 		if (!factory || r != gmpi::ReturnCode::Ok)
 		{
@@ -335,13 +335,13 @@ void SeProcessor::reInitialise()
 		}
 
 		gmpi::shared_ptr<gmpi::api::IUnknown> pluginUnknown;
-		r2 = factory->createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Audio, pluginUnknown.asIMpUnknownPtr());
+		r2 = factory->createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Audio, pluginUnknown.put_void());
 		if (!pluginUnknown || r != gmpi::ReturnCode::Ok)
 		{
 			return;
 		}
 
-		plugin_ = pluginUnknown.As<gmpi::api::IProcessor>();
+		plugin_ = pluginUnknown.as<gmpi::api::IProcessor>();
 
 		if (!plugin_)
 			return;

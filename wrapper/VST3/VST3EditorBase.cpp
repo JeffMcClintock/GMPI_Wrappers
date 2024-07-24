@@ -44,7 +44,7 @@ VST3EditorBase::VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi:
 	, helper(this)
 	, info(info)
 {
-	pluginGraphics_GMPI = peditor.As<gmpi::api::IDrawingClient>();
+	pluginGraphics_GMPI = peditor.as<gmpi::api::IDrawingClient>();
 
 	if (pluginParameters_GMPI)
 	{
