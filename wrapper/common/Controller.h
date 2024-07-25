@@ -284,7 +284,7 @@ public:
 void initializeGui(gmpi::IMpParameterObserver* gui, int32_t parameterHandle, gmpi::Field FieldId) override;
 #endif
 	void initializeGui(gmpi::api::IParameterObserver* gui, int32_t parameterHandle, gmpi::Field FieldId);
-	void setParameterValue(RawView value, int32_t parameterHandle, gmpi::Field moduleFieldId = gmpi::Field::MP_FT_VALUE, int32_t voice = 0);// override;
+	void setParameterValue(RawView value, int32_t parameterHandle, gmpi::Field moduleFieldId = gmpi::Field::Value, int32_t voice = 0);// override;
 	int32_t getParameterModuleAndParamId(int32_t parameterHandle, int32_t* returnModuleHandle, int32_t* returnModuleParameterId);// override;
 #if 0
 	int32_t getParameterHandle(int32_t moduleHandle, int32_t moduleParameterId) override;
@@ -310,27 +310,27 @@ void initializeGui(gmpi::IMpParameterObserver* gui, int32_t parameterHandle, gmp
 
 	void updateGuis(MpParameter* parameter, int voice)
 	{
-		const auto rawValue = parameter->getValueRaw(gmpi::Field::MP_FT_VALUE, voice);
+		const auto rawValue = parameter->getValueRaw(gmpi::Field::Value, voice);
 		const float normalized = parameter->getNormalized(); // voice !!!?
 #if 0 // TODO
 
 		for (auto pa : m_guis2)
 		{
 			// Update value.
-			pa->setParameter(parameter->parameterHandle_, gmpi::Field::MP_FT_VALUE, voice, rawValue.data(), (int32_t)rawValue.size());
+			pa->setParameter(parameter->parameterHandle_, gmpi::Field::Value, voice, rawValue.data(), (int32_t)rawValue.size());
 
 			// Update normalized.
-			pa->setParameter(parameter->parameterHandle_, gmpi::Field::MP_FT_NORMALIZED, voice, &normalized, (int32_t)sizeof(normalized));
+			pa->setParameter(parameter->parameterHandle_, gmpi::Field::Normalized, voice, &normalized, (int32_t)sizeof(normalized));
 		}
 #endif
 
 		for (auto pa : m_guis3)
 		{
 			// Update value.
-			pa->setParameter(parameter->parameterHandle_, gmpi::Field::MP_FT_VALUE, voice, (int32_t)rawValue.size(), rawValue.data());
+			pa->setParameter(parameter->parameterHandle_, gmpi::Field::Value, voice, (int32_t)rawValue.size(), rawValue.data());
 
 			// Update normalized.
-			pa->setParameter(parameter->parameterHandle_, gmpi::Field::MP_FT_NORMALIZED, voice, (int32_t)sizeof(normalized), &normalized);
+			pa->setParameter(parameter->parameterHandle_, gmpi::Field::Normalized, voice, (int32_t)sizeof(normalized), &normalized);
 		}
 	}
 

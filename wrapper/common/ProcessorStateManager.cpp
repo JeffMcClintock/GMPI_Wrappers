@@ -259,7 +259,7 @@ void DawPreset::initFromXML(const std::map<int32_t, paramInfo>& parametersInfo, 
 						// (would need to pass 'updateProcessor')
 			{
 				// calls controller_->updateGuis(this, voice)
-//				parameter->setParameterRaw(gmpi::Field::MP_FT_VALUE, (int32_t)raw.size(), raw.data(), voiceId);
+//				parameter->setParameterRaw(gmpi::Field::Value, (int32_t)raw.size(), raw.data(), voiceId);
 
 				/* todo elsewhere
 				// updated cached value.
@@ -308,11 +308,11 @@ void DawPreset::initFromXML(const std::map<int32_t, paramInfo>& parametersInfo, 
 				{
 					values.rawValues_.push_back(ParseToRaw(info.dataType, xmlvalue));
 					//						const auto raw = ParseToRaw(parameter.dataType, xmlvalue);
-					//						if (parameter->setParameterRaw(gmpi::Field::MP_FT_VALUE, (int32_t)raw.size(), raw.data(), voiceId))
+					//						if (parameter->setParameterRaw(gmpi::Field::Value, (int32_t)raw.size(), raw.data(), voiceId))
 					{
 						// updated cached value.
 //							parameter->upDateImmediateValue();
-//							parameter->updateProcessor(gmpi::Field::MP_FT_VALUE, voiceId);
+//							parameter->updateProcessor(gmpi::Field::Value, voiceId);
 					}
 				}
 			);

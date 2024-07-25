@@ -19,13 +19,13 @@ namespace wrapper
 bool MpParameter_base::setParameterRaw(gmpi::Field paramField, int32_t size, const void* data, int32_t voice)
 {
 	// Handles real value and normalised only.
-	assert(paramField == gmpi::Field::MP_FT_VALUE || paramField == gmpi::Field::MP_FT_NORMALIZED || paramField == gmpi::Field::MP_FT_GRAB);
+	assert(paramField == gmpi::Field::Value || paramField == gmpi::Field::Normalized || paramField == gmpi::Field::Grab);
 
 	bool changed = false;
 
 	switch (paramField)
 	{
-	case gmpi::Field::MP_FT_VALUE:
+	case gmpi::Field::Value:
 		{
 			while (rawValues_.size() <= static_cast<size_t>(voice))
 			{
@@ -48,7 +48,7 @@ bool MpParameter_base::setParameterRaw(gmpi::Field paramField, int32_t size, con
 		break;
 */
 
-	case gmpi::Field::MP_FT_NORMALIZED:
+	case gmpi::Field::Normalized:
 	{
 		double normalized = (double)*(float*)data;
 
@@ -102,11 +102,11 @@ bool MpParameter_base::setParameterRaw(gmpi::Field paramField, int32_t size, con
 			break;
 		}
 
-		return setParameterRaw(gmpi::Field::MP_FT_VALUE, static_cast<int32_t>(newRawValue.size()), newRawValue.data(), voice);
+		return setParameterRaw(gmpi::Field::Value, static_cast<int32_t>(newRawValue.size()), newRawValue.data(), voice);
 	}
 	break;
 
-	case gmpi::Field::MP_FT_GRAB:
+	case gmpi::Field::Grab:
 		return MpParameter::setParameterRaw(paramField, size, data, voice);
 		break;
 
@@ -189,7 +189,7 @@ void MpParameter::updateFromDsp(int recievingMessageId, my_input_stream & strm)
 	case code_to_long('l', 'e', 'r', 'n'): // "lern" Controller ID change
 	{
 		strm >> MidiAutomation;
-		controller_->updateGuis(this, gmpi::Field::MP_FT_AUTOMATION);
+		controller_->updateGuis(this, gmpi::Field::Automation);
 	}
 	break;
 	}
@@ -201,28 +201,28 @@ RawView MpParameter::getValueRaw(gmpi::Field paramField, int32_t voice)
 
 	switch (paramField)
 	{
-	case gmpi::Field::MP_FT_ENUM_LIST:
-	case gmpi::Field::MP_FT_FILE_EXTENSION:
+	case gmpi::Field::EnumList:
+	case gmpi::Field::FileExtension:
 	{
 		return RawView(enumList_);
 	}
 	break;
 
-	case gmpi::Field::MP_FT_SHORT_NAME:
-	case gmpi::Field::MP_FT_LONG_NAME:
+	case gmpi::Field::ShortName:
+	case gmpi::Field::LongName:
 	{
 		return RawView(name_);
 	}
 
-	case gmpi::Field::MP_FT_MENU_SELECTION:
+	case gmpi::Field::MenuSelection:
 		return RawView(zero);
 		break;
 
-	case gmpi::Field::MP_FT_GRAB:
+	case gmpi::Field::Grab:
 		return RawView(m_grabbed);
 		break;
 
-	case gmpi::Field::MP_FT_MENU_ITEMS:
+	case gmpi::Field::MenuItems:
 	{
 		if (datatype_ == gmpi::PinDatatype::Blob || datatype_ == gmpi::PinDatatype::String)
 		{
@@ -236,7 +236,7 @@ RawView MpParameter::getValueRaw(gmpi::Field paramField, int32_t voice)
 	}
 	break;
 
-	case gmpi::Field::MP_FT_NORMALIZED:
+	case gmpi::Field::Normalized:
 	{
 		float normalized = getNormalized();
 		tempReturnValue = ToRaw4(normalized);
@@ -244,13 +244,13 @@ RawView MpParameter::getValueRaw(gmpi::Field paramField, int32_t voice)
 	}
 	break;
 
-	case gmpi::Field::MP_FT_AUTOMATION:
+	case gmpi::Field::Automation:
 	{
 		return RawView(MidiAutomation);
 	}
 	break;
 
-	case gmpi::Field::MP_FT_AUTOMATION_SYSEX:
+	case gmpi::Field::AutomationSysex:
 	{
 		return RawView(MidiAutomationSysex);
 	}
@@ -270,7 +270,7 @@ RawView MpParameter_base::getValueRaw(gmpi::Field paramField, int32_t voice)
 
 	switch (paramField)
 	{
-		case gmpi::Field::MP_FT_VALUE:
+		case gmpi::Field::Value:
 		{
 			expected_size = getDataTypeSize(datatype_);
 
@@ -286,7 +286,7 @@ RawView MpParameter_base::getValueRaw(gmpi::Field paramField, int32_t voice)
 			}
 			break;
 
-		case gmpi::Field::MP_FT_RANGE_LO:
+		case gmpi::Field::RangeLo:
 		{
 			// compute normalised normalized.
 			switch (datatype_)
@@ -324,7 +324,7 @@ RawView MpParameter_base::getValueRaw(gmpi::Field paramField, int32_t voice)
 		}
 		break;
 
-		case gmpi::Field::MP_FT_RANGE_HI:
+		case gmpi::Field::RangeHi:
 		{
 			// compute normalised normalized.
 			switch (datatype_)
@@ -705,7 +705,7 @@ bool MpParameter::setParameterRaw(gmpi::Field paramField, int32_t size, const vo
 {
 	bool changed = false;
 
-	if (gmpi::Field::MP_FT_GRAB == paramField)
+	if (gmpi::Field::Grab == paramField)
 	{
 		const bool oldVal = m_grabbed;
 		m_grabbed = RawToValue<bool>(data, size);

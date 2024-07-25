@@ -61,7 +61,7 @@ namespace wrapper
 		const T& operator=(const T& value)
 		{
 			RawView temp{ value };
-			setParameterRaw(gmpi::Field::MP_FT_VALUE, temp.size(), temp.data());
+			setParameterRaw(gmpi::Field::Value, temp.size(), temp.data());
 
 			return value;
 		}
