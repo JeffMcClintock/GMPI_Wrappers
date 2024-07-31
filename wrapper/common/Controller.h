@@ -17,7 +17,7 @@
 #include "wrapper/common/ProcessorStateManager.h"
 #include "wrapper/common/SemInfo.h"
 #include "GmpiSdkCommon.h"
-#include "IGuiHost2.h"
+//#include "IGuiHost2.h"
 
 namespace SynthEdit2
 {
