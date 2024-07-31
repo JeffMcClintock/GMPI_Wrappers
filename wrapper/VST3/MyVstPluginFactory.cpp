@@ -463,7 +463,7 @@ void MyVstPluginFactory::RegisterPin(
 	int temp;
 	if (wrapper::XmlStringToDatatype(pin_datatype, temp))
 	{
-		assert(0 <= temp && temp < (int)gmpi::PinDatatype::Blob);
+		assert(0 <= temp && temp <= (int)gmpi::PinDatatype::Blob);
 		pind.datatype = (gmpi::PinDatatype)temp;
 /*
 		if (pind.datatype == DT_CLASS) // e.g. "class:geometry"

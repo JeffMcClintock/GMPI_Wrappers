@@ -7,6 +7,10 @@ namespace wrapper
 SEVSTGUIEditorWin::SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
 	VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
+    // 'helper' provides hosting for parameters, 'drawingframe' for graphics hosting.
+    // so when plugin queries the drawing from for 'IParameterObserver' it gets redirected to 'helper'.
+    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&helper));
+    initPlugin(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
 }
 
 SEVSTGUIEditorWin::~SEVSTGUIEditorWin()
@@ -18,7 +22,7 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinbe
 {
     if (pluginGraphics_GMPI)
     {
-        drawingframe.AddView(static_cast<gmpi::api::IParameterObserver*>(&helper), pluginGraphics_GMPI.get());
+        drawingframe.AddView(/*static_cast<gmpi::api::IParameterObserver*>(&helper),*/ pluginGraphics_GMPI.get());
 
         const gmpi::drawing::SizeL overrideSize{ width, height };
         drawingframe.open(parent, &overrideSize);

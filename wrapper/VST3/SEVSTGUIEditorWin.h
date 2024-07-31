@@ -38,7 +38,7 @@ public:
 };
 #endif
 
-class SEVSTGUIEditorWin : public VST3EditorBase //Steinberg::FObject, public Steinberg::IPlugView
+class SEVSTGUIEditorWin : public VST3EditorBase
 {
 	gmpi::hosting::DrawingFrame drawingframe;
 

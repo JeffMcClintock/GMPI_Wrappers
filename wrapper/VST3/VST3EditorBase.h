@@ -12,7 +12,13 @@ namespace wrapper
 {
 class VST3Controller;
 
-class ParameterHelper : public gmpi::api::IParameterObserver, public gmpi::api::IEditorHost
+class ParameterHelper :
+	public gmpi::api::IParameterObserver,
+	// AH!!!!!, already in gmpi::hosting::DrawingFrame !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	// probly need to redirect queryInterface from here to drawing frame or vica versa
+	//public gmpi::api::IInputHost,
+	public gmpi::api::IEditorHost
+	//public gmpi::api::IDrawingHost
 {
 	class VST3EditorBase* editor_ = {};
 
@@ -21,12 +27,27 @@ public:
 
 	//---IParameterObserver------
 	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data) override;
-
+#if 0
+	// IInputHost
+	gmpi::ReturnCode setCapture() override;
+	gmpi::ReturnCode getCapture(bool& returnValue) override;
+	gmpi::ReturnCode releaseCapture() override;
+	gmpi::ReturnCode getFocus() override;
+	gmpi::ReturnCode releaseFocus() override;
+	// IDrawingHost
+	gmpi::ReturnCode getDrawingFactory(gmpi::api::IUnknown** returnFactory) override;
+	void invalidateRect(const gmpi::drawing::Rect* invalidRect) override;
+#endif
 	//---IEditorHost------
 	gmpi::ReturnCode setPin(int32_t pinId, int32_t voice, int32_t size, const void* data) override;
 	int32_t getHandle() override;
 
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override;
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		GMPI_QUERYINTERFACE(gmpi::api::IEditorHost);
+		GMPI_QUERYINTERFACE(gmpi::api::IParameterObserver);
+		return gmpi::ReturnCode::NoSupport;
+	}
 	GMPI_REFCOUNT;
 };
 
@@ -47,6 +68,7 @@ public:
 	VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight);
 	~VST3EditorBase();
 
+	void initPlugin(gmpi::api::IUnknown* host);
 	void onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const void* data, int32_t size);
 #if 0
 	//---from IPlugView-------

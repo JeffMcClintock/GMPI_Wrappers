@@ -15,6 +15,9 @@
 #include "wrapper/common/FileWatcher.h"
 #include "wrapper/common/interThreadQue.h"
 #include "wrapper/common/ProcessorStateManager.h"
+#include "wrapper/common/SemInfo.h"
+#include "GmpiSdkCommon.h"
+#include "IGuiHost2.h"
 
 namespace SynthEdit2
 {
@@ -24,36 +27,26 @@ namespace SynthEdit2
 namespace wrapper
 {
 
-#if 0 // TODO
 // Manages SEM plugin's controllers.
-class ControllerManager : public gmpi::api::IParameterObserver
+class ControllerManager : /*public gmpi::api::IParameterObserver,*/ public gmpi::api::IControllerHost
 {
 public:
 // TODO: just one:	std::vector< std::pair<int32_t, std::unique_ptr<ControllerHost> > > childPluginControllers;
-	IGuiHost2* patchManager;
+	gmpi::shared_ptr<gmpi::api::IController> controller2_;
 
+	class MpController* patchManager{};
+
+	ControllerManager(MpController* ppatchManager) : patchManager(ppatchManager) {}
     virtual ~ControllerManager(){}
 
-	int32_t setParameter(int32_t parameterHandle, int32_t fieldId, int32_t voice, const void* data, int32_t size) override
-	{
-		int32_t moduleHandle = -1;
-		int32_t moduleParameterId = -1;
-		patchManager->getParameterModuleAndParamId(parameterHandle, &moduleHandle, &moduleParameterId);
+	// Plugin GUI is sending param to host
+	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data) override;
 
-#if 0 // TODO
-		for (auto& m : childPluginControllers)
-		{
-			if (m.first == moduleHandle)
-			{
-				m.second->setPluginParameter(parameterHandle, fieldId, voice, data, size);
-			}
-		}
-#endif
-		return gmpi::MP_OK;
-	}
-
-	void addController(int32_t handle, gmpi_sdk::mp_shared_ptr<gmpi::IMpController> controller)
+	void addController(int32_t handle, gmpi::shared_ptr<gmpi::api::IController> controller)
 	{
+		controller2_ = controller;
+		controller2_->initialize(static_cast<gmpi::api::IControllerHost*>(this), 0);
+
 #if 0 // TODO
 		childPluginControllers.push_back({ handle, std::make_unique<ControllerHost>() });
 		auto chost = childPluginControllers.back().second.get();
@@ -75,10 +68,22 @@ public:
 		*/
 	}
 
-	GMPI_QUERYINTERFACE1(gmpi::MP_IID_PARAMETER_OBSERVER, gmpi::IMpParameterObserver);
+	void initialize()
+	{
+//		if(controller2_)
+	}
+
+	// IControllerHost
+	gmpi::ReturnCode getParameterHandle(int32_t moduleParameterId, int32_t& returnHandle) override;
+
+	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	{
+		GMPI_QUERYINTERFACE(gmpi::api::IControllerHost);
+//		GMPI_QUERYINTERFACE(gmpi::api::IParameterObserver);
+		return gmpi::ReturnCode::NoSupport;
+	}
 	GMPI_REFCOUNT;
 };
-#endif
 
 class MpController;
 
@@ -137,9 +142,11 @@ public:
 
 protected:
 	static const int timerPeriodMs = 35;
+	pluginInfoSem const& info;
 
 private:
-//	ControllerManager semControllers;
+	ControllerManager semControllers;
+
 	// When syncing Preset Browser to a preset from the DAW, inhibit normal preset loading behaviour. Else preset gets loaded twice.
 	bool inhibitProgramChangeParameter = {};
     file_watcher::FileWatcher fileWatcher;
@@ -159,7 +166,6 @@ protected:
 	std::vector< std::unique_ptr<MpParameter> > parameters_;
 	std::map< std::pair<int, int>, int > moduleParameterIndex;		// Module Handle/ParamID to Param Handle.
 	std::map< int, MpParameter* > ParameterHandleIndex;				// Param Handle to Parameter*.
-//	std::vector<gmpi::IMpParameterObserver*> m_guis2;
 	std::vector<gmpi::api::IParameterObserver*> m_guis3;
 	
 //	SE2::IPresenter* presenter_ = nullptr;
@@ -181,14 +187,19 @@ protected:
 
 public:
 
-	MpController() :
-		message_que_dsp_to_ui(UI_MESSAGE_QUE_SIZE2)
+	MpController(pluginInfoSem& pinfo) :
+		message_que_dsp_to_ui(UI_MESSAGE_QUE_SIZE2),
+		info(pinfo),
+		semControllers(this)
 	{
 //		semControllers.patchManager = this;
 //		RegisterGui2(&semControllers);
 	}
     
     ~MpController();
+
+	gmpi::ReturnCode getParameterHandle(int32_t moduleParameterId, int32_t& returnHandle);
+	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data);
 
 	void ScanPresets();
 	void setPreset(DawPreset const* preset);
@@ -202,7 +213,6 @@ public:
 	void Initialize();
 
 	void initSemControllers();
-
 	//int32_t getController(int32_t moduleHandle, gmpi::IMpController ** returnController) override;
 
 	//void setMainPresenter(SE2::IPresenter* presenter) override

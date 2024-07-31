@@ -13,6 +13,8 @@
 #include "FileFinder.h"
 #include "midi_defs.h"
 #include "ListBuilder.h"
+#include "wrapper/common/it_enum_list.h"
+
 #if !defined(SE_USE_JUCE_UI)
 //#include "GuiPatchAutomator3.h"
 #endif
@@ -31,9 +33,25 @@
 #include "../../mfc_emulation.h"
 #endif
 
+extern "C"
+gmpi::ReturnCode MP_GetFactory(void** returnInterface);
+
 using namespace std;
 namespace wrapper
 {
+
+// Plugin GUI is sending param to host
+gmpi::ReturnCode ControllerManager::setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data)
+{
+// nope. wrong direction.	return controller2_->setParameter(parameterHandle, fieldId, voice, size, data);
+	return patchManager->setParameter(parameterHandle, fieldId, voice, size, data);
+}
+
+gmpi::ReturnCode ControllerManager::getParameterHandle(int32_t moduleParameterId, int32_t& returnHandle)
+{
+	return (gmpi::ReturnCode)patchManager->getParameterHandle(moduleParameterId, returnHandle);
+}
+
 
 MpController::~MpController()
 {
@@ -194,6 +212,74 @@ void MpController::Initialize()
 		resourceFolders[GmpiResourceType::Audio] = pluginResourceFolder;
 		resourceFolders[GmpiResourceType::Soundfont] = pluginResourceFolder;
 	}
+
+	// Parameters
+	{
+		int hostParameterIndex = 0;
+		int ParameterHandle = 0;
+
+		for (auto& i : ParameterHandleIndex)
+		{
+			ParameterHandle = (std::max)(ParameterHandle, i.first + 1);
+		}
+
+		for (auto& param : info.parameters)
+		{
+			bool isPrivate =
+				param.is_private ||
+				param.datatype == gmpi::PinDatatype::String ||
+				param.datatype == gmpi::PinDatatype::Blob;
+
+			float pminimum = 0.0f;
+			float pmaximum = 1.0f;
+
+			if (!param.meta_data.empty())
+			{
+				it_enum_list it(Utf8ToWstring(param.meta_data));
+
+				pminimum = it.RangeLo();
+				pmaximum = it.RangeHi();
+			}
+
+			MpParameter_base* seParameter = {};
+			if (isPrivate)
+			{
+				auto param = new MpParameter_private(this);
+				seParameter = param;
+				//					param->isPolyphonic_ = isPolyphonic_;
+			}
+			else
+			{
+				//					assert(ParameterTag >= 0);
+				seParameter = makeNativeParameter(hostParameterIndex++, pminimum > pmaximum);
+			}
+
+			seParameter->hostControl_ = -1; // TODO hostControl;
+			seParameter->minimum = pminimum;
+			seParameter->maximum = pmaximum;
+			seParameter->parameterHandle_ = ParameterHandle;
+			seParameter->datatype_ = param.datatype;
+			seParameter->moduleHandle_ = 0;
+			seParameter->moduleParamId_ = param.id;
+			seParameter->stateful_ = true; // stateful_;
+			seParameter->name_ = Utf8ToWstring(param.name);
+			seParameter->enumList_ = Utf8ToWstring(param.meta_data); // enumList_;
+			seParameter->ignorePc_ = false; // ignorePc != 0;
+
+			// add one patch value
+			seParameter->rawValues_.push_back(ParseToRaw(seParameter->datatype_, param.default_value));
+
+			parameters_.push_back(std::unique_ptr<MpParameter>(seParameter));
+			ParameterHandleIndex.insert(std::make_pair(ParameterHandle, seParameter));
+			moduleParameterIndex.insert(std::make_pair(std::make_pair(seParameter->moduleHandle_, seParameter->moduleParamId_), ParameterHandle));
+
+			// Ensure host queries return correct value.
+			seParameter->upDateImmediateValue();
+
+			++ParameterHandle;
+		}
+	}
+
 #ifndef GMPI_VST3_WRAPPER
 
 	// Ensure we can access SEM Controllers info
@@ -440,9 +526,27 @@ void MpController::Initialize()
 
 void MpController::initSemControllers()
 {
+	// Create Controller object
+	if (!isSemControllersInitialised)
+	{
+		gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
+		auto r = MP_GetFactory(factoryBase.put_void());
+
+		if (auto factory = factoryBase.as<gmpi::api::IPluginFactory>(); factory)
+		{
+			gmpi::shared_ptr<gmpi::api::IUnknown> pluginUnknown;
+			const auto r2 = factory->createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Controller, pluginUnknown.put_void());
+			if (pluginUnknown && r == gmpi::ReturnCode::Ok)
+			{
+				semControllers.addController(0, pluginUnknown.as<gmpi::api::IController>());
+			}
+		}
+	}
+
 #if 0 // TODO
 	if (!isSemControllersInitialised)
 	{
+		semControllers.initialize();
 		//		_RPT0(_CRT_WARN, "ADelayController::initSemControllers\n");
 
 		for (auto& cp : semControllers.childPluginControllers)
@@ -453,6 +557,28 @@ void MpController::initSemControllers()
 		isSemControllersInitialised = true;
 	}
 #endif
+	isSemControllersInitialised = true;
+}
+
+gmpi::ReturnCode MpController::getParameterHandle(int32_t moduleParameterId, int32_t& returnHandle)
+{
+	const int32_t moduleHandle = 0;
+
+	auto it = moduleParameterIndex.find({ moduleHandle, moduleParameterId });
+	if (it == moduleParameterIndex.end())
+	{
+		return gmpi::ReturnCode::Fail;
+	}
+
+	returnHandle = (*it).second;
+
+	return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode MpController::setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data)
+{
+	setParameterValue(RawView((const char*)data, size), parameterHandle, fieldId, voice);
+	return gmpi::ReturnCode::Ok;
 }
 
 #if 0 // TODO
@@ -1308,22 +1434,6 @@ int32_t MpController::getParameterHandle(int32_t moduleHandle, int32_t modulePar
 	}
 
 	return -1;
-}
-
-void MpController::initializeGui(gmpi::IMpParameterObserver* gui, int32_t parameterHandle, gmpi::Field FieldId)
-{
-	auto it = ParameterHandleIndex.find(parameterHandle);
-
-	if (it != ParameterHandleIndex.end())
-	{
-		auto p = (*it).second;
-
-		for (int voice = 0; voice < p->getVoiceCount(); ++voice)
-		{
-			auto raw = p->getValueRaw(FieldId, voice);
-			gui->setParameter(parameterHandle, FieldId, voice, raw.data(), (int32_t)raw.size());
-		}
-	}
 }
 #endif
 

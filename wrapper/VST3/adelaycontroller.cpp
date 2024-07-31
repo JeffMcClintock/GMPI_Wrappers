@@ -105,9 +105,9 @@ void MpParameterVst3::updateProcessor(gmpi::Field fieldId, int32_t voice)
 
 
 VST3Controller::VST3Controller(pluginInfoSem& pinfo) :
-	isInitialised(false)
+	MpController(pinfo)
+	, isInitialised(false)
 	, isConnected(false)
-	, info(pinfo)
 {
 // using tinxml 1?	TiXmlBase::SetCondenseWhiteSpace(false); // ensure text parameters preserve multiple spaces. e.g. "A     B" (else it collapses to "A B")
 
@@ -279,73 +279,6 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 
 		supportedChannels = countPins(info, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) == 0 ? 0 : 16;
 
-		// Parameters
-		{
-			int hostParameterIndex = 0;
-			int ParameterHandle = 0;
-
-			for (auto& i : ParameterHandleIndex)
-			{
-				ParameterHandle = (std::max)(ParameterHandle, i.first + 1);
-			}
-
-			for (auto& param : info.parameters)
-			{
-				bool isPrivate =
-					param.is_private ||
-					param.datatype == gmpi::PinDatatype::String ||
-					param.datatype == gmpi::PinDatatype::Blob;
-
-				float pminimum = 0.0f;
-				float pmaximum = 1.0f;
-
-				if (!param.meta_data.empty())
-				{
-					it_enum_list it(Utf8ToWstring(param.meta_data));
-
-					pminimum = it.RangeLo();
-					pmaximum = it.RangeHi();
-				}
-
-				MpParameter_base* seParameter = {};
-				if (isPrivate)
-				{
-					auto param = new MpParameter_private(this);
-					seParameter = param;
-//					param->isPolyphonic_ = isPolyphonic_;
-				}
-				else
-				{
-//					assert(ParameterTag >= 0);
-					seParameter = makeNativeParameter(hostParameterIndex++, pminimum > pmaximum);
-				}
-
-				seParameter->hostControl_ = -1; // TODO hostControl;
-				seParameter->minimum = pminimum;
-				seParameter->maximum = pmaximum;
-				seParameter->parameterHandle_ = ParameterHandle;
-				seParameter->datatype_ = param.datatype;
-				seParameter->moduleHandle_ = 0;
-				seParameter->moduleParamId_ = param.id;
-				seParameter->stateful_ = true; // stateful_;
-				seParameter->name_ = convert.from_bytes(param.name);
-				seParameter->enumList_ = convert.from_bytes(param.meta_data); // enumList_;
-				seParameter->ignorePc_ = false; // ignorePc != 0;
-
-				// add one patch value
-				seParameter->rawValues_.push_back(ParseToRaw(seParameter->datatype_, param.default_value));
-
-				parameters_.push_back(std::unique_ptr<MpParameter>(seParameter));
-				ParameterHandleIndex.insert(std::make_pair(ParameterHandle, seParameter));
-				moduleParameterIndex.insert(std::make_pair(std::make_pair(seParameter->moduleHandle_, seParameter->moduleParamId_), ParameterHandle));
-
-				// Ensure host queries return correct value.
-				seParameter->upDateImmediateValue();
-
-				++ParameterHandle;
-			}
-		}
-
 //		const auto supportedChannels = info.midiInputCount ? 16 : 0;
 		const auto supportAllCC = true; // info.vst3Emulate16ChanCcs;
 
@@ -386,7 +319,7 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 	// Can only init controllers after both VST controller initialised AND controller is connected to processor.
 	// So VST2 wrapper aeffect pointer makes it to Processor.
 	if (isConnected && isInitialised)
-	initSemControllers();
+		initSemControllers();
 
 	startTimer(timerPeriodMs);
 
@@ -535,6 +468,7 @@ IPlugView* PLUGIN_API VST3Controller::createView (FIDString name)
 #endif
 			}
 
+// todo init all params and pins			initializeGui(&helper)
 
 
 #if 0 // TODO

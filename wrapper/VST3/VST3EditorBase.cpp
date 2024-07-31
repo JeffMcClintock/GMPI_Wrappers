@@ -16,13 +16,6 @@ gmpi::ReturnCode ParameterHelper::setParameter(int32_t parameterHandle, gmpi::Fi
     return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode ParameterHelper::queryInterface(const gmpi::api::Guid* iid, void** returnInterface)
-{
-    GMPI_QUERYINTERFACE(gmpi::api::IEditorHost);
-    GMPI_QUERYINTERFACE(gmpi::api::IParameterObserver);
-	return gmpi::ReturnCode::NoSupport;
-}
-
 // GMPI Editor sending a parameter update back to the wrapper.
 gmpi::ReturnCode ParameterHelper::setPin(int32_t pinId, int32_t voice, int32_t size, const void* data)
 {
@@ -34,6 +27,36 @@ int32_t ParameterHelper::getHandle()
 {
     return 0;
 }
+#if 0
+
+gmpi::ReturnCode ParameterHelper::setCapture()
+{
+	return gmpi::ReturnCode::Ok;
+}
+gmpi::ReturnCode ParameterHelper::getCapture(bool& returnValue)
+{
+	return gmpi::ReturnCode::Ok;
+}
+gmpi::ReturnCode ParameterHelper::releaseCapture()
+{
+	return gmpi::ReturnCode::Ok;
+}
+gmpi::ReturnCode ParameterHelper::getFocus()
+{
+	return gmpi::ReturnCode::NoSupport;
+}
+gmpi::ReturnCode ParameterHelper::releaseFocus()
+{
+	return gmpi::ReturnCode::NoSupport;
+}
+gmpi::ReturnCode ParameterHelper::getDrawingFactory(gmpi::api::IUnknown** returnFactory)
+{
+	return gmpi::ReturnCode::Ok;
+}
+void ParameterHelper::invalidateRect(const gmpi::drawing::Rect* invalidRect)
+{
+}
+#endif
 
 // TODO !!! pass IUnknown to constructor, then QueryInterface for IDrawingClient
 VST3EditorBase::VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
@@ -44,21 +67,28 @@ VST3EditorBase::VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi:
 	, helper(this)
 	, info(info)
 {
-	pluginGraphics_GMPI = peditor.as<gmpi::api::IDrawingClient>();
+	pluginGraphics_GMPI = pluginParameters_GMPI.as<gmpi::api::IDrawingClient>();
+}
+
+void VST3EditorBase::initPlugin(gmpi::api::IUnknown* host)
+{
+	controller->RegisterGui2(&helper);
 
 	if (pluginParameters_GMPI)
 	{
-		pluginParameters_GMPI->setHost((gmpi::api::IUnknown*) static_cast<gmpi::api::IEditorHost*>(&helper));
+		pluginParameters_GMPI->setHost(host);
+		pluginParameters_GMPI->initialize();
 	}
 
-	controller->RegisterGui2(&helper);
-#ifdef _WIN32
-	if (peditor)
-		peditor->setHost(static_cast<gmpi::api::IEditorHost*>(&helper));
-#endif
-
-	if (pluginParameters_GMPI)
-		pluginParameters_GMPI->initialize();
+	for (auto& p : info.guiPins)
+	{
+		if (p.parameterId != -1)
+		{
+			int32_t paramHandle{ -1 };
+			controller->getParameterHandle(p.parameterId, paramHandle);
+			controller->initializeGui(&helper, paramHandle, p.parameterFieldType);
+		}
+	}
 }
 
 VST3EditorBase::~VST3EditorBase()
@@ -80,6 +110,7 @@ void VST3EditorBase::onParameterUpdate(int32_t parameterHandle, gmpi::Field fiel
 		if (pin.parameterId == moduleParameterId && pin.parameterFieldType == fieldId)
 		{
 			pluginParameters_GMPI->setPin(pin.id, voice, size, data);
+			pluginParameters_GMPI->notifyPin(pin.id, voice);
 			break;
 		}
 	}
