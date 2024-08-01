@@ -2,6 +2,7 @@
 
 #ifndef _WIN32
 #include <CoreFoundation/CoreFoundation.h>
+#include "pluginterfaces/base/fplatform.h"
 
 bool bundleEntry_internal (CFBundleRef ref);
 bool bundleExit_internal (void);
