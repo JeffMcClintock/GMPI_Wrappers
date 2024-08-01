@@ -21,7 +21,7 @@
 
 #if defined( _WIN32 )
 extern HINSTANCE ghInst;
-#else
+#elif __APPLE__
 	#include <dlfcn.h>
 	#include <CoreFoundation/CoreFoundation.h>
 
