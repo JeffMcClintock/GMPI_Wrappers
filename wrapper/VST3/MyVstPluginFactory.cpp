@@ -185,8 +185,9 @@ void textIdtoUuid(const std::string& id, bool isController, Steinberg::TUID& ret
 tresult MyVstPluginFactory::getClassInfo (int32 index, PClassInfo* info)
 {
 	initialize();
+	const auto numClasses = plugins.size() * 2;
 
-	if (index < 0 || index >= plugins.size())
+	if (index < 0 || index >= numClasses)
 	{
 		return kInvalidArgument;
 	}
@@ -225,7 +226,9 @@ tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
 {
 	initialize();
 
-	if (index < 0 || index >= plugins.size())
+	const auto numClasses = plugins.size() * 2;
+
+	if (index < 0 || index >= numClasses)
 	{
 		return kInvalidArgument;
 	}
@@ -270,18 +273,6 @@ tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
 	return kResultOk;
 }
 
-//int32_t MyVstPluginFactory::getVst2Id(int32_t index) // not used for historic reasons. 32-bit comptible.
-//{
-//	initialize();
-//
-//	if (index != 0)
-//	{
-//		return kInvalidArgument;
-//	}
-//
-//	return backwardCompatible4charId;
-//}
-
 int32_t MyVstPluginFactory::getVst2Id64(int32_t pluginIndex) // generated from hash of GUID. Not compatible w 32-bit VSTs.
 {
 	initialize();
@@ -317,7 +308,9 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 {
 	initialize();
  
-	if( index < 0 || index >= plugins.size() )
+	const auto numClasses = plugins.size() * 2;
+
+	if (index < 0 || index >= numClasses)
 	{
 		return kInvalidArgument;
 	}
@@ -372,18 +365,6 @@ tresult MyVstPluginFactory::createInstance (FIDString cid, FIDString iid, void**
 {
 	FUID classId = (FUID) *(TUID*)cid;
 	FUID interfaceId = (FUID) *(TUID*)iid;
-
-	/* testing
-	{
-		GetApp()->SeMessageBox( L"Yo", L"Yo", 0);
-		char txt[65];
-		classId.toString(txt);
-		char txt2[65];
-		interfaceId.toString(txt2);
-
-		_RPT2(_CRT_WARN, "MyVstPluginFactory::createInstance(%s,%s)", txt, txt2);
-	}
-	*/
 
 	initialize();
 
