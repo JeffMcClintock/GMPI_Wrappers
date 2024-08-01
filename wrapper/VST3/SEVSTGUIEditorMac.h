@@ -7,6 +7,9 @@
 #include "helpers/GraphicsRedrawClient.h"
 #include "VST3EditorBase.h"
 
+namespace wrapper
+{
+
 class SEVSTGUIEditorMac : public VST3EditorBase //Steinberg::FObject, public Steinberg::IPlugView
 {
     void* nsView = {};
@@ -32,3 +35,4 @@ public:
 	Steinberg::tresult PLUGIN_API canResize () SMTG_OVERRIDE { return Steinberg::kResultFalse; }
 	Steinberg::tresult PLUGIN_API checkSizeConstraint (Steinberg::ViewRect* /*rect*/) SMTG_OVERRIDE	{return Steinberg::kResultFalse;}
 };
+}

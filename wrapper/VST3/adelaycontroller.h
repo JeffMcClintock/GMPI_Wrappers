@@ -61,7 +61,7 @@ class VST3Controller :
 	static const int numMidiControllers = 130; // usual 128 + Bender.
 	bool isInitialised;
 	bool isConnected;
-	std::wstring_convert<std::codecvt_utf8<wchar_t>> convert;
+//	std::wstring_convert<std::codecvt_utf8<wchar_t>> convert;
 	std::map<int, MpParameterVst3* > tagToParameter;	// DAW parameter Index to parameter
 	std::vector<MpParameterVst3* > vst3Parameters;      // flat list.
 
