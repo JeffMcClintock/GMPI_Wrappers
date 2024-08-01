@@ -9,7 +9,7 @@ void onCloseNativeView(void* ptr);
 namespace wrapper
 {
 
-SEVSTGUIEditorMac::SEVSTGUIEditorMac(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, Steinberg::Vst::VST3Controller* pcontroller, int pwidth, int pheight) :
+SEVSTGUIEditorMac::SEVSTGUIEditorMac(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, VST3Controller* pcontroller, int pwidth, int pheight) :
     VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
 }
