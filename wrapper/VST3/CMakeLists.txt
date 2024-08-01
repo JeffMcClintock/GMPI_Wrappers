@@ -212,18 +212,6 @@ set(VST_SDK TRUE) # used for Base module which provides only a subset of Base fo
 add_subdirectory(${VST3_SDK}/pluginterfaces ${CMAKE_CURRENT_BINARY_DIR}/pluginterfaces)
 add_subdirectory(${VST3_SDK}/base           ${CMAKE_CURRENT_BINARY_DIR}/base)
 
-# this should be disabled on CI
-#if(SE_LOCAL_BUILD)
-#if(CMAKE_HOST_WIN32)
-#add_custom_command(TARGET ${PROJECT_NAME}
-#    # Run after all other rules within the target have been executed
-#    POST_BUILD
-#    COMMAND copy "$(OutDir)$(TargetName)$(TargetExt)" "C:\\Program Files\\Common Files\\VST3\\SynthEdit_VST3.vst3\\Contents\\x86_64-win"
-#    COMMENT "Copy to plugin folder"
-#    VERBATIM
-#)
-#endif()
-#endif()
 SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES FOLDER "wrappers")
 SET_TARGET_PROPERTIES(base PROPERTIES FOLDER "wrappers")
 SET_TARGET_PROPERTIES(pluginterfaces PROPERTIES FOLDER "wrappers")
