@@ -12,7 +12,7 @@
 #include <dlfcn.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include "unicode_conversion.h"
-using namespace JmUnicodeConversions;
+using namespace wrapper::JmUnicodeConversions;
 #endif
 
 namespace wrapper
