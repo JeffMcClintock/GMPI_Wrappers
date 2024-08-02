@@ -8,7 +8,8 @@
 #define NOMINMAX
 #endif
 #include "windows.h"
-#else
+#endif
+#if __APPLE__
 #include <dlfcn.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include "unicode_conversion.h"
