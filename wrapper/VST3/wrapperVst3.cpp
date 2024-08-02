@@ -1,10 +1,15 @@
 #include "MyVstPluginFactory.h"
 
-#ifndef _WIN32
+#if __APPLE__
+// inlude the bare-minimum from the VST3 SDK
+// stuff that must be in the main executable, not a lib.
+
+#include "public.sdk\source\main\macmain.cpp"
+
+#if 0
 #include <CoreFoundation/CoreFoundation.h>
 #include "pluginterfaces/base/fplatform.h"
 
-extern
 bool bundleEntry_internal (CFBundleRef ref);
 bool bundleExit_internal (void);
 
@@ -22,6 +27,7 @@ SMTG_EXPORT_SYMBOL bool bundleExit (void)
 }
 
 }
+#endif
 #endif
 
 // need to export the factory symbol from the main plugin DLL, because the VST3_Wrapper static library can't export symbols on mac.

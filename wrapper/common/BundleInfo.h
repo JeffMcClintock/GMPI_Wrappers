@@ -18,7 +18,7 @@ BundleInfo::instance()->getResource("whatever");
 #include <vector>
 #include "ElatencyContraintType.h"
 
-#if !defined( _WIN32 )
+#if __APPLE__
 #include <AudioUnit/AudioUnit.h>
 #endif
 
