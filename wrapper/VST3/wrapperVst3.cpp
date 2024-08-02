@@ -4,6 +4,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include "pluginterfaces/base/fplatform.h"
 
+extern
 bool bundleEntry_internal (CFBundleRef ref);
 bool bundleExit_internal (void);
 
