@@ -3,12 +3,12 @@
 #include <assert.h>
 #include <atomic>
 #include <new>
+#include <limits>
 
 #pragma warning(disable:4324) // structure was padded due to __declspec(align())
 
 namespace wrapper
 {
-
 
 class IWriteableQue
 {

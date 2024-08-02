@@ -10,6 +10,7 @@
 #include <mutex>
 #include <atomic>
 #include <array>
+#include <condition_variable>
 #include "GmpiMidi.h"
 //#include "se_types.h"
 #include "wrapper/common/lock_free_fifo.h"

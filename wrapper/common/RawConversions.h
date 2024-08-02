@@ -226,6 +226,8 @@ inline int getDataTypeSize(gmpi::PinDatatype datatype)
 	}
 	break;
 
+	default:
+		break;
 	}
 
 	assert(false); // TODO

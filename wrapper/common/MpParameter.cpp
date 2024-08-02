@@ -442,6 +442,8 @@ double MpParameter_base::getValueReal() const
 	}
 	break;
 
+	default:
+		break;
 	}
 
 	return 0.0f;
@@ -592,6 +594,8 @@ double MpParameter_base::normalisedToReal(double normalized) const
 	}
 	break;
 
+	default:
+		break;
 	}
 
 	return 0.0f;
@@ -660,7 +664,10 @@ double MpParameter_base::RealToNormalized(double real) const
             assert(false); // should never happen (enums use INT)
         }
         break;
-    }
+
+		default:
+			break;
+	}
     
     return 0.0f;
 }
