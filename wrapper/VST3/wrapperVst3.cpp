@@ -4,7 +4,7 @@
 // inlude the bare-minimum from the VST3 SDK
 // stuff that must be in the main executable, not a lib.
 
-#include "public.sdk\source\main\macmain.cpp"
+//#include "public.sdk\source\main\macmain.cpp"
 
 #if 0
 #include <CoreFoundation/CoreFoundation.h>

@@ -63,7 +63,7 @@ public:
     
     static BundleInfo* instance();
     
-#if !defined( _WIN32 )
+#if __APPLE__
 	CFBundleRef GetBundle();
     void setVendorName(const char* name)
     {
