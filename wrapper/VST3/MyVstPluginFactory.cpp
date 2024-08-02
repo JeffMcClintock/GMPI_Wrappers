@@ -91,6 +91,18 @@ void ReleaseVSTGUIBundleRef ()
  */
 #endif
 
+#if __APPPLE__
+ // divert these functions from main executable to VST3 Wrapper lib functions
+bool bundleEntry_internal(CFBundleRef ref)
+{
+	return bundleEntry(ref);
+}
+bool bundleExit_internal(void)
+{
+	return bundleExit();
+}
+#endif
+
 using namespace Steinberg;
 using namespace Steinberg::Vst;
 
