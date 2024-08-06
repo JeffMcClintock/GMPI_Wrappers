@@ -1,3 +1,4 @@
+#include <assert.h>
 #include "dynamic_linking.h"
 
 // Provide a cross-platform loading of dlls.
@@ -8,12 +9,13 @@
 #define NOMINMAX
 #endif
 #include "windows.h"
+#else
+#include "unicode_conversion.h"
+using namespace wrapper::JmUnicodeConversions;
 #endif
 #if __APPLE__
 #include <dlfcn.h>
 #include <CoreFoundation/CoreFoundation.h>
-#include "unicode_conversion.h"
-using namespace wrapper::JmUnicodeConversions;
 #endif
 
 namespace wrapper
