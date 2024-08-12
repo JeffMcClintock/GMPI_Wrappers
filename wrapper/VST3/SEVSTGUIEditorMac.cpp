@@ -1,10 +1,10 @@
 #include "SEVSTGUIEditorMac.h"
 #include "adelaycontroller.h"
 
-// without including objective-C headers, we need to create an SynthEditCocoaView (NSView).
+// without including objective-C headers, we need to create an CocoaView (NSView).
 // forward declare function here to return the view, using void* as return type.
 void* createNativeView(void* parent, class IUnknown* parameterHost, class IUnknown* controller, int width, int height);
-void onCloseNativeView(void* ptr);
+void gmpi_onCloseNativeView(void* ptr);
 void resizeNativeView(void* view, int width, int height);
 
 namespace wrapper
@@ -26,7 +26,7 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::attached (void* parent, Steinbe
 
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::removed ()
 {
-    onCloseNativeView(nsView);
+    gmpi_onCloseNativeView(nsView);
     
 	return Steinberg::kResultTrue;
 }
