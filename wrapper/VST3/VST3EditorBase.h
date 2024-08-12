@@ -68,7 +68,7 @@ public:
 	VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight);
 	~VST3EditorBase();
 
-	void initPlugin(gmpi::api::IUnknown* host);
+    void initPlugin();//gmpi::api::IUnknown* host);
 	void onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const void* data, int32_t size);
 #if 0
 	//---from IPlugView-------
