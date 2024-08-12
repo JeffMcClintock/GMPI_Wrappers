@@ -70,15 +70,16 @@ VST3EditorBase::VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi:
 	pluginGraphics_GMPI = pluginParameters_GMPI.as<gmpi::api::IDrawingClient>();
 }
 
-void VST3EditorBase::initPlugin(gmpi::api::IUnknown* host)
+void VST3EditorBase::initPlugin(/*gmpi::api::IUnknown* host*/)
 {
 	controller->RegisterGui2(&helper);
-
+/*move
 	if (pluginParameters_GMPI)
 	{
 		pluginParameters_GMPI->setHost(host);
 		pluginParameters_GMPI->initialize();
 	}
+ */
 
 	for (auto& p : info.guiPins)
 	{
