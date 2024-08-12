@@ -36,4 +36,44 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::getSize (Steinberg::ViewRect* s
 	return Steinberg::kResultTrue;
 }
 
+Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::onSize(Steinberg::ViewRect* newSize)
+{
+    drawingframe.reSize(newSize->left, newSize->top, newSize->right, newSize->bottom);
+    return Steinberg::kResultTrue;
+}
+
+Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::canResize()
+{
+    if (pluginGraphics_GMPI)
+    {
+        const gmpi::drawing::Size availableSize1{ 0.0f, 0.0f };
+        const gmpi::drawing::Size availableSize2{ 10000.0f, 10000.0f };
+        gmpi::drawing::Size desiredSize1{ availableSize1 };
+        gmpi::drawing::Size desiredSize2{ availableSize1 };
+        pluginGraphics_GMPI->measure(&availableSize1, &desiredSize1);
+        pluginGraphics_GMPI->measure(&availableSize2, &desiredSize2);
+
+        if (desiredSize1.width != desiredSize2.width || desiredSize1.height != desiredSize2.height)
+        {
+            return Steinberg::kResultTrue;
+        }
+    }
+    return Steinberg::kResultFalse;
+}
+
+Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::checkSizeConstraint(Steinberg::ViewRect* rect)
+{
+    if (pluginGraphics_GMPI)
+    {
+        const gmpi::drawing::Size availableSize{ static_cast<float>(rect->right - rect->left), static_cast<float>(rect->bottom - rect->top) };
+        gmpi::drawing::Size desiredSize{ availableSize };
+        pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
+
+        if (availableSize.width == desiredSize.width && availableSize.height == desiredSize.height)
+        {
+            return Steinberg::kResultTrue;
+        }
+    }
+    return Steinberg::kResultFalse;
+}
 }
