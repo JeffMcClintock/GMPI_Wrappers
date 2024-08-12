@@ -10,7 +10,14 @@ SEVSTGUIEditorWin::SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr
     // 'helper' provides hosting for parameters, 'drawingframe' for graphics hosting.
     // so when plugin queries the drawing from for 'IParameterObserver' it gets redirected to 'helper'.
     drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&helper));
-    initPlugin(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
+
+    if (pluginParameters_GMPI)
+    {
+        pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
+        pluginParameters_GMPI->initialize();
+    }
+
+    initPlugin();// static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
 }
 
 SEVSTGUIEditorWin::~SEVSTGUIEditorWin()
