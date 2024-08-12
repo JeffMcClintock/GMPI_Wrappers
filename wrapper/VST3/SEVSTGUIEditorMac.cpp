@@ -5,6 +5,7 @@
 // forward declare function here to return the view, using void* as return type.
 void* createNativeView(void* parent, class IUnknown* parameterHost, class IUnknown* controller, int width, int height);
 void onCloseNativeView(void* ptr);
+void resizeNativeView(void* view, int width, int height);
 
 namespace wrapper
 {
@@ -38,7 +39,8 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::getSize (Steinberg::ViewRect* s
 
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::onSize(Steinberg::ViewRect* newSize)
 {
-    drawingframe.reSize(newSize->left, newSize->top, newSize->right, newSize->bottom);
+    //    drawingframe.reSize(newSize->left, newSize->top, newSize->right, newSize->bottom);
+    resizeNativeView(nsView, newSize->right - newSize->left, newSize->bottom - newSize->top);
     return Steinberg::kResultTrue;
 }
 
