@@ -1,7 +1,7 @@
 #include "./ProcessorStateManager.h"
 #include "conversion.h"
 #include "RawConversions.h"
-#include "xp_simd.h"
+
 #include "PresetReader.h"
 #include "my_msg_que_input_stream.h"
 #include "my_msg_que_output_stream.h"
@@ -51,13 +51,13 @@ std::string normalizedToRaw(gmpi::PinDatatype datatype, float fnormalized, doubl
 	case gmpi::PinDatatype::Int32:
 	{
 		// -ves fail			newRawValue = ToRaw4((int32_t)(0.5 + realWorld));
-		newRawValue = ToRaw4((int32_t)FastRealToIntFloor(0.5 + realWorld));
+		newRawValue = ToRaw4((int32_t)static_cast<int32_t>(0.5 + realWorld));
 		break;
 	}
 	case gmpi::PinDatatype::Int64:
 	{
 		// -ves fail			newRawValue = ToRaw4((int64_t)(0.5 + realWorld));
-		newRawValue = ToRaw4((int64_t)FastRealToIntFloor(0.5 + realWorld));
+		newRawValue = ToRaw4((int64_t)static_cast<int32_t>(0.5 + realWorld));
 		break;
 	}
 	case gmpi::PinDatatype::Bool:

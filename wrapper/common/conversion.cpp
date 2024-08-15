@@ -14,7 +14,7 @@
 #include "it_enum_list.h"
 #include "midi_defs.h"
 #include "IPluginGui.h"
-#include "xp_simd.h"
+
 #include "se_datatypes.h" // kill this
 
 // XCODE can't handle this yet.
@@ -775,7 +775,7 @@ int normalised_to_enum( const std::wstring& p_enum_list, float p_normalised )
 	}
 
 	const int maxindex = number_of_values - 1;
-	int enumIndex = FastRealToIntFloor(0.5 + p_normalised * static_cast<float>(maxindex));
+	int enumIndex = static_cast<int32_t>(0.5 + p_normalised * static_cast<float>(maxindex));
 
 	if(enumIndex >= maxindex)
 		enumIndex = maxindex;
