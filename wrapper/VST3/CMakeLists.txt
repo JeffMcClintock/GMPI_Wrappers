@@ -67,6 +67,8 @@ ${ADAPTORS_COMMON_FOLDER}/FileWatcher.cpp
 ${ADAPTORS_COMMON_FOLDER}/it_enum_list.h
 ${ADAPTORS_COMMON_FOLDER}/it_enum_list.cpp
 
+${gmpi_ui_folder}/backends/DrawingFrameCommon.h
+${gmpi_ui_folder}/backends/DrawingFrameCommon.cpp
 ${gmpi_ui_folder}/backends/DrawingFrameWin.h
 ${gmpi_ui_folder}/backends/DrawingFrameWin.cpp
 ${gmpi_ui_folder}/backends/DirectXGfx.h
