@@ -211,7 +211,6 @@ void DawPreset::initFromXML(const std::map<int32_t, paramInfo>& parametersInfo, 
 		//const int voiceId = 0;
 
 		const char* temp{};
-		//presetXmlElement->QueryStringAttribute("category", &category);
 		if (tinyxml2::XML_SUCCESS != presetXmlElement->QueryStringAttribute("category", &temp))
 		{
 			category = temp;
