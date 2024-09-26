@@ -4,7 +4,7 @@
 #include "base/source/fobject.h"
 #include "GmpiSdkCommon.h"
 #include "GmpiApiEditor.h"
-#include "helpers/GraphicsRedrawClient.h"
+//#include "helpers/GraphicsRedrawClient.h"
 #include "VST3EditorBase.h"
 
 namespace wrapper
