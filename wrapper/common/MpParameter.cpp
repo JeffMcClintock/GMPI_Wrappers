@@ -82,13 +82,14 @@ bool MpParameter_base::setParameterRaw(gmpi::Field paramField, int32_t size, con
 		case gmpi::PinDatatype::Int32:
 		{
 // -ves fail			newRawValue = ToRaw4((int32_t)(0.5 + realWorld));
-			newRawValue = ToRaw4((int32_t) static_cast<int32_t>(0.5 + realWorld));
+			//newRawValue = ToRaw4((int32_t) static_cast<int32_t>(0.5 + realWorld));
+			newRawValue = ToRaw4(static_cast<int32_t>(round(realWorld)));
 			break;
 		}
 		case gmpi::PinDatatype::Int64:
 		{
 			// -ves fail			newRawValue = ToRaw4((int64_t)(0.5 + realWorld));
-			newRawValue = ToRaw4((int64_t)static_cast<int32_t>(0.5 + realWorld));
+			newRawValue = ToRaw4(static_cast<int64_t>(round(realWorld)));
 			break;
 		}
 		case gmpi::PinDatatype::Bool:
@@ -515,7 +516,7 @@ std::wstring MpParameter_base::normalisedToString(double normalized) const
 		it_enum_list it(enumList_);
 
 		const int maxindex = it.size() - 1;
-		int enumIndex = static_cast<int32_t>(0.5 + normalized * maxindex);
+		int enumIndex = static_cast<int>(roundf(normalized * maxindex));
 		enumIndex = (std::min)(enumIndex, maxindex);
 
 		if (it.FindIndex(enumIndex))
@@ -611,7 +612,7 @@ double MpParameter_base::RealToNormalized(double real) const
 			if (!enumList_.empty())
 			{
 				it_enum_list it(enumList_);
-				const int i = static_cast<int32_t>(0.5 + real);
+				const int i = static_cast<int>(round(real));
                 const int maxindex = it.size() - 1;
                 if(maxindex < 1)
                 {

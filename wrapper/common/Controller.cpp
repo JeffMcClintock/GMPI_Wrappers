@@ -14,6 +14,7 @@
 #include "midi_defs.h"
 #include "ListBuilder.h"
 #include "wrapper/common/it_enum_list.h"
+#include "../../modules/shared/string_utilities.h"
 
 #if !defined(SE_USE_JUCE_UI)
 //#include "GuiPatchAutomator3.h"
@@ -26,7 +27,6 @@
 #if 0
 #include "../shared/unicode_conversion.h"
 #include "../../UgDatabase.h"
-#include "../../modules/shared/string_utilities.h"
 #include "../shared/FileWatcher.h"
 #include "PresetReader.h"
 #include "./ProcessorStateManager.h"
@@ -1713,16 +1713,14 @@ std::unique_ptr<const DawPreset> MpController::getPreset(std::string presetNameO
 			const auto raw = p->getValueRaw(gmpi::Field::Value, voice);
 			values.rawValues_.push_back({ (char* const)raw.data(), raw.size() });
 
-#if 0
-	// MIDI learn.
-			if (parameter->MidiAutomation != -1)
+			/* TODO
+			// MIDI learn.
+			if (p->MidiAutomation != -1)
 			{
-				paramElement->SetAttribute("MIDI", parameter->MidiAutomation);
-
-				if (!parameter->MidiAutomationSysex.empty())
-					paramElement->SetAttribute("MIDI_SYSEX", WStringToUtf8(parameter->MidiAutomationSysex));
+				values.MidiAutomation = p->MidiAutomation;			// "MIDI"
+				values.MidiAutomationSysex = p->MidiAutomationSysex;// "MIDI_SYSEX"
 			}
-#endif
+			*/
 		}
 	}
 
@@ -1730,6 +1728,8 @@ std::unique_ptr<const DawPreset> MpController::getPreset(std::string presetNameO
 	{
 		preset->name = presetNameOverride;
 	}
+	
+	preset->name = SanitizeFileName(preset->name);
 
 #if 0 // ??
 	{

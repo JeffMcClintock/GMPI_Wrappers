@@ -900,19 +900,6 @@ std::wstring Utf8ToWstring( char const* p_string )
 	return {};
 }
 
-#if defined( SE_SUPPORT_MFC )
-std::wstring CStringToWstring(const CString& s)
-{
-	std::wstring temp(s.GetString(), (size_t) s.GetLength());
-	return temp;
-}
-
-CString WstringToCString(std::wstring s)
-{
-	return CString( s.c_str() );
-}
-#endif
-
 void reverse(void* p_ptr,int count )
 {
 	int32_t* p_id = (int32_t*) p_ptr;
@@ -1138,42 +1125,6 @@ void XmlSplitString(const char* pText, std::vector<std::string>& returnValue)
 		}
 	}
 }
-
-
-#if defined( SE_SUPPORT_MFC )
-
-// serialise the easy way by converting to std::wstring
-CArchive& AFXAPI operator>>(CArchive& ar, std::wstring& pOb)
-{
-	CString temp;
-	ar >> temp;
-	pOb = CStringToWstring(temp);
-	return ar;
-}
-
-CArchive& AFXAPI operator<<(CArchive& ar, std::wstring& pOb)
-{
-	ar << CString( pOb.c_str() );
-	return ar;
-}
-
-CArchive& AFXAPI operator>>(CArchive& ar, std::string& pOb)
-{
-	int size;
-	ar >> size;
-	pOb.resize(size);
-	ar.Read( (void*) pOb.data(), size );
-	return ar;
-}
-
-CArchive& AFXAPI operator<<(CArchive& ar, std::string& pOb)
-{
-	ar << (int) pOb.size();
-	ar.Write( pOb.data(), pOb.size() );
-	return ar;
-}
-
-#endif
 
 std::string WStringToUtf8(const std::wstring& p_cstring )
 {

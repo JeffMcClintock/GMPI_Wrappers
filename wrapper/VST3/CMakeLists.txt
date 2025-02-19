@@ -4,7 +4,7 @@ include(FetchContent)
 
 project(VST3_Wrapper)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 add_definitions(-D_UNICODE)
 add_definitions(-DSE_TARGET_PLUGIN)

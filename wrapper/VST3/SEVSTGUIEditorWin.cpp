@@ -29,7 +29,7 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinbe
 {
     if (pluginGraphics_GMPI)
     {
-        drawingframe.AddView(/*static_cast<gmpi::api::IParameterObserver*>(&helper),*/ pluginGraphics_GMPI.get());
+        drawingframe.attachClient(pluginGraphics_GMPI.get());
 
         const gmpi::drawing::SizeL overrideSize{ width, height };
         drawingframe.open(parent, &overrideSize);

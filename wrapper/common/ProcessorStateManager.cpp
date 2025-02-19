@@ -51,13 +51,13 @@ std::string normalizedToRaw(gmpi::PinDatatype datatype, float fnormalized, doubl
 	case gmpi::PinDatatype::Int32:
 	{
 		// -ves fail			newRawValue = ToRaw4((int32_t)(0.5 + realWorld));
-		newRawValue = ToRaw4((int32_t)static_cast<int32_t>(0.5 + realWorld));
+		newRawValue = ToRaw4(static_cast<int32_t>(round(realWorld)));
 		break;
 	}
 	case gmpi::PinDatatype::Int64:
 	{
 		// -ves fail			newRawValue = ToRaw4((int64_t)(0.5 + realWorld));
-		newRawValue = ToRaw4((int64_t)static_cast<int32_t>(0.5 + realWorld));
+		newRawValue = ToRaw4(static_cast<int64_t>(round(realWorld)));
 		break;
 	}
 	case gmpi::PinDatatype::Bool:
@@ -306,13 +306,6 @@ void DawPreset::initFromXML(const std::map<int32_t, paramInfo>& parametersInfo, 
 				[values, info](int /*voiceId*/, int /*preset*/, const char* xmlvalue) mutable
 				{
 					values.rawValues_.push_back(ParseToRaw(info.dataType, xmlvalue));
-					//						const auto raw = ParseToRaw(parameter.dataType, xmlvalue);
-					//						if (parameter->setParameterRaw(gmpi::Field::Value, (int32_t)raw.size(), raw.data(), voiceId))
-					{
-						// updated cached value.
-//							parameter->upDateImmediateValue();
-//							parameter->updateProcessor(gmpi::Field::Value, voiceId);
-					}
 				}
 			);
 		}

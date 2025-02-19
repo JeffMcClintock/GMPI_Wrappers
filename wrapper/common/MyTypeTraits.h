@@ -71,17 +71,6 @@ public:
 	// convert this type to UTF8 string.
 	static std::string toXML( const T& value );
 
-#if defined( SE_SUPPORT_MFC )
-	static void MfcArchiveWrite( class CArchive& ar, T& value )
-	{
-		ar << value;
-	};
-	static void MfcArchiveRead( class CArchive& ar, T& value )
-	{
-		ar >> value;
-	};
-#endif
-
 	enum { IsVariableLengthType = VariableLengthStorageTraits<T>::result };
 	static const int FixedTypeSize = sizeof(T);
 	static const int DataType = SynthEditDatatypeTrait<T>::result;
@@ -136,27 +125,4 @@ template<>
 std::string MyTypeTraits<bool>::toXML( const bool& value );
 template<>
 std::string MyTypeTraits<double>::toXML( const double& value );
-
-
-#if defined( SE_SUPPORT_MFC )
-
-template<>
-void MyTypeTraits<gmpi::Blob>::MfcArchiveWrite( class CArchive& ar, gmpi::Blob& value )
-{
-	ar << (int) value.getSize();
-	ar.Write( value.getData(), value.getSize() );
-}
-
-template<>
-void MyTypeTraits<gmpi::Blob>::MfcArchiveRead( class CArchive& ar, gmpi::Blob& value )
-{
-	int size;
-	ar >> size;
-	unsigned char* buff = new unsigned char[size];
-	ar.Read( buff, size );
-	value.setValueRaw( size, buff );
-	delete [] buff;
-}
-
-#endif
 }
