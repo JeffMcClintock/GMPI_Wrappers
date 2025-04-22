@@ -14,7 +14,7 @@
 #include "midi_defs.h"
 #include "ListBuilder.h"
 #include "wrapper/common/it_enum_list.h"
-#include "../../modules/shared/string_utilities.h"
+#include "wrapper/common/string_utilities.h"
 
 #if !defined(SE_USE_JUCE_UI)
 //#include "GuiPatchAutomator3.h"
@@ -1729,7 +1729,7 @@ std::unique_ptr<const DawPreset> MpController::getPreset(std::string presetNameO
 		preset->name = presetNameOverride;
 	}
 	
-	preset->name = SanitizeFileName(preset->name);
+	preset->name = wrapper::SanitizeFileName(preset->name);
 
 #if 0 // ??
 	{
