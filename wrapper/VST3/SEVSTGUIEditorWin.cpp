@@ -14,10 +14,7 @@ SEVSTGUIEditorWin::SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr
     if (pluginParameters_GMPI)
     {
         pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
-        pluginParameters_GMPI->initialize();
     }
-
-    initPlugin();// static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
 }
 
 SEVSTGUIEditorWin::~SEVSTGUIEditorWin()
@@ -36,6 +33,13 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinbe
 
         controller->initUi(&helper);
     }
+
+    if (pluginParameters_GMPI)
+    {
+        pluginParameters_GMPI->initialize();
+    }
+
+    initPlugin();
 
 	return Steinberg::kResultTrue;
 }
