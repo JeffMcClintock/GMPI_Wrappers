@@ -181,7 +181,7 @@ TARGET_LINK_LIBRARIES( ${PROJECT_NAME} pluginterfaces )
 #TARGET_LINK_LIBRARIES( ${PROJECT_NAME} GMPIPluginlib )
 
 if(CMAKE_HOST_WIN32)
-target_link_libraries(${PROJECT_NAME} dxguid d3d11 d2d1 dwrite windowscodecs)
+target_link_libraries(${PROJECT_NAME} Dwmapi dxguid d3d11 d2d1 dwrite windowscodecs)
 endif()
 
 target_compile_definitions (${PROJECT_NAME} PRIVATE -D_UNICODE -DUNICODE)
