@@ -468,7 +468,7 @@ std::wstring GetExtension(std::wstring p_filename)
 std::string GetExtension(std::string p_filename)
 {
 	// p_filename.MakeLower();
-	transform(p_filename.begin(), p_filename.end(), p_filename.begin(), towlower);
+	transform(p_filename.begin(), p_filename.end(), p_filename.begin(), [](unsigned char c) { return std::tolower(c); });
 	int p = (int)p_filename.size() - 1; // Not using unsigned size_t else fails <0 test below. Could be re-written to fix this.
 
 	while (p > 0)
