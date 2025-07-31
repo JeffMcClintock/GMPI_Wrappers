@@ -1290,9 +1290,8 @@ void MpController::UpdateProgramCategoriesHc(MpParameter* param)
 			l.Add(preset.name);
 		}
 	}
-	std::wstring_convert<std::codecvt_utf8<wchar_t>> convert;
 
-	auto enumList = convert.from_bytes(l.str());
+	auto enumList = Utf8ToWstring(l.str());
 
 	param->setParameterRaw(gmpi::Field::Value, RawView(enumList));
 }
