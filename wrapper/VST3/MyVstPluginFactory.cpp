@@ -440,61 +440,174 @@ void MyVstPluginFactory::RegisterPin(
 
 	pinInfoSem pind{};
 
-	//		_RPT1(_CRT_WARN, "%s\n", pins[i]->GetXML() );
-	// id
-//	int pin_id; // = XStr2Int( pin->Attribute("id") ));
 	pind.id = nextPinId;
 	pin->QueryIntAttribute("id", &(pind.id));
 	// name
 	pind.name = wrapper::FixNullCharPtr(pin->Attribute("name"));
 
-	// datatype
-	std::string pin_datatype = wrapper::FixNullCharPtr(pin->Attribute("datatype"));
-	std::string pin_rate = wrapper::FixNullCharPtr(pin->Attribute("rate"));
-
-	// Datatype.
-	int temp;
-	if (wrapper::XmlStringToDatatype(pin_datatype, temp))
+	// parameter and host-connect pins. doing this first to determine expected pin datatype.
+	pind.parameterId = -1;
+	pind.parameterFieldType = gmpi::Field::Value;
+	int expectedPinDatatype = -1;
 	{
-		assert(0 <= temp && temp <= (int)gmpi::PinDatatype::Blob);
-		pind.datatype = (gmpi::PinDatatype)temp;
-/*
-		if (pind.datatype == DT_CLASS) // e.g. "class:geometry"
+		if (const auto parameterIdAt = pin->Attribute("parameterId"); parameterIdAt)
 		{
-			if (pin_datatype.size() > 6)
-				pind.classname = pin_datatype.substr(6);
+			sscanf(parameterIdAt, "%d", &pind.parameterId);
 		}
-*/
-	}
-	else
-	{
-		//std::wostringstream oss;
-		//oss << L"err. module XML file (" << Filename() << L"): parameter id " << pin_id << L" unknown datatype '" << Utf8ToWstring(pin_datatype) << L"'. Valid [float, int ,string, blob, midi ,bool ,enum ,double]";
 
-#if defined( SE_EDIT_SUPPORT )
-		Messagebox(oss);
+		// host-connect
+		pind.hostConnect = wrapper::FixNullCharPtr(pin->Attribute("hostConnect"));
+
+		// parameterField.
+		if (!pind.hostConnect.empty() || pind.parameterId != -1)
+		{
+			if (const auto parameterField = pin->Attribute("parameterField"); parameterField)
+			{
+				// field id can be stored as int (plugin XML), or as enum text (sems XML)
+				if (isdigit(*parameterField))
+				{
+					sscanf(parameterField, "%d", &pind.parameterFieldType);
+				}
+				else
+				{
+					int temp{};
+					if (wrapper::XmlStringToParameterField(parameterField, temp))
+					{
+						pind.parameterFieldType = (gmpi::Field) temp;
+					}
+					else
+					{
+						//std::wostringstream oss;
+						//oss << L"ERROR. module XML file (" << Filename() << L"): pin id " << pin_id << L" unknown Parameter Field ID.";
+						//Messagebox(oss);
+					}
+				}
+			}
+
+			if (pind.parameterId != -1) // parameter pin
+			{
+//				pind.flags |= (IO_PATCH_STORE | IO_HIDE_PIN);
+				auto& info = plugins.back();
+
+				switch (pind.parameterFieldType)
+				{
+				case gmpi::Field::EnumList:
+				case gmpi::Field::FileExtension:
+				case gmpi::Field::MenuItems:
+				case gmpi::Field::ShortName:
+				case gmpi::Field::LongName:
+				case gmpi::Field::AutomationSysex:
+					expectedPinDatatype = (int) gmpi::PinDatatype::String;
+					break;
+
+				case gmpi::Field::Grab:
+				case gmpi::Field::Private:
+				case gmpi::Field::Stateful:
+				case gmpi::Field::IgnoreProgramChange:
+					expectedPinDatatype = (int)gmpi::PinDatatype::Bool;
+					break;
+
+				case gmpi::Field::MenuSelection:
+				case gmpi::Field::Automation:
+					expectedPinDatatype = (int)gmpi::PinDatatype::Int32;
+					break;
+
+				case gmpi::Field::Normalized:
+					expectedPinDatatype = (int)gmpi::PinDatatype::Float32;
+					break;
+
+				case gmpi::Field::RangeLo:
+				case gmpi::Field::RangeHi:
+				case gmpi::Field::Value:
+					// uses parameter datatype.
+					for (auto& param : info.parameters)
+					{
+						if (param.id == pind.parameterId)
+						{
+							expectedPinDatatype = (int)param.datatype;
+							break;
+						}
+					}
+					break;
+
+				default:
+					assert(false); // Missing enum!!
+				};
+			}
+			else // host-connect pin
+			{
+#if 0 // TODO
+				pind.flags |= IO_HOST_CONTROL | IO_HIDE_PIN;
+				const auto hostControlId = (HostControls)StringToHostControl(pind.hostConnect.c_str());
+
+				if (hostControlId == HC_NONE)
+				{
+					std::wostringstream oss;
+					oss << L"ERROR. module XML: '" << pind.hostConnect << L"' unknown HOST CONTROL.";
+					Messagebox(oss);
+				}
+				if (pind.direction != DR_IN && (hostControlId < HC_USER_SHARED_PARAMETER_INT0 || hostControlId > HC_USER_SHARED_PARAMETER_INT4))
+				{
+					std::wostringstream oss;
+					oss << L"ERROR. module XML file (" << Filename() << L"): pin id " << pin_id << L" hostConnect pin wrong direction. Expected: direction=\"in\"";
+					Messagebox(oss);
+				}
+
+				expectedPinDatatype = GetHostControlDatatype(hostControlId);
+				if (expectedPinDatatype == DT_ENUM)
+				{
+					expectedPinDatatype = DT_INT;
+				}
 #endif
+			}
+		}
 	}
 
 	// default
 	pind.default_value = wrapper::FixNullCharPtr(pin->Attribute("default"));
 
-	if (pin_rate.compare("audio") == 0)
+	// Datatype.
+	if (const auto dt = pin->Attribute("datatype"); dt)
 	{
-		if (!pind.default_value.empty())
+		const std::string pin_datatype(dt);
+
+		int temp{};
+		if (wrapper::XmlStringToDatatype(pin_datatype, temp))
 		{
-			// multiply default by 10 (to Volts). DoubleToString() removes trilaing zeros.
-			char* temp;	// convert string to SAMPLE
-			pind.default_value = std::to_string(10.0f * (float)strtod(pind.default_value.c_str(), &temp));
+			pind.datatype = (gmpi::PinDatatype) temp;
+
+			if (gmpi::PinDatatype::Float32 == pind.datatype)
+			{
+				const auto rate = pin->Attribute("rate");
+				if (rate && strcmp(rate, "audio") == 0)
+				{
+					pind.datatype = gmpi::PinDatatype::Audio;
+
+					// multiply default by 10 (to Volts).
+					char* temp;
+					pind.default_value = std::to_string(10.0f * (float)strtod(pind.default_value.c_str(), &temp));
+				}
+			}
 		}
-
-		pind.datatype = gmpi::PinDatatype::Audio;
-
-		if (pin_datatype.compare("float") != 0)
+	}
+	else
+	{
+		// if not explicitly specified, take datatype from parameter or host-control.
+		if (expectedPinDatatype != -1)
 		{
-			//std::wostringstream oss;
-			//oss << L"ERROR. module XML file (" << Filename() << L"): pin id " << pin_id << L" audio-rate not supported.";
-			//Messagebox(oss);
+			pind.datatype = (gmpi::PinDatatype)expectedPinDatatype;
+		}
+		else
+		{
+			// blank dataype defaults to DT_FSAMPLE, else it's an error.
+			if (dt)
+			{
+				assert(false);
+				//std::wostringstream oss;
+				//oss << L"err. module XML file (" << Filename() << L"): pin " << pin_id << L": unknown datatype. Valid [float, int ,string, blob, midi ,bool ,enum ,double]";
+
+				//Messagebox(oss);
+			}
 		}
 	}
 
@@ -548,80 +661,6 @@ void MyVstPluginFactory::RegisterPin(
 	}
 #endif
 
-	// parameter ID. Defaults to ssame as pin ID, but can be overridden.
-	// Pins can be driven from patch-store.
-	int parameterId = -1;
-	pin->QueryIntAttribute("parameterId", &parameterId);
-
-	//if (parameterId != -1)
-	//{
-	//	pind.flags |= (IO_PATCH_STORE | IO_HIDE_PIN);
-	//}
-
-	// host-connect
-	pind.hostConnect = wrapper::FixNullCharPtr(pin->Attribute("hostConnect"));
-
-	// parameterField.
-	if (!pind.hostConnect.empty() || parameterId != -1)
-	{
-#if defined( SE_TARGET_PLUGIN)
-		// In exported VST3s, just using int in XML. Faster, more compact.
-		int ft{ (int) gmpi::Field::Value };
-		pin->QueryIntAttribute("parameterField", &ft);
-
-		pind.parameterFieldType = (gmpi::Field)ft;
-#else
-
-		// see matching enum ParameterFieldType
-		string parameterField(FixNullCharPtr(pin->Attribute("parameterField")));
-		if (!XmlStringToParameterField(parameterField, parameterFieldId))
-		{
-			std::wostringstream oss;
-			oss << L"ERROR. module XML file (" << Filename() << L"): pin id " << pin_id << L" unknown Parameter Field ID.";
-
-#if defined( SE_EDIT_SUPPORT )
-			Messagebox(oss);
-#endif
-		}
-#endif
-	}
-#if 0
-
-	if (!pind.hostConnect.empty())
-	{
-		pind.flags |= IO_HOST_CONTROL | IO_HIDE_PIN;
-		HostControls hostControlId = (HostControls)StringToHostControl(pind.hostConnect.c_str());
-		if (hostControlId == HC_NONE)
-		{
-			std::wostringstream oss;
-			oss << L"ERROR. module XML: '" << pind.hostConnect << L"' unknown HOST CONTROL.";
-			Messagebox(oss);
-		}
-
-		if (parameterFieldId == FT_VALUE)
-		{
-			int expectedDatatype = GetHostControlDatatype(hostControlId);
-			if (expectedDatatype == DT_ENUM)
-			{
-				expectedDatatype = DT_INT;
-			}
-
-			if (parameterFieldId == FT_VALUE && expectedDatatype != -1 && expectedDatatype != pind.datatype)
-			{
-				std::wostringstream oss;
-				oss << L"ERROR. module XML file (" << Filename() << L"): pin id " << pin_id << L" hostConnect wrong datatype. Expected: " << expectedDatatype;
-				Messagebox(oss);
-			}
-		}
-
-		if (pind.direction != DR_IN && (hostControlId < HC_USER_SHARED_PARAMETER_INT0 || hostControlId > HC_USER_SHARED_PARAMETER_INT4))
-		{
-			std::wostringstream oss;
-			oss << L"ERROR. module XML file (" << Filename() << L"): pin id " << pin_id << L" hostConnect pin wrong direction. Expected: direction=\"in\"";
-			Messagebox(oss);
-		}
-	}
-#endif
 	// meta data
 	pind.meta_data = wrapper::FixNullCharPtr(pin->Attribute("metadata"));
 	
@@ -641,8 +680,6 @@ void MyVstPluginFactory::RegisterPin(
 		//// iob->setAutomation(controllerType);
 		//iob->setParameterId(parameterId);
 		//iob->setParameterFieldId(parameterFieldId);
-
-		pind.parameterId = parameterId;
 
 		// constraints
 #if 0
@@ -783,6 +820,9 @@ void MyVstPluginFactory::RegisterXml(const /*platform_*/std::string& pluginPath,
 				if (wrapper::XmlStringToDatatype(pin_datatype, temp))//&& temp != DT_CLASS)
 				{
 					param.datatype = (gmpi::PinDatatype)temp;
+
+					if(gmpi::PinDatatype::Enum == param.datatype)
+						param.datatype = gmpi::PinDatatype::Int32; // store as int32.
 				}
 				else
 				{

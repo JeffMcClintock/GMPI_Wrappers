@@ -439,7 +439,8 @@ double MpParameter_base::getValueReal() const
 
 	case gmpi::PinDatatype::Enum:
 	{
-		assert(false); // TODO?
+		assert(rawValues_[voiceId].size() == sizeof(short));
+		return static_cast<double>(RawToValue<short>(rawValues_[voiceId].data()));
 	}
 	break;
 

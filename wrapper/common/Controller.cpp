@@ -1706,10 +1706,10 @@ std::unique_ptr<const DawPreset> MpController::getPreset(std::string presetNameO
 			const auto paramHandle = p->parameterHandle_;
 			auto& values = preset->params[paramHandle];
 
-			values.dataType = (gmpi::PinDatatype)p->datatype_;
-
 			const int voice = 0;
 			const auto raw = p->getValueRaw(gmpi::Field::Value, voice);
+
+			values.dataType = gmpi::PinDatatype::Enum == p->datatype_ ? gmpi::PinDatatype::Int32 : p->datatype_;
 			values.rawValues_.push_back({ (char* const)raw.data(), raw.size() });
 
 			/* TODO

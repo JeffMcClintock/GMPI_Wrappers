@@ -41,6 +41,7 @@ public:
 class SEVSTGUIEditorWin : public VST3EditorBase
 {
 	gmpi::hosting::DrawingFrame drawingframe;
+	float Dpi{ 1.0f };
 
 public:
     SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* controller, int width, int height);

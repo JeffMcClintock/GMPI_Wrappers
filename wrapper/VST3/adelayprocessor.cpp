@@ -33,8 +33,8 @@ SeProcessor::SeProcessor (pluginInfoSem& pinfo)
 : active_(false)
 , info(pinfo)
 , outputsAsStereoPairs(true)
-,m_message_que_dsp_to_ui(0x500000)//AUDIO_MESSAGE_QUE_SIZE) //TODO
-,m_message_que_ui_to_dsp(0x500000)//AUDIO_MESSAGE_QUE_SIZE)
+, m_message_que_dsp_to_ui(0x500000)//AUDIO_MESSAGE_QUE_SIZE) //TODO
+, m_message_que_ui_to_dsp(0x500000)//AUDIO_MESSAGE_QUE_SIZE)
 , midiConverter(
 	// provide a lambda to accept converted MIDI 2.0 messages
 	[this](const gmpi::midi::message_view& msg, int offset)

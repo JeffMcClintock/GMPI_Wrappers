@@ -7,6 +7,13 @@ namespace wrapper
 SEVSTGUIEditorWin::SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
 	VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
+    // DPI of system. only a GUESS at this point of DPI we will be using. (until we know DAW window handle).
+    {
+        HDC hdc = ::GetDC(NULL);
+        Dpi = GetDeviceCaps(hdc, LOGPIXELSX) / 96.f;
+        ::ReleaseDC(NULL, hdc);
+    }
+
     // 'helper' provides hosting for parameters, 'drawingframe' for graphics hosting.
     // so when plugin queries the drawing from for 'IParameterObserver' it gets redirected to 'helper'.
     drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&helper));
@@ -14,6 +21,16 @@ SEVSTGUIEditorWin::SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr
     if (pluginParameters_GMPI)
     {
         pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
+    }
+
+    if (auto drawingClient = peditor.as<gmpi::api::IDrawingClient>(); drawingClient)
+    {
+        gmpi::drawing::Size desiredSize{ 100.f, 100.f };
+        gmpi::drawing::Size availableSize{ 99999.f, 99999.f };
+        drawingClient->measure(&availableSize, &desiredSize);
+
+        width = static_cast<int>(Dpi * desiredSize.width);
+        height = static_cast<int>(Dpi * desiredSize.height);
     }
 }
 
@@ -24,6 +41,9 @@ SEVSTGUIEditorWin::~SEVSTGUIEditorWin()
 
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinberg::FIDString type)
 {
+    // now that we know which monitor we're on, update Dpi.
+    Dpi = GetDpiForWindow((HWND) parent) / 96.f;
+
     if (pluginGraphics_GMPI)
     {
         drawingframe.attachClient(pluginGraphics_GMPI.get());
@@ -86,7 +106,7 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::checkSizeConstraint(Steinberg::
 {
     if (pluginGraphics_GMPI)
     {
-		const gmpi::drawing::Size availableSize{ static_cast<float>(rect->right - rect->left), static_cast<float>(rect->bottom - rect->top) };
+		const gmpi::drawing::Size availableSize{ static_cast<float>(rect->right - rect->left) / Dpi, static_cast<float>(rect->bottom - rect->top) / Dpi };
         gmpi::drawing::Size desiredSize{ availableSize };
 		pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
 
