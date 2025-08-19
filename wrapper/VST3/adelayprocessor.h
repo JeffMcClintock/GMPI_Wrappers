@@ -140,6 +140,7 @@ public:
 
 protected:
 	void CommunicationProc();
+	void MidiIn(int sampleOffset, const uint8_t* data, int32_t size);
 	void DoNoteOff(int channel, int32_t noteId, float velocity, int sampleOffset);
 
 	struct vstNoteInfo
@@ -199,6 +200,7 @@ protected:
 	std::unordered_map<int32_t, int32_t> param2pin;
 	std::vector<float> silence;
 	pluginInfoSem const& info;
+	int MidiInputPinIdx = -1;
 
 //	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IAudioPluginHost);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override

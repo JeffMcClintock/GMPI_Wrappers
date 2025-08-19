@@ -364,6 +364,10 @@ void SeProcessor::reInitialise()
 						++paramStrictIndex;
 					}
 				}
+				if (pin.direction == gmpi::PinDirection::In && pin.datatype == gmpi::PinDatatype::Midi)
+				{
+					MidiInputPinIdx = pin.id;
+				}
 			}
 		}
 
@@ -656,6 +660,26 @@ SeProcessor::vstNoteInfo& SeProcessor::allocateKey(const NoteOnEvent& note)
 #endif
 }
 
+void SeProcessor::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
+{
+	assert(MidiInputPinIdx > -1);
+
+	gmpi::api::Event ge
+	{
+		{},							// next (populated later)
+		sampleOffset,				// timeDelta
+		gmpi::api::EventType::Midi,
+		MidiInputPinIdx,			// pinIdx
+		size,						// size_
+		{}							// data_/oversizeData_
+	};
+
+	auto dst = reinterpret_cast<uint8_t*>(&ge.data_);
+	std::copy(data, data + size, dst);
+
+	events.push(ge);
+}
+
 //-----------------------------------------------------------------------------
 tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 {
@@ -694,7 +718,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 						auto it = param2pin.find(id);
 						if (it != param2pin.end())
 						{
-							float realVal = value;
+							float realVal = value; // TODO Normalised value to real (depending on pin FieldType)
 							int pinID = (*it).second;
 
 							gmpi::api::Event e
@@ -759,28 +783,28 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 								}
 							}
 
-							//synthEditProject.MidiIn(
-							//	sampleOffset
-							//	, msgout.m
-							//	, sizeof(msgout.m)
-							//);
+							MidiIn(
+								sampleOffset
+								, msgout.m
+								, sizeof(msgout.m)
+							);
 
-							int pinID = 0; // TODO!!! for now
-							gmpi::api::Event e
-							{
-								{},            // next (populated later)
-								sampleOffset,  // timeDelta
-								gmpi::api::EventType::Midi,
-								pinID,         // pinIdx
-								sizeof(msgout.m), // size_
-								{}             // data_/oversizeData_
-							};
+							//int pinID = 0; // TODO!!! for now
+							//gmpi::api::Event e
+							//{
+							//	{},            // next (populated later)
+							//	sampleOffset,  // timeDelta
+							//	gmpi::api::EventType::Midi,
+							//	pinID,         // pinIdx
+							//	sizeof(msgout.m), // size_
+							//	{}             // data_/oversizeData_
+							//};
 
-							const auto src = reinterpret_cast<const uint8_t*>(&msgout.m);
-							auto dst = reinterpret_cast<uint8_t*>(&e.data_);
-							std::copy(src, src + sizeof(msgout.m), dst);
+							//const auto src = reinterpret_cast<const uint8_t*>(&msgout.m);
+							//auto dst = reinterpret_cast<uint8_t*>(&e.data_);
+							//std::copy(src, src + sizeof(msgout.m), dst);
 
-							events.push(e);
+							//events.push(e);
 						}
 					}
 				}
@@ -791,27 +815,28 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 	if (data.numSamples <= 0)
 		return kResultTrue;
 
-#if 0
-	const int32 numEvents = data.inputEvents ? data.inputEvents->getEventCount() : 0;
-	
-	for (int32 eventIndex = 0; eventIndex < numEvents ; ++eventIndex)
+	if (MidiInputPinIdx > -1)
 	{
-		Event e;
-		if (data.inputEvents->getEvent(eventIndex, e) != kResultTrue)
-		{
-			break;
-		}
+		const int32 numEvents = data.inputEvents ? data.inputEvents->getEventCount() : 0;
 
-		/* Steinberg seem to use smaller sub-blocks
-		// if the event is not in the current processing block then adapt offset for next block
-		if (e.sampleOffset > samplesToProcess)
+		for (int32 eventIndex = 0; eventIndex < numEvents; ++eventIndex)
 		{
-			e.sampleOffset -= samplesToProcess;
-			break;
-		}
-		*/
-		switch (e.type)
-		{
+			Event e;
+			if (data.inputEvents->getEvent(eventIndex, e) != kResultTrue)
+			{
+				break;
+			}
+
+			/* Steinberg seem to use smaller sub-blocks
+			// if the event is not in the current processing block then adapt offset for next block
+			if (e.sampleOffset > samplesToProcess)
+			{
+				e.sampleOffset -= samplesToProcess;
+				break;
+			}
+			*/
+			switch (e.type)
+			{
 			case Event::kNoteOnEvent:
 			{
 				// handle hosts that don't pass a velocity=0 note-on as a note-off
@@ -838,7 +863,8 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 							keyInfo.channel
 						);
 
-						synthEditProject.MidiIn(e.sampleOffset, (const unsigned char*)&out, sizeof(out));
+						// MidiIn(e.sampleOffset, (const unsigned char*)&out, sizeof(out));
+						MidiIn(e.sampleOffset, (const unsigned char*)&out, sizeof(out));
 					}
 
 					// TODO : DON"T SEND UNLESS WE HAVE TO (MAYBE RESET THEM AUTOMATICALLY IN PM on note on
@@ -853,7 +879,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 								keyInfo.channel
 							);
 
-							synthEditProject.MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
+							MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
 						}
 						// per-note bender
 						{
@@ -863,7 +889,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 								keyInfo.channel
 							);
 
-							synthEditProject.MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
+							MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
 						}
 					}
 
@@ -876,7 +902,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 							keyInfo.channel
 						);
 
-						synthEditProject.MidiIn(e.sampleOffset, (const unsigned char*)&out, sizeof(out));
+						MidiIn(e.sampleOffset, (const unsigned char*)&out, sizeof(out));
 					}
 				}
 			}
@@ -904,27 +930,27 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 						e.polyPressure.pressure,
 						keyInfo->channel
 					);
-//						_RPTN(0, "makePolyPressure %d %f\n", keyInfo->MidiKeyNumber, e.polyPressure.pressure);
+					//						_RPTN(0, "makePolyPressure %d %f\n", keyInfo->MidiKeyNumber, e.polyPressure.pressure);
 
-					synthEditProject.MidiIn(
+					MidiIn(
 						e.sampleOffset,
 						(const unsigned char*)&out,
 						sizeof(out)
 					);
 				}
 			}
-			break;				
+			break;
 
 			case Event::kNoteExpressionValueEvent:
 			{
 				const int channel = 0; // ??? how is this sposed to find notes on other channels?
 				auto keyInfo = findKey(channel, e.noteExpressionValue.noteId);
-					
+
 				if (!keyInfo)
 					break;
 
 				if (kTuningTypeID == e.noteExpressionValue.typeId)
-				{				
+				{
 					const double pitchBendRangeExpr = 120.0; // +/- 10 octaves
 					constexpr double pitchBendRangeMidi = 24.0; // assumed
 					constexpr double pitchBendRangeMidiInv = 1.0 / pitchBendRangeMidi;
@@ -932,16 +958,16 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 					const double semitones = (e.noteExpressionValue.value - 0.5) * 2.0 * pitchBendRangeExpr;
 					const double normalized = (std::max)(0.0, std::min(1.0, 0.5 + 0.5 * semitones * pitchBendRangeMidiInv));
 
-//						_RPTN(0, "makePolyBender %f => %f semitones, %f normal\n", e.noteExpressionValue.value, semitones, normalized);
+					//						_RPTN(0, "makePolyBender %f => %f semitones, %f normal\n", e.noteExpressionValue.value, semitones, normalized);
 
-					// Send MIDI HD-Protocol Note Expression message.
+										// Send MIDI HD-Protocol Note Expression message.
 					const auto msg = gmpi::midi_2_0::makePolyBender(
 						keyInfo->MidiKeyNumber,
 						static_cast<float>(normalized),
 						channel
 					);
 
-					synthEditProject.MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
+					MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
 				}
 				else
 				{
@@ -959,14 +985,14 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 					case kPanTypeID:
 						controllerId = gmpi::midi_2_0::PolyPan;
 						break;
-/*
-					case kVibratoTypeID:
-						controllerId = gmpi::midi_2_0::PolySoundController8; // Vibrato Depth
-						break;
-					case kExpressionTypeID:
-						controllerId = gmpi::midi_2_0::PolyExpression;
-						break;
-*/
+						/*
+											case kVibratoTypeID:
+												controllerId = gmpi::midi_2_0::PolySoundController8; // Vibrato Depth
+												break;
+											case kExpressionTypeID:
+												controllerId = gmpi::midi_2_0::PolyExpression;
+												break;
+						*/
 					case kBrightnessTypeID:
 						controllerId = gmpi::midi_2_0::PolySoundController5; // Brightness. MPE Vertical (Y)
 						break;
@@ -990,7 +1016,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 							safeValue
 						);
 
-						synthEditProject.MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
+						MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
 					}
 				}
 			}
@@ -1006,13 +1032,15 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 					while (remain > 0)
 					{
 						const auto msg = gmpi::midi_2_0::makeSysex(src, remain, isFirst);
-						synthEditProject.MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
+						MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
 					}
 				}
 			}
 			break;
+			}
 		}
 	}
+#if 0
 
 	// Tempo
 	if( synthEditProject.NeedsTempo( ) )
@@ -1233,7 +1261,7 @@ void SeProcessor::DoNoteOff(int channel, int32_t noteId, float velocity, int sam
 			keyInfo->channel
 		);
 
-//		synthEditProject.MidiIn(sampleOffset, (const unsigned char*)&out, sizeof(out));
+		MidiIn(sampleOffset, (const unsigned char*)&out, sizeof(out));
 	}
 }
 
