@@ -41,7 +41,7 @@ namespace wrapper
 {
 
 // Plugin GUI is sending param to host
-gmpi::ReturnCode ControllerManager::setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data)
+gmpi::ReturnCode ControllerManager::setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const uint8_t* data)
 {
 // nope. wrong direction.	return controller2_->setParameter(parameterHandle, fieldId, voice, size, data);
 	return patchManager->setParameter(parameterHandle, fieldId, voice, size, data);
@@ -233,14 +233,6 @@ void MpController::Initialize()
 			float pminimum = 0.0f;
 			float pmaximum = 1.0f;
 
-			if (!param.meta_data.empty())
-			{
-				it_enum_list it(Utf8ToWstring(param.meta_data));
-
-				pminimum = it.RangeLo();
-				pmaximum = it.RangeHi();
-			}
-
 			MpParameter_base* seParameter = {};
 			if (isPrivate)
 			{
@@ -255,16 +247,24 @@ void MpController::Initialize()
 			}
 
 			seParameter->hostControl_ = -1; // TODO hostControl;
-			seParameter->minimum = pminimum;
-			seParameter->maximum = pmaximum;
+			seParameter->minimum = param.minimum;
+			seParameter->maximum = param.maximum;
 			seParameter->parameterHandle_ = ParameterHandle;
 			seParameter->datatype_ = param.datatype;
 			seParameter->moduleHandle_ = 0;
 			seParameter->moduleParamId_ = param.id;
 			seParameter->stateful_ = true; // stateful_;
 			seParameter->name_ = Utf8ToWstring(param.name);
-			seParameter->enumList_ = Utf8ToWstring(param.meta_data); // enumList_;
+			seParameter->enumList_ = Utf8ToWstring(param.enum_list); // enumList_;
 			seParameter->ignorePc_ = false; // ignorePc != 0;
+
+			if (!param.enum_list.empty())
+			{
+				it_enum_list it(Utf8ToWstring(param.enum_list));
+
+				pminimum = it.RangeLo();
+				pmaximum = it.RangeHi();
+			}
 
 			// add one patch value
 			seParameter->rawValues_.push_back(ParseToRaw(seParameter->datatype_, param.default_value));
@@ -575,7 +575,7 @@ gmpi::ReturnCode MpController::getParameterHandle(int32_t moduleParameterId, int
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode MpController::setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data)
+gmpi::ReturnCode MpController::setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const uint8_t* data)
 {
 	setParameterValue(RawView((const char*)data, size), parameterHandle, fieldId, voice);
 	return gmpi::ReturnCode::Ok;
@@ -1447,7 +1447,7 @@ void MpController::initializeGui(gmpi::api::IParameterObserver* gui, int32_t par
 		for (int voice = 0; voice < p->getVoiceCount(); ++voice)
 		{
 			auto raw = p->getValueRaw(FieldId, voice);
-			gui->setParameter(parameterHandle, FieldId, voice, (int32_t)raw.size(), raw.data());
+			gui->setParameter(parameterHandle, FieldId, voice, (int32_t)raw.size(), (const uint8_t*) raw.data());
 		}
 	}
 }

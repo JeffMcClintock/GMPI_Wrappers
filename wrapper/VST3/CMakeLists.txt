@@ -19,6 +19,13 @@ if (MSVC)
 endif()
 
 #factory.cpp
+# way to many dependancies
+#${ADAPTORS_COMMON_FOLDER}/dsp_patch_parameter_base.h
+#${ADAPTORS_COMMON_FOLDER}/dsp_patch_parameter.h
+#${ADAPTORS_COMMON_FOLDER}/dsp_patch_parameter.cpp
+#${ADAPTORS_COMMON_FOLDER}/dsp_patch_manager.h
+#${ADAPTORS_COMMON_FOLDER}/dsp_patch_manager.cpp
+#${ADAPTORS_COMMON_FOLDER}/se_sdk3_hasMidiTuning.h
 
 set(srcs
 MyVstPluginFactory.h

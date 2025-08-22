@@ -242,7 +242,7 @@ void VST3Controller::setPinFromUi(int32_t pinId, int32_t voice, int32_t size, co
 				if (param.id == pin.parameterId)
 				{
 					auto param = tagToParameter[pin.parameterId];
-					setParameterValue({ data, static_cast<size_t>(size)}, param->parameterHandle_, pin.parameterFieldType, voice); // TODO figure out correct fieldtype
+					setParameterValue({ data, static_cast<size_t>(size)}, param->parameterHandle_, pin.parameterFieldType, voice);
 					break;
 				}
 			}

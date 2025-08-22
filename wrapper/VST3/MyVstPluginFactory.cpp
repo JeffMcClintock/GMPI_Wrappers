@@ -795,8 +795,24 @@ void MyVstPluginFactory::RegisterXml(const /*platform_*/std::string& pluginPath,
 				std::string pin_datatype = wrapper::FixNullCharPtr(paramE->Attribute("datatype"));
 				// Name.
 				param.name = wrapper::FixNullCharPtr(paramE->Attribute("name"));
-				// File extension or enum list.
-				param.meta_data = wrapper::FixNullCharPtr(paramE->Attribute("metadata"));
+				
+				// File extension, enum list or range.
+				// param.meta_data = wrapper::FixNullCharPtr(paramE->Attribute("metadata"));
+				const auto metadataPtr = paramE->Attribute("metadata");
+				if (metadataPtr)
+				{
+					// File extension, enum list or range.
+					param.enum_list = metadataPtr;
+				}
+				else
+				{
+					// check for min/max range.
+					const auto minPtr = paramE->Attribute("min");
+					const auto maxPtr = paramE->Attribute("max");
+					param.maximum = maxPtr ? atof(maxPtr) : 10.0f;
+					param.minimum = minPtr ? atof(minPtr) : 0.0f;
+				}
+
 				// Default.
 				param.default_value = wrapper::FixNullCharPtr(paramE->Attribute("default"));
 

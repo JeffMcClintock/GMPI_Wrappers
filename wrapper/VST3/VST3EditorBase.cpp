@@ -10,14 +10,14 @@ ParameterHelper::ParameterHelper(VST3EditorBase* editor)
 	editor_ = editor;
 }
 
-gmpi::ReturnCode ParameterHelper::setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data)
+gmpi::ReturnCode ParameterHelper::setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const uint8_t* data)
 {
 	editor_->onParameterUpdate(parameterHandle, fieldId, voice, data, size);
     return gmpi::ReturnCode::Ok;
 }
 
 // GMPI Editor sending a parameter update back to the wrapper.
-gmpi::ReturnCode ParameterHelper::setPin(int32_t pinId, int32_t voice, int32_t size, const void* data)
+gmpi::ReturnCode ParameterHelper::setPin(int32_t pinId, int32_t voice, int32_t size, const uint8_t* data)
 {
 	editor_->controller->setPinFromUi(pinId, voice, size, data);
     return gmpi::ReturnCode::Ok;
@@ -97,7 +97,7 @@ VST3EditorBase::~VST3EditorBase()
 	controller->UnRegisterGui2(&helper);
 }
 
-void VST3EditorBase::onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const void* data, int32_t size)
+void VST3EditorBase::onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const uint8_t* data, int32_t size)
 {
 	if (!pluginParameters_GMPI)
 		return;

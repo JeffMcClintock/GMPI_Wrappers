@@ -26,7 +26,7 @@ public:
 	ParameterHelper(class VST3EditorBase* editor);
 
 	//---IParameterObserver------
-	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data) override;
+	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const uint8_t* data) override;
 #if 0
 	// IInputHost
 	gmpi::ReturnCode setCapture() override;
@@ -39,7 +39,7 @@ public:
 	void invalidateRect(const gmpi::drawing::Rect* invalidRect) override;
 #endif
 	//---IEditorHost------
-	gmpi::ReturnCode setPin(int32_t pinId, int32_t voice, int32_t size, const void* data) override;
+	gmpi::ReturnCode setPin(int32_t pinId, int32_t voice, int32_t size, const uint8_t* data) override;
 	int32_t getHandle() override;
 
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -69,7 +69,7 @@ public:
 	~VST3EditorBase();
 
     void initPlugin();//gmpi::api::IUnknown* host);
-	void onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const void* data, int32_t size);
+	void onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const uint8_t* data, int32_t size);
 #if 0
 	//---from IPlugView-------
 	Steinberg::tresult PLUGIN_API isPlatformTypeSupported (Steinberg::FIDString type) SMTG_OVERRIDE { return Steinberg::kResultTrue; }

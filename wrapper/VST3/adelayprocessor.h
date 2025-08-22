@@ -11,6 +11,7 @@
 #include <atomic>
 #include <array>
 #include <condition_variable>
+#include <optional>
 #include "GmpiMidi.h"
 //#include "se_types.h"
 #include "wrapper/common/lock_free_fifo.h"
@@ -84,6 +85,45 @@ public:
 //-----------------------------------------------------------------------------
 typedef int64_t timestamp_t;
 
+struct DawParameter
+{
+	double valueReal = 0.0;
+	double valueLo = 0.0;
+	double valueHi = 1.0;
+
+	double normalisedValue() const
+	{
+		if (valueHi == valueLo)
+			return 0.0; // avoid divide by zero.
+		return (valueReal - valueLo) / (valueHi - valueLo);
+	}
+};
+
+class PatchManager
+{
+public:
+	std::unordered_map<int, DawParameter> parameters;
+
+	PatchManager() = default;
+	DawParameter* setParameterNormalised(int id, double value)
+	{
+		auto it = parameters.find(id);
+		if (it == parameters.end())
+			return {};
+
+		auto& param = it->second;
+
+		auto newValueReal = param.valueLo + value * (param.valueHi - param.valueLo);
+
+		if(newValueReal == param.valueReal)
+			return {};
+
+		param.valueReal = newValueReal;
+
+		return &param;
+	}
+};
+
 class SeProcessor : public Steinberg::Vst::AudioEffect, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
 {
 public:
@@ -130,7 +170,7 @@ public:
 #endif
 
 	// IAudioPluginHost
-	gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const void* data) override;
+	gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override;
 	gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override;
 	gmpi::ReturnCode setLatency(int32_t latency) override;
 	gmpi::ReturnCode sleep() override;
@@ -156,7 +196,6 @@ protected:
 
 	SeProcessor::vstNoteInfo& allocateKey(const Steinberg::Vst::NoteOnEvent& note);
 
-//TODO	SynthRuntime synthEditProject;
 	gmpi::shared_ptr<gmpi::api::IProcessor> plugin_;
 
 	EventQue<1000> events;
@@ -166,6 +205,7 @@ protected:
 
 	bool active_;
 //TODO	my_VstTimeInfo timeInfo;
+	PatchManager patchManager;
 
 	std::vector<float*> inputBuffers;
 	std::vector<float*> outputBuffers;
@@ -197,7 +237,7 @@ protected:
 	avoidRepeatedCCs ControlChangeValue[128];
 	Steinberg::Vst::ProcessData* dataptr = {};
 
-	std::unordered_map<int32_t, int32_t> param2pin;
+//	std::unordered_map<int32_t, int32_t> param2pin;
 	std::vector<float> silence;
 	pluginInfoSem const& info;
 	int MidiInputPinIdx = -1;

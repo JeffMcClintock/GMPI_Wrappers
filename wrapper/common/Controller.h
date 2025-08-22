@@ -40,7 +40,7 @@ public:
     virtual ~ControllerManager(){}
 
 	// Plugin GUI is sending param to host
-	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data) override;
+	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const uint8_t* data) override;
 
 	void addController(int32_t handle, gmpi::shared_ptr<gmpi::api::IController> controller)
 	{
@@ -199,7 +199,7 @@ public:
     ~MpController();
 
 	gmpi::ReturnCode getParameterHandle(int32_t moduleParameterId, int32_t& returnHandle);
-	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const void* data);
+	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const uint8_t* data);
 
 	void ScanPresets();
 	void setPreset(DawPreset const* preset);
@@ -337,10 +337,10 @@ void initializeGui(gmpi::IMpParameterObserver* gui, int32_t parameterHandle, gmp
 		for (auto pa : m_guis3)
 		{
 			// Update value.
-			pa->setParameter(parameter->parameterHandle_, gmpi::Field::Value, voice, (int32_t)rawValue.size(), rawValue.data());
+			pa->setParameter(parameter->parameterHandle_, gmpi::Field::Value, voice, (int32_t)rawValue.size(), (const uint8_t*) rawValue.data());
 
 			// Update normalized.
-			pa->setParameter(parameter->parameterHandle_, gmpi::Field::Normalized, voice, (int32_t)sizeof(normalized), &normalized);
+			pa->setParameter(parameter->parameterHandle_, gmpi::Field::Normalized, voice, (int32_t)sizeof(normalized), (const uint8_t*) &normalized);
 		}
 	}
 
@@ -354,7 +354,7 @@ void initializeGui(gmpi::IMpParameterObserver* gui, int32_t parameterHandle, gmp
 		//}
 		for (auto pa : m_guis3)
 		{
-			pa->setParameter(parameter->parameterHandle_, fieldType, voice, (int32_t)rawValue.size(), rawValue.data());
+			pa->setParameter(parameter->parameterHandle_, fieldType, voice, (int32_t)rawValue.size(), (const uint8_t*) rawValue.data());
 		}
 	}
 

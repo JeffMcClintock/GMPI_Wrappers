@@ -22,7 +22,9 @@ struct paramInfoSem
 	//int32_t parameterId;
 	//int32_t flags;
 	//std::string hostConnect;
-	std::string meta_data;
+	std::string enum_list;
+	double minimum = 0.0;
+	double maximum = 1.0;
 	bool is_private;
 };
 

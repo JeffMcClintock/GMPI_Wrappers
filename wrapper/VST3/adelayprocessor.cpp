@@ -10,6 +10,7 @@
 #include "GmpiMidi.h"
 #include "wrapper/common/Controller.h"
 #include "wrapper/common/dynamic_linking.h"
+#include "wrapper/common/it_enum_list.h"
 
 extern "C"
 gmpi::ReturnCode MP_GetFactory( void** returnInterface );
@@ -228,6 +229,20 @@ SeProcessor::SeProcessor (pluginInfoSem& pinfo)
 		q.unquantized = -1.f;
 	}
 
+	// init PatchManager parameters
+	for (const auto& param : info.parameters)
+	{
+		if (param.id >= 0)
+		{
+			DawParameter p;
+			p.valueReal = atof(param.default_value.c_str());
+			p.valueLo = param.minimum;
+			p.valueHi = param.maximum;
+
+			patchManager.parameters[param.id] = p;
+		}
+	}
+
 	//TODO	synthEditProject.connectPeer(this);
 }
 
@@ -251,189 +266,118 @@ void SeProcessor::reInitialise()
 {
 	silence.assign(processSetup.maxSamplesPerBlock, 0.0f);
 
-	// Get a handle to the DLL module.
-#if 0
-	auto load_filename = info.pluginPath;
+	gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
+    auto r = MP_GetFactory(factoryBase.put_void());
+        
+	gmpi::shared_ptr<gmpi::api::IPluginFactory> factory;
+	auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.put_void());
 
-    gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle = {};
-//	if (!plugin_dllHandle)
+	if (!factory || r != gmpi::ReturnCode::Ok)
 	{
-        if (load_filename.empty()) // plugin is statically linked.
-        {
-            // no need to load DLL, it's already linked.
-            gmpi_dynamic_linking::MP_GetDllHandle(&plugin_dllHandle);
-        }
-        else
-        {
-#if defined( _WIN32)
+		return;
+	}
 
-			plugin_dllHandle_to_unload = {};
+	gmpi::shared_ptr<gmpi::api::IUnknown> pluginUnknown;
+	r2 = factory->createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Audio, pluginUnknown.put_void());
+	if (!pluginUnknown || r != gmpi::ReturnCode::Ok)
+	{
+		return;
+	}
 
-			// Load the DLL.
-			if (gmpi_dynamic_linking::MP_DllLoad(&plugin_dllHandle, load_filename.c_str()))
+	plugin_ = pluginUnknown.as<gmpi::api::IProcessor>();
+
+	if (!plugin_)
+		return;
+
+	{
+//		param2pin.clear();
+		for (auto& pin : info.dspPins)
+		{
+			/*
+			if (pin.direction == gmpi::PinDirection::In && pin.datatype == gmpi::PinDatatype::Float32 && pin.parameterId != -1)
 			{
-				plugin_dllHandle_to_unload = plugin_dllHandle;
-				assert(false);
-				// TODO.
-				//// load failed, try it as a bundle.
-				//const auto bundleFilepath = load_filename + L"/Contents/x86_64-win/" + filename;
-				//gmpi_dynamic_linking::MP_DllLoad(&dllHandle, bundleFilepath.c_str());
-			}
-#else
-#if 0
-		// int32_t r = MP_DllLoad( &dllHandle, load_filename.c_str() );
-
-		// Create a path to the bundle
-		CFStringRef pluginPathStringRef = CFStringCreateWithCString(NULL,
-			WStringToUtf8(load_filename).c_str(), kCFStringEncodingASCII);
-
-		CFURLRef bundleUrl = CFURLCreateWithFileSystemPath(kCFAllocatorDefault,
-			pluginPathStringRef, kCFURLPOSIXPathStyle, true);
-		if (bundleUrl == NULL) {
-			printf("Couldn't make URL reference for plugin\n");
-			return;
-		}
-
-		// Open the bundle
-		dllHandle = (DLL_HANDLE)CFBundleCreate(kCFAllocatorDefault, bundleUrl);
-		if (dllHandle == 0) {
-			printf("Couldn't create bundle reference\n");
-			CFRelease(pluginPathStringRef);
-			CFRelease(bundleUrl);
-			return;
-		}
-#endif
-#endif
-        }
-
-		// Factory
-		MP_DllEntry dll_entry_point{};
-        const auto fail = gmpi_dynamic_linking::MP_DllSymbol(plugin_dllHandle, "MP_GetFactory", (void**)&dll_entry_point);
-
-//#ifdef _WIN32
-//		const auto fail = gmpi_dynamic_linking::MP_DllSymbol(plugin_dllHandle, "MP_GetFactory", (void**)&dll_entry_point);
-//#else
-//		dll_entry_point = (gmpi::MP_DllEntry)CFBundleGetFunctionPointerForName((CFBundleRef)plugin_dllHandle, CFSTR("MP_GetFactory"));
-//#endif        
-
-		if (!dll_entry_point)
-		{
-			return;
-		}
-#endif
-        
-		gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
-//		auto r = dll_entry_point(factoryBase.put());
-        auto r = MP_GetFactory(factoryBase.put_void());
-        
-		gmpi::shared_ptr<gmpi::api::IPluginFactory> factory;
-		auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.put_void());
-
-		if (!factory || r != gmpi::ReturnCode::Ok)
-		{
-			return;
-		}
-
-		gmpi::shared_ptr<gmpi::api::IUnknown> pluginUnknown;
-		r2 = factory->createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Audio, pluginUnknown.put_void());
-		if (!pluginUnknown || r != gmpi::ReturnCode::Ok)
-		{
-			return;
-		}
-
-		plugin_ = pluginUnknown.as<gmpi::api::IProcessor>();
-
-		if (!plugin_)
-			return;
-
-		{
-			param2pin.clear();
-			for (auto& pin : info.dspPins)
-			{
-				if (pin.direction == gmpi::PinDirection::In && pin.datatype == gmpi::PinDatatype::Float32 && pin.parameterId != -1)
+				int paramStrictIndex = 0;
+				for (auto& param : info.parameters)
 				{
-					int paramStrictIndex = 0;
-					for (auto& param : info.parameters)
+					if (param.id == pin.parameterId)
 					{
-						if (param.id == pin.parameterId)
-						{
-							param2pin[paramStrictIndex] = pin.id;
-							break;
-						}
-
-						++paramStrictIndex;
+						param2pin[paramStrictIndex] = pin.id;
+						break;
 					}
-				}
-				if (pin.direction == gmpi::PinDirection::In && pin.datatype == gmpi::PinDatatype::Midi)
-				{
-					MidiInputPinIdx = pin.id;
+
+					++paramStrictIndex;
 				}
 			}
+			*/
+			if (pin.direction == gmpi::PinDirection::In && pin.datatype == gmpi::PinDatatype::Midi)
+			{
+				MidiInputPinIdx = pin.id;
+			}
 		}
+	}
 
+	{
+		plugin_->open(this);
+
+		events.push(
+			{
+				{},            // next (populated later)
+				0,             // timeDelta
+				gmpi::api::EventType::GraphStart,
+				{},            // pinIdx
+				{},            // size_
+				{}             // data_/oversizeData_
+			}
+		);
+
+		int inIdx = 0;
+		int outIdx = 0;
+		for (auto& pin : info.dspPins)
 		{
-			plugin_->open(this);
+			if (pin.datatype != gmpi::PinDatatype::Audio || pin.direction != gmpi::PinDirection::In)
+				continue;
 
 			events.push(
 				{
 					{},            // next (populated later)
 					0,             // timeDelta
-					gmpi::api::EventType::GraphStart,
-					{},            // pinIdx
+					gmpi::api::EventType::PinStreamingStart,
+					pin.id,        // pinIdx
 					{},            // size_
 					{}             // data_/oversizeData_
 				}
 			);
-
-			int inIdx = 0;
-			int outIdx = 0;
-			for (auto& pin : info.dspPins)
-			{
-				if (pin.datatype != gmpi::PinDatatype::Audio || pin.direction != gmpi::PinDirection::In)
-					continue;
-
-				events.push(
-					{
-						{},            // next (populated later)
-						0,             // timeDelta
-						gmpi::api::EventType::PinStreamingStart,
-						pin.id,        // pinIdx
-						{},            // size_
-						{}             // data_/oversizeData_
-					}
-				);
-			}
-
-#if 0
-			gmpi::api::Event e
-			{
-				{},            // next (populated later)
-				0,             // timeDelta
-				gmpi::api::EventType::PinSet,
-				2,             // pinIdx
-				4,             // size_
-				{}             // data_/oversizeData_
-			};
-
-			const float parameterValue = 0.7f;
-			const auto src = reinterpret_cast<const uint8_t*>(&parameterValue);
-			auto dst = reinterpret_cast<uint8_t*>(& e.data_);
-			std::copy(src, src + sizeof(parameterValue), dst);
-			events.push(e);
-#endif
 		}
 
-#if 0 // TODO
-		synthEditProject.prepareToPlay(
-			this,
-			processSetup.sampleRate,
-			processSetup.maxSamplesPerBlock,
-			processSetup.processMode != kOffline
-		);
-#endif
+#if 0
+		gmpi::api::Event e
+		{
+			{},            // next (populated later)
+			0,             // timeDelta
+			gmpi::api::EventType::PinSet,
+			2,             // pinIdx
+			4,             // size_
+			{}             // data_/oversizeData_
+		};
 
-//	}
+		const float parameterValue = 0.7f;
+		const auto src = reinterpret_cast<const uint8_t*>(&parameterValue);
+		auto dst = reinterpret_cast<uint8_t*>(& e.data_);
+		std::copy(src, src + sizeof(parameterValue), dst);
+		events.push(e);
+#endif
+	}
+
+#if 0 // TODO
+	synthEditProject.prepareToPlay(
+		this,
+		processSetup.sampleRate,
+		processSetup.maxSamplesPerBlock,
+		processSetup.processMode != kOffline
+	);
+#endif
 }
+
 //-----------------------------------------------------------------------------
 tresult PLUGIN_API SeProcessor::initialize (FUnknown* context)
 {
@@ -701,10 +645,10 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 			if (queue && queue->getParameterId () >= 0 )
 			{
 				int32 valueChangeCount = queue->getPointCount ();
-				ParamValue value;
+				ParamValue valueNormalized;
 				int32 sampleOffset;
 
-				if (queue->getPoint (valueChangeCount-1, sampleOffset, value) == kResultTrue)
+				if (queue->getPoint (valueChangeCount-1, sampleOffset, valueNormalized) == kResultTrue)
 				{
 					int id = queue->getParameterId();
 
@@ -714,28 +658,75 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 						assert(sampleOffset >=0 && sampleOffset < data.numSamples);
 //						_RPT1(_CRT_WARN, "                     PRESETS-DSP: P%d Set in Process()\n", id);
 
-						// TODO!!! more datatypes than only float
-						auto it = param2pin.find(id);
-						if (it != param2pin.end())
-						{
-							float realVal = value; // TODO Normalised value to real (depending on pin FieldType)
-							int pinID = (*it).second;
+						auto param = patchManager.setParameterNormalised(id, valueNormalized);
 
+						if (param)
+						{
 							gmpi::api::Event e
 							{
 								{},            // next (populated later)
 								sampleOffset,  // timeDelta
 								gmpi::api::EventType::PinSet,
-								pinID,         // pinIdx
-								4,             // size_
+								0,				// pinIdx
+								0,             // size_
 								{}             // data_/oversizeData_
 							};
 
-							const auto src = reinterpret_cast<const uint8_t*>(&realVal);
-							auto dst = reinterpret_cast<uint8_t*>(&e.data_);
-							std::copy(src, src + sizeof(realVal), dst);
+							for (auto& pin : info.dspPins)
+							{
+								if (pin.parameterId == id && pin.direction == gmpi::PinDirection::In)
+								{
+									e.pinIdx = pin.id;
 
-							events.push(e);
+									switch (pin.parameterFieldType)
+									{
+									case gmpi::Field::Normalized:
+										{
+											const float valueF = static_cast<float>(valueNormalized);
+
+											const auto src = reinterpret_cast<const uint8_t*>(&valueF);
+											auto dst = reinterpret_cast<uint8_t*>(&e.data_);
+											std::copy(src, src + sizeof(valueF), dst);
+
+											e.size_ = static_cast<int32_t>(sizeof(valueF));
+
+											events.push(e);
+										}
+										break;
+
+									case gmpi::Field::Value:
+										{
+
+										switch (pin.datatype)
+										{
+											case gmpi::PinDatatype::Float32:
+											{
+												const auto valueF = static_cast<float>(param->valueReal);
+												const auto src = reinterpret_cast<const uint8_t*>(&valueF);
+												auto dst = reinterpret_cast<uint8_t*>(&e.data_);
+												std::copy(src, src + sizeof(valueF), dst);
+												e.size_ = static_cast<int32_t>(sizeof(valueF));
+												events.push(e);
+											}
+											break;
+											case gmpi::PinDatatype::Int32:
+											{
+												const auto valueI = static_cast<int32_t>(std::round(param->valueReal));
+												const auto src = reinterpret_cast<const uint8_t*>(&valueI);
+												auto dst = reinterpret_cast<uint8_t*>(&e.data_);
+												std::copy(src, src + sizeof(valueI), dst);
+												e.size_ = static_cast<int32_t>(sizeof(valueI));
+												events.push(e);
+											}
+											break;
+											default:
+												assert(false); // unsupported type.
+											}
+										}
+										break;
+									}
+								}
+							}
 						}
 					}
 					else
@@ -754,7 +745,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 							{
 								msgout = gmpi::midi_2_0::makeController(
 									static_cast<uint8_t>(cc)
-									, value
+									, valueNormalized
 									, channel
 								);
 							}
@@ -765,7 +756,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 									case 128: // Channel Pressure.
 									{
 										msgout = gmpi::midi_2_0::makeChannelPressure(
-											value
+											valueNormalized
 											, channel
 										);
 									}
@@ -775,7 +766,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 									{
 //										_RPTN(0, "C%2d BDR %f\n", channel, value);
 										msgout = gmpi::midi_2_0::makeBender(
-											value // use normalized bender
+											valueNormalized // use normalized bender
 											, channel
 										);
 									}
@@ -784,27 +775,10 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 							}
 
 							MidiIn(
-								sampleOffset
+								  sampleOffset
 								, msgout.m
 								, sizeof(msgout.m)
 							);
-
-							//int pinID = 0; // TODO!!! for now
-							//gmpi::api::Event e
-							//{
-							//	{},            // next (populated later)
-							//	sampleOffset,  // timeDelta
-							//	gmpi::api::EventType::Midi,
-							//	pinID,         // pinIdx
-							//	sizeof(msgout.m), // size_
-							//	{}             // data_/oversizeData_
-							//};
-
-							//const auto src = reinterpret_cast<const uint8_t*>(&msgout.m);
-							//auto dst = reinterpret_cast<uint8_t*>(&e.data_);
-							//std::copy(src, src + sizeof(msgout.m), dst);
-
-							//events.push(e);
 						}
 					}
 				}
@@ -863,7 +837,6 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 							keyInfo.channel
 						);
 
-						// MidiIn(e.sampleOffset, (const unsigned char*)&out, sizeof(out));
 						MidiIn(e.sampleOffset, (const unsigned char*)&out, sizeof(out));
 					}
 
@@ -1501,7 +1474,7 @@ void SeProcessor::MidiToHost(MidiBuffer3* mb, timestamp_t SeStartClock, int numS
 }
 
 // IAudioPluginHost
-gmpi::ReturnCode SeProcessor::setPin(int32_t timestamp, int32_t pinId, int32_t size, const void* data)
+gmpi::ReturnCode SeProcessor::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
 {
 	return gmpi::ReturnCode::Ok;
 }
