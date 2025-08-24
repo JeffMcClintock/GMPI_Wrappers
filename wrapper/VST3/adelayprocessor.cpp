@@ -262,6 +262,14 @@ SeProcessor::~SeProcessor ()
 	gmpi_dynamic_linking::MP_DllUnload(plugin_dllHandle_to_unload);
 }
 
+template<typename T>
+void copyValueToEvent(gmpi::api::Event& e, T value)
+{
+	const auto src = reinterpret_cast<const uint8_t*>(&value);
+	e.size_ = static_cast<int32_t>(sizeof(value));
+	std::copy(src, src + sizeof(value), e.data_);
+}
+
 void SeProcessor::reInitialise()
 {
 	silence.assign(processSetup.maxSamplesPerBlock, 0.0f);
@@ -330,8 +338,7 @@ void SeProcessor::reInitialise()
 			}
 		);
 
-		int inIdx = 0;
-		int outIdx = 0;
+		// initialise silence flags.
 		for (auto& pin : info.dspPins)
 		{
 			if (pin.datatype != gmpi::PinDatatype::Audio || pin.direction != gmpi::PinDirection::In)
@@ -349,23 +356,89 @@ void SeProcessor::reInitialise()
 			);
 		}
 
-#if 0
-		gmpi::api::Event e
+		// initialise parameters
+		for (auto& pin : info.parameters)
 		{
-			{},            // next (populated later)
-			0,             // timeDelta
-			gmpi::api::EventType::PinSet,
-			2,             // pinIdx
-			4,             // size_
-			{}             // data_/oversizeData_
-		};
+			gmpi::api::Event e
+			{
+				{},            // next (populated later)
+				0,             // timeDelta
+				gmpi::api::EventType::PinSet,
+				2,             // pinIdx
+				4,             // size_
+				{}             // data_/oversizeData_
+			};
 
-		const float parameterValue = 0.7f;
-		const auto src = reinterpret_cast<const uint8_t*>(&parameterValue);
-		auto dst = reinterpret_cast<uint8_t*>(& e.data_);
-		std::copy(src, src + sizeof(parameterValue), dst);
-		events.push(e);
-#endif
+			const float parameterValue = 0.7f;
+			const auto src = reinterpret_cast<const uint8_t*>(&parameterValue);
+			auto dst = reinterpret_cast<uint8_t*>(&e.data_);
+			std::copy(src, src + sizeof(parameterValue), dst);
+			events.push(e);
+		}
+
+		{
+			gmpi::api::Event e
+			{
+				{},            // next (populated later)
+				0,				// timeDelta
+				gmpi::api::EventType::PinSet,
+				0,				// pinIdx
+				0,             // size_
+				{}             // data_/oversizeData_
+			};
+
+			for (auto& pin : info.dspPins)
+			{
+				if (pin.direction == gmpi::PinDirection::Out || pin.parameterId == -1)
+					continue;
+
+				auto param = patchManager.getParameter(pin.parameterId);
+				if(!param)
+					continue;
+
+				{
+					e.pinIdx = pin.id;
+
+					switch (pin.parameterFieldType)
+					{
+					case gmpi::Field::Normalized:
+					{
+						copyValueToEvent(e, static_cast<float>(param->normalisedValue()));
+						events.push(e);
+					}
+					break;
+
+					case gmpi::Field::Value:
+					{
+						switch (pin.datatype)
+						{
+						case gmpi::PinDatatype::Float32:
+						{
+							copyValueToEvent(e, static_cast<float>(param->valueReal));
+						}
+						break;
+
+						case gmpi::PinDatatype::Int32:
+						{
+							copyValueToEvent(e, static_cast<int32_t>(std::round(param->valueReal)));
+						}
+						break;
+
+						case gmpi::PinDatatype::Bool:
+						{
+							copyValueToEvent(e, static_cast<bool>(std::round(param->valueReal)));
+						}
+						break;
+						default:
+							assert(false); // unsupported type.
+						}
+						events.push(e);
+					}
+					break;
+					}
+				}
+			}
+		}
 	}
 
 #if 0 // TODO
@@ -681,49 +754,39 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 									switch (pin.parameterFieldType)
 									{
 									case gmpi::Field::Normalized:
-										{
-											const float valueF = static_cast<float>(valueNormalized);
-
-											const auto src = reinterpret_cast<const uint8_t*>(&valueF);
-											auto dst = reinterpret_cast<uint8_t*>(&e.data_);
-											std::copy(src, src + sizeof(valueF), dst);
-
-											e.size_ = static_cast<int32_t>(sizeof(valueF));
-
-											events.push(e);
-										}
-										break;
+									{
+										copyValueToEvent(e, static_cast<float>(valueNormalized));
+										events.push(e);
+									}
+									break;
 
 									case gmpi::Field::Value:
 										{
-
-										switch (pin.datatype)
-										{
+											switch (pin.datatype)
+											{
 											case gmpi::PinDatatype::Float32:
 											{
-												const auto valueF = static_cast<float>(param->valueReal);
-												const auto src = reinterpret_cast<const uint8_t*>(&valueF);
-												auto dst = reinterpret_cast<uint8_t*>(&e.data_);
-												std::copy(src, src + sizeof(valueF), dst);
-												e.size_ = static_cast<int32_t>(sizeof(valueF));
-												events.push(e);
+												copyValueToEvent(e, static_cast<float>(param->valueReal));
 											}
 											break;
+
 											case gmpi::PinDatatype::Int32:
 											{
-												const auto valueI = static_cast<int32_t>(std::round(param->valueReal));
-												const auto src = reinterpret_cast<const uint8_t*>(&valueI);
-												auto dst = reinterpret_cast<uint8_t*>(&e.data_);
-												std::copy(src, src + sizeof(valueI), dst);
-												e.size_ = static_cast<int32_t>(sizeof(valueI));
-												events.push(e);
+												copyValueToEvent(e, static_cast<int32_t>(std::round(param->valueReal)));
+											}
+											break;
+
+											case gmpi::PinDatatype::Bool:
+											{
+												copyValueToEvent(e, static_cast<bool>(std::round(param->valueReal)));
 											}
 											break;
 											default:
 												assert(false); // unsupported type.
 											}
+											events.push(e);
+											break;
 										}
-										break;
 									}
 								}
 							}

@@ -446,7 +446,6 @@ void MyVstPluginFactory::RegisterPin(
 	pind.name = wrapper::FixNullCharPtr(pin->Attribute("name"));
 
 	// parameter and host-connect pins. doing this first to determine expected pin datatype.
-	pind.parameterId = -1;
 	pind.parameterFieldType = gmpi::Field::Value;
 	int expectedPinDatatype = -1;
 	{

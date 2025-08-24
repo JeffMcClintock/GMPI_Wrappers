@@ -105,6 +105,15 @@ public:
 	std::unordered_map<int, DawParameter> parameters;
 
 	PatchManager() = default;
+
+	DawParameter* getParameter(int id)
+	{
+		if (auto it = parameters.find(id) ; it != parameters.end())
+			return &(it->second);
+
+		return {};
+	}
+
 	DawParameter* setParameterNormalised(int id, double value)
 	{
 		auto it = parameters.find(id);

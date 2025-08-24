@@ -7,7 +7,7 @@ struct pinInfoSem
 	gmpi::PinDirection direction;
 	gmpi::PinDatatype datatype;
 	std::string default_value;
-	int32_t parameterId;
+	int32_t parameterId = -1;
 	gmpi::Field parameterFieldType;
 	int32_t flags;
 	std::string hostConnect;
