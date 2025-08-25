@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include "lock_free_fifo.h"
 #include "my_msg_que_output_stream.h"
 #include "QueClient.h"
@@ -16,6 +17,8 @@ public:
 
 class QueuedUsers
 {
+	int sampleFramesPerCycle = 500;
+
 public:
 	QueuedUsers() :
 		waitingClientsHead(0)
@@ -99,7 +102,13 @@ public:
 		return sentData;
 	}
 	
-	bool ServiceWaitersIncremental(IWriteableQue* que, int sampleFrames, int sampleFramesPerCycle)
+	void setSampleRate(float s)
+	{
+		static const int guiFrameRate = 60;
+		sampleFramesPerCycle = static_cast<int>(std::round(s / guiFrameRate));
+	}
+
+	bool ServiceWaitersIncremental(IWriteableQue* que, int sampleFrames) //, int sampleFramesPerCycle)
 	{
 		my_msg_que_output_stream outStream(que);
 		auto freeSpace = que->freeSpace();

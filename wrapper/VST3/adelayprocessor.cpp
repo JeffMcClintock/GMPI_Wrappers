@@ -243,6 +243,8 @@ SeProcessor::SeProcessor (pluginInfoSem& pinfo)
 		}
 	}
 
+	daw_bpm.hostControl = 18; // HC_TIME_BPM
+
 	//TODO	synthEditProject.connectPeer(this);
 }
 
@@ -702,13 +704,6 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 {
     assert(!plugin_.isNull());
     
-#if 0
-	if (synthEditProject.reinitializeFlag)
-	{
-		reInitialise();
-	}
-#endif
-
 	if (data.inputParameterChanges)
 	{
 		int32 paramChangeCount = data.inputParameterChanges->getParameterCount ();
@@ -1076,15 +1071,22 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 			}
 		}
 	}
-#if 0
 
 	// Tempo
-	if( synthEditProject.NeedsTempo( ) )
+//	if( synthEditProject.NeedsTempo( ) )
 	{
 		if (data.processContext)
 		{
 			auto& vst3Time = *data.processContext;
 
+			if (vst3Time.tempo != timeInfo.tempo)
+			{
+				daw_bpm.value = static_cast<float>(vst3Time.tempo);
+				pendingControllerQueueClients.AddWaiter(&daw_bpm);
+			}
+
+			timeInfo = vst3Time;
+#if 0
 			timeInfo.timeSigNumerator = vst3Time.timeSigNumerator;
 			timeInfo.timeSigDenominator = vst3Time.timeSigDenominator;
 			timeInfo.ppqPos = vst3Time.projectTimeMusic;
@@ -1138,10 +1140,10 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 				timeInfo.flags |= my_VstTimeInfo::kVstClockValid;
 			}
 #endif
-			synthEditProject.UpdateTempo(&timeInfo);
+#endif
+			//			synthEditProject.UpdateTempo(&timeInfo);
 		}
 	}
-#endif
 
 	// Setup audio buffers.
 	int numChannelsIn = 0;
@@ -1282,6 +1284,17 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 	dataptr = {};
 #endif
 #endif
+
+	pendingControllerQueueClients.ServiceWaitersIncremental(
+		  &m_message_que_dsp_to_ui
+		, data.numSamples
+	);
+
+	if (m_message_que_dsp_to_ui.readyBytes())
+	{
+		onQueDataAvailable();
+	}
+
 	return kResultTrue;
 }
 
@@ -1358,14 +1371,13 @@ tresult PLUGIN_API SeProcessor::notify( IMessage* message )
 	return AudioEffect::notify( message );
 }
 
-#if 0
 void SeProcessor::onQueDataAvailable()
 {
 	// TODO!!! This is INCORRECT. The que write pointer must be updated under the lock, else waiting thread can miss it.
 	std::unique_lock<std::mutex> lk(backgroundMutex);
 	backgroundSignal.notify_one();
 }
-#endif
+
 // background thread
 void SeProcessor::CommunicationProc()
 {

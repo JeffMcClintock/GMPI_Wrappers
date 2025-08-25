@@ -85,6 +85,35 @@ public:
 //-----------------------------------------------------------------------------
 typedef int64_t timestamp_t;
 
+// sends Tempo host-controls to the UI
+template<typename T>
+struct DawTimeValue : public QueClient
+{
+	T value{};
+	int32_t hostControl{};
+
+	int queryQueMessageLength(int availableBytes) override
+	{
+		//      value       hostNeedsIt num-voices+tailing -1
+		return sizeof(T) + sizeof(bool) + 2 * sizeof(int); // tailing -1
+	}
+	void getQueMessage(class my_output_stream& outStream, int messageLength) override
+	{
+		const bool hostNeedsParameterUpdate{};
+		const int32_t voice{};
+
+		outStream << (-1 - hostControl); // Handle();
+		outStream << id_to_long("ppc");
+		outStream << messageLength;
+
+		outStream << hostNeedsParameterUpdate;
+		outStream << voice;
+		outStream << value;
+
+		outStream << (int32_t)-1; // done
+	}
+};
+
 struct DawParameter
 {
 	double valueReal = 0.0;
@@ -156,19 +185,21 @@ public:
 	void reInitialise();
 #if 0 // TODO
 	// IShellServices
-	void onQueDataAvailable() override;
 	void flushPendingParameterUpdates() override {}
+#endif
+	void onQueDataAvailable();// override;
 
 	// IProcessorMessageQues
-	IWriteableQue* MessageQueToGui() override
+	IWriteableQue* MessageQueToGui() // override
 	{
 		return &m_message_que_dsp_to_ui;
 	}
+#if 0 // TODO
 	interThreadQue* ControllerToProcessorQue() override
 	{
 		return &m_message_que_ui_to_dsp;
 	}
-	void Service() override
+	void Service() //override
 	{
 		// If any data waiting, either from ServiceWaiter or any other queue user, send it via VST3 binary message.
 		if (m_message_que_dsp_to_ui.readyBytes())
@@ -213,7 +244,9 @@ protected:
 	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle_to_unload = {};
 
 	bool active_;
-//TODO	my_VstTimeInfo timeInfo;
+	Steinberg::Vst::ProcessContext timeInfo{};
+	DawTimeValue<float> daw_bpm;
+
 	PatchManager patchManager;
 
 	std::vector<float*> inputBuffers;
@@ -232,6 +265,9 @@ protected:
 
     lock_free_fifo m_message_que_dsp_to_ui;
 	interThreadQue m_message_que_ui_to_dsp;
+
+	// Communication pipes Controller<->Processor
+	QueuedUsers pendingControllerQueueClients; // parameters waiting to be sent to GUI
 
 	// MIDI output
 	void MidiToHost(class MidiBuffer3* mb, timestamp_t SeStartClock, int numSamples);
