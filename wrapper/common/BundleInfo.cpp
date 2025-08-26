@@ -1,4 +1,7 @@
-//#include "pch.h"
+#if defined( _WIN32 )
+#include <Windows.h>
+#include "Shlobj.h"
+#endif
 
 #include <algorithm>
 #include <fstream>
@@ -6,7 +9,6 @@
 #include "dynamic_linking.h"
 #include "unicode_conversion.h"
 #include "xplatform.h"
-//#include "tinyxml/tinyxml.h"
 #include "it_enum_list.h"
 
 #if (GMPI_IS_PLATFORM_JUCE==1)
@@ -17,12 +19,8 @@ namespace wrapper
 {
 using namespace JmUnicodeConversions;
 
-#if defined( _WIN32 )
-#include <Windows.h>
-#include "Shlobj.h"
-#endif
 
-#if !defined( _WIN32 )
+#if __APPLE__
 #include <dlfcn.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <pwd.h>
@@ -89,7 +87,6 @@ CFBundleRef BundleInfo::GetBundle()
 {
     return CreatePluginBundleRef();
 }
-
 #endif
 
 BundleInfo* BundleInfo::instance()
@@ -120,6 +117,7 @@ std::wstring BundleInfo::getSemFolder()
 #else
     std::string result;
 
+#if __APPLE__
     CFBundleRef br = CreatePluginBundleRef();
     
 	if ( br ) // getBundleRef ())
@@ -135,7 +133,8 @@ std::wstring BundleInfo::getSemFolder()
         }
         ReleasePluginBundleRef(br);
     }
-    
+#endif
+
     return Utf8ToWstring(result.c_str());
 #endif
 }
@@ -156,6 +155,7 @@ std::wstring BundleInfo::getResourceFolder()
 #else
     std::string result;
     
+#if __APPLE__
     CFBundleRef br = CreatePluginBundleRef();
     
     if ( br )
@@ -171,7 +171,8 @@ std::wstring BundleInfo::getResourceFolder()
         }
         ReleasePluginBundleRef(br);
     }
-    
+#endif
+
     return Utf8ToWstring(result.c_str());
 #endif
 }
@@ -379,6 +380,8 @@ std::string BundleInfo::getResource( const char* resourceId )
 		// it's an absolute path, we can use it as is
 		// platformHandle = fopen (res.u.name, "rb");
 	}
+
+#if __APPLE__
     CFBundleRef br = CreatePluginBundleRef();
 	if (br ) // getBundleRef ())
 	{
@@ -423,6 +426,7 @@ std::string BundleInfo::getResource( const char* resourceId )
         ReleasePluginBundleRef(br);
 	}
 	return result;
+#endif // __APPLE__
 #endif
 #endif // JUCE
 }
