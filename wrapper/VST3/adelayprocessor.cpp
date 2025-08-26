@@ -244,8 +244,6 @@ SeProcessor::SeProcessor (pluginInfoSem& pinfo)
 		}
 	}
 
-	daw_bpm.hostControl = 18; // HC_TIME_BPM
-
 	//TODO	synthEditProject.connectPeer(this);
 }
 
@@ -936,7 +934,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 					}
 
 					{
-						_RPTN(0, "C%2d NON %3d\n", e.noteOn.channel, e.noteOn.pitch);
+						// _RPTN(0, "C%2d NON %3d\n", e.noteOn.channel, e.noteOn.pitch);
 
 						const auto out = gmpi::midi_2_0::makeNoteOnMessage(
 							keyInfo.MidiKeyNumber,
@@ -1043,7 +1041,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 						break;
 					}
 
-					_RPTN(0, "EXPR: key %3d type %2d value %f\n", keyInfo->MidiKeyNumber, e.noteExpressionValue.typeId, e.noteExpressionValue.value);
+					// _RPTN(0, "EXPR: key %3d type %2d value %f\n", keyInfo->MidiKeyNumber, e.noteExpressionValue.typeId, e.noteExpressionValue.value);
 
 					if (controllerId >= 0)
 					{
@@ -1090,12 +1088,12 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 		{
 			auto& vst3Time = *data.processContext;
 
-			setHostControlFromDaw(wrapper::HC_TIME_BPM, timeInfo.tempo);
-			setHostControlFromDaw(wrapper::HC_TIME_NUMERATOR, timeInfo.timeSigNumerator);
-			setHostControlFromDaw(wrapper::HC_TIME_DENOMINATOR, timeInfo.timeSigDenominator);
-			setHostControlFromDaw(wrapper::HC_TIME_QUARTER_NOTE_POSITION, timeInfo.projectTimeMusic);
+			setHostControlFromDaw(wrapper::HC_TIME_BPM,                   vst3Time.tempo);
+			setHostControlFromDaw(wrapper::HC_TIME_NUMERATOR,             vst3Time.timeSigNumerator);
+			setHostControlFromDaw(wrapper::HC_TIME_DENOMINATOR,           vst3Time.timeSigDenominator);
+			setHostControlFromDaw(wrapper::HC_TIME_QUARTER_NOTE_POSITION, vst3Time.projectTimeMusic);
 
-			timeInfo = vst3Time; // needed??
+//			timeInfo = vst3Time; // needed??
 #if 0
 			timeInfo.timeSigNumerator = vst3Time.timeSigNumerator;
 			timeInfo.timeSigDenominator = vst3Time.timeSigDenominator;

@@ -85,35 +85,6 @@ public:
 //-----------------------------------------------------------------------------
 typedef int64_t timestamp_t;
 
-// sends Tempo host-controls to the UI
-template<typename T>
-struct DawTimeValue : public QueClient
-{
-	T value{};
-	int32_t hostControl{};
-
-	int queryQueMessageLength(int availableBytes) override
-	{
-		//      value       hostNeedsIt num-voices+tailing -1
-		return sizeof(T) + sizeof(bool) + 2 * sizeof(int); // tailing -1
-	}
-	void getQueMessage(class my_output_stream& outStream, int messageLength) override
-	{
-		const bool hostNeedsParameterUpdate{};
-		const int32_t voice{};
-
-		outStream << (-1 - hostControl); // Handle();
-		outStream << id_to_long("ppc");
-		outStream << messageLength;
-
-		outStream << hostNeedsParameterUpdate;
-		outStream << voice;
-		outStream << value;
-
-		outStream << (int32_t)-1; // done
-	}
-};
-
 struct DawParameter : public QueClient // also host-controls, might need to rename it.
 {
 	int32_t id{};
@@ -280,8 +251,7 @@ protected:
 	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle_to_unload = {};
 
 	bool active_;
-	Steinberg::Vst::ProcessContext timeInfo{};
-	DawTimeValue<float> daw_bpm;
+//	Steinberg::Vst::ProcessContext timeInfo{};
 
 	PatchManager patchManager;
 

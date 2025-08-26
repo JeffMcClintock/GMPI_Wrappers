@@ -15,6 +15,8 @@ struct pinInfoSem
 	wrapper::HostControls hostConnect = wrapper::HC_NONE;
 	std::string meta_data;
 };
+
+// todo might be helpful to flag if it's used on UI/Processor to save on pointless updates
 struct paramInfoSem
 {
 	int32_t id{};
