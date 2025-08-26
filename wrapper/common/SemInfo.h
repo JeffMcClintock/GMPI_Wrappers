@@ -48,14 +48,14 @@ struct pluginInfoSem
 
 inline int countPins(pluginInfoSem const& plugin, gmpi::PinDirection direction, gmpi::PinDatatype datatype)
 {
-	return std::count_if(
+	return static_cast<int>(std::count_if(
 		plugin.dspPins.begin()
 		, plugin.dspPins.end()
 		, [direction, datatype](const pinInfoSem& p) -> bool
 		{
 			return p.direction == direction && p.datatype == datatype;
 		}
-	);
+	));
 }
 
 inline std::string calcSubCategories(pluginInfoSem const& plugin)

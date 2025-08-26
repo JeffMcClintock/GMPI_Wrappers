@@ -466,7 +466,7 @@ void MyVstPluginFactory::RegisterPin(
 				// field id can be stored as int (plugin XML), or as enum text (sems XML)
 				if (isdigit(*parameterField))
 				{
-					sscanf(parameterField, "%d", &pind.parameterFieldType);
+					sscanf(parameterField, "%d", (int*) &pind.parameterFieldType);
 				}
 				else
 				{
