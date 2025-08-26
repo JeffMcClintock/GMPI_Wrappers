@@ -83,11 +83,11 @@ enum class EPatchCommands
 	CompareGet_CopyAB
 };
 
-HostControls StringToHostControl( const std::wstring& txt );
+HostControls StringToHostControl( std::string_view txt );
 gmpi::PinDatatype GetHostControlDatatype( HostControls hc );
-const wchar_t* GetHostControlName( HostControls hc );
-const wchar_t* GetHostControlNameByAutomation(int automation);
-int GetHostControlAutomation(HostControls hostControlId);
+const char* GetHostControlName( HostControls hc );
+//const char* GetHostControlNameByAutomation(int automation);
+//int GetHostControlAutomation(HostControls hostControlId);
 bool HostControlAttachesToParentContainer( HostControls hostControlId );
 bool HostControlisPolyphonic(HostControls hostControlId);
 bool AffectsVoiceAllocation(HostControls hostControlId);

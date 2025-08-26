@@ -283,7 +283,7 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 		const auto supportAllCC = true; // info.vst3Emulate16ChanCcs;
 
 		// MIDI CC SUPPORT
-		wchar_t ccName[] = L"MIDI CC     ";
+		char ccName[] = "MIDI CC     ";
 		for (int chan = 0; chan < supportedChannels; ++chan)
 		{
 			for (int cc = 0; cc < numMidiControllers; ++cc)
@@ -291,7 +291,7 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 				if (chan == 0 || supportAllCC || cc > 127 || cc == 74) // Channel Presure, Pitch Bend and Brightness
 				{
 					const ParamID ParameterId = MidiControllersParameterId + chan * numMidiControllers + cc;
-					swprintf(ccName + 9, std::size(ccName), L"%3d", cc);
+					sprintf(ccName + 9, "%3d", cc);
 
 					auto param = makeNativeParameter(ParameterId, false);
 					param->datatype_ = gmpi::PinDatatype::Float32;

@@ -138,6 +138,43 @@ void MpParameter_base::updateFromDsp(int recievingMessageId, my_input_stream & s
 
 	switch (recievingMessageId)
 	{
+	case code_to_long('p', 'p', 'c', '2'): // "ppc" Patch parameter change, always sent as a double
+	{
+		double val{};
+		strm >> val;
+
+		if (rawValues_.empty())
+		{
+			rawValues_.push_back({});
+		}
+
+		switch(datatype_)
+		{
+			case gmpi::PinDatatype::Float32:
+				rawValues_[0] = ToRaw4((float)val);
+				break;
+			case gmpi::PinDatatype::Float64:
+				rawValues_[0] = ToRaw4(val);
+				break;
+			case gmpi::PinDatatype::Int32:
+				rawValues_[0] = ToRaw4(static_cast<int32_t>(round(val)));
+				break;
+			case gmpi::PinDatatype::Int64:
+				rawValues_[0] = ToRaw4(static_cast<int64_t>(round(val)));
+				break;
+			case gmpi::PinDatatype::Bool:
+				rawValues_[0] = ToRaw4((bool)(val > 0.5));
+				break;
+			default:
+				assert(false);
+				break;
+		}
+
+		constexpr int32_t voice{};
+		controller_->updateGuis(this, voice);
+		emulateMouseDown();
+	}
+	break;
 
 	case code_to_long('p', 'p', 'c', 0): // "ppc" Patch parameter change. Either Output parameter or MIDI automation
 	{

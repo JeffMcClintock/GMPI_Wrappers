@@ -1,5 +1,7 @@
 #pragma once
 
+#include "HostControls.h"
+
 struct pinInfoSem
 {
 	int32_t id;
@@ -10,12 +12,12 @@ struct pinInfoSem
 	int32_t parameterId = -1;
 	gmpi::Field parameterFieldType;
 	int32_t flags;
-	std::string hostConnect;
+	wrapper::HostControls hostConnect = wrapper::HC_NONE;
 	std::string meta_data;
 };
 struct paramInfoSem
 {
-	int32_t id;
+	int32_t id{};
 	std::string name;
 	gmpi::PinDatatype datatype;
 	std::string default_value;
@@ -25,7 +27,7 @@ struct paramInfoSem
 	std::string enum_list;
 	double minimum = 0.0;
 	double maximum = 1.0;
-	bool is_private;
+	bool is_private{};
 };
 
 struct pluginInfoSem

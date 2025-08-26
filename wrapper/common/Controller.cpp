@@ -216,12 +216,11 @@ void MpController::Initialize()
 	// Parameters
 	{
 		int hostParameterIndex = 0;
-		int ParameterHandle = 0;
 
-		for (auto& i : ParameterHandleIndex)
-		{
-			ParameterHandle = (std::max)(ParameterHandle, i.first + 1);
-		}
+		//for (auto& i : ParameterHandleIndex)
+		//{
+		//	ParameterHandle = (std::max)(ParameterHandle, i.first + 1);
+		//}
 
 		for (auto& param : info.parameters)
 		{
@@ -245,6 +244,8 @@ void MpController::Initialize()
 				//					assert(ParameterTag >= 0);
 				seParameter = makeNativeParameter(hostParameterIndex++, pminimum > pmaximum);
 			}
+			
+			const int ParameterHandle = param.id;
 
 			seParameter->hostControl_ = -1; // TODO hostControl;
 			seParameter->minimum = param.minimum;
@@ -254,7 +255,7 @@ void MpController::Initialize()
 			seParameter->moduleHandle_ = 0;
 			seParameter->moduleParamId_ = param.id;
 			seParameter->stateful_ = true; // stateful_;
-			seParameter->name_ = Utf8ToWstring(param.name);
+			seParameter->name_ = param.name;
 			seParameter->enumList_ = Utf8ToWstring(param.enum_list); // enumList_;
 			seParameter->ignorePc_ = false; // ignorePc != 0;
 
@@ -276,7 +277,7 @@ void MpController::Initialize()
 			// Ensure host queries return correct value.
 			seParameter->upDateImmediateValue();
 
-			++ParameterHandle;
+//			++ParameterHandle;
 		}
 	}
 

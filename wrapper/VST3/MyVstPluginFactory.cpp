@@ -9,6 +9,7 @@
 #include "Common.h"
 #include "wrapper/common/tinyXml2/tinyxml2.h"
 #include "wrapper/common/dynamic_linking.h"
+#include "wrapper/common/HostControls.h"
 
 #if 0
 #include "it_enum_list.h"
@@ -455,10 +456,10 @@ void MyVstPluginFactory::RegisterPin(
 		}
 
 		// host-connect
-		pind.hostConnect = wrapper::FixNullCharPtr(pin->Attribute("hostConnect"));
+		pind.hostConnect = wrapper::StringToHostControl(wrapper::FixNullCharPtr(pin->Attribute("hostConnect")));
 
 		// parameterField.
-		if (!pind.hostConnect.empty() || pind.parameterId != -1)
+		if (pind.hostConnect != wrapper::HC_NONE || pind.parameterId != -1)
 		{
 			if (const auto parameterField = pin->Attribute("parameterField"); parameterField)
 			{
@@ -535,29 +536,28 @@ void MyVstPluginFactory::RegisterPin(
 			}
 			else // host-connect pin
 			{
-#if 0 // TODO
-				pind.flags |= IO_HOST_CONTROL | IO_HIDE_PIN;
-				const auto hostControlId = (HostControls)StringToHostControl(pind.hostConnect.c_str());
+//				pind.flags |= IO_HOST_CONTROL | IO_HIDE_PIN;
+				const auto hostControlId = pind.hostConnect;
+				pind.parameterId = -1 - (int)hostControlId; // host controls are indicated with negative parameter ids
 
-				if (hostControlId == HC_NONE)
+				if (hostControlId == wrapper::HC_NONE)
 				{
-					std::wostringstream oss;
-					oss << L"ERROR. module XML: '" << pind.hostConnect << L"' unknown HOST CONTROL.";
-					Messagebox(oss);
+					//std::wostringstream oss;
+					//oss << L"ERROR. module XML: '" << pind.hostConnect << L"' unknown HOST CONTROL.";
+					//Messagebox(oss);
 				}
-				if (pind.direction != DR_IN && (hostControlId < HC_USER_SHARED_PARAMETER_INT0 || hostControlId > HC_USER_SHARED_PARAMETER_INT4))
+//				if (pind.direction != DR_IN && (hostControlId < HC_USER_SHARED_PARAMETER_INT0 || hostControlId > HC_USER_SHARED_PARAMETER_INT4))
 				{
-					std::wostringstream oss;
-					oss << L"ERROR. module XML file (" << Filename() << L"): pin id " << pin_id << L" hostConnect pin wrong direction. Expected: direction=\"in\"";
-					Messagebox(oss);
+					//std::wostringstream oss;
+					//oss << L"ERROR. module XML file (" << Filename() << L"): pin id " << pin_id << L" hostConnect pin wrong direction. Expected: direction=\"in\"";
+					//Messagebox(oss);
 				}
 
-				expectedPinDatatype = GetHostControlDatatype(hostControlId);
-				if (expectedPinDatatype == DT_ENUM)
+				expectedPinDatatype = (int) wrapper::GetHostControlDatatype(hostControlId);
+				if (expectedPinDatatype == (int) gmpi::PinDatatype::Enum)
 				{
-					expectedPinDatatype = DT_INT;
+					expectedPinDatatype = (int) gmpi::PinDatatype::Int32;
 				}
-#endif
 			}
 		}
 	}
@@ -935,6 +935,38 @@ void MyVstPluginFactory::RegisterXml(const /*platform_*/std::string& pluginPath,
 					RegisterPin(pinE, pinList, sub_type, nextPinId);
 					++nextPinId;
 				}
+			}
+		}
+
+		// consolidate host-controls
+		{
+			std::map< wrapper::HostControls, int> host_controls;
+
+			for(auto& pin : info.dspPins)
+			{
+				if (wrapper::HC_NONE != pin.hostConnect)
+				{
+					host_controls[pin.hostConnect] = 1;
+				}
+			}
+			for (auto& pin : info.guiPins)
+			{
+				if (wrapper::HC_NONE != pin.hostConnect)
+				{
+					host_controls[pin.hostConnect] |= 2;
+				}
+			}
+
+			//int nextId = info.parameters.empty() ? 0 : info.parameters.back().id + 1;
+			for(auto hc : host_controls)
+			{
+				paramInfoSem param{};
+				param.id = -1 - (int)hc.first; // ID becomes negative, derived from HC enum.
+				param.name = wrapper::GetHostControlName(hc.first);
+				param.datatype = wrapper::GetHostControlDatatype(hc.first);
+				param.is_private = true;
+
+				info.parameters.push_back(param);
 			}
 		}
 	}

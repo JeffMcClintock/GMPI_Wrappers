@@ -29,7 +29,7 @@ namespace wrapper
 		int moduleParamId_ = -1;
 		int stateful_ = false;
 		bool ignorePc_ = {};
-		std::wstring name_;
+		std::string name_;
 		std::wstring enumList_;
 		int32_t MidiAutomation = -1;
 		std::wstring MidiAutomationSysex;

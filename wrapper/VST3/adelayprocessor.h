@@ -13,10 +13,10 @@
 #include <condition_variable>
 #include <optional>
 #include "GmpiMidi.h"
-//#include "se_types.h"
 #include "wrapper/common/lock_free_fifo.h"
 #include "wrapper/common/interThreadQue.h"
 #include "wrapper/common/dynamic_linking.h"
+#include "wrapper/common/HostControls.h"
 
 static const int MidiControllersParameterId = 10000;
 
@@ -114,8 +114,9 @@ struct DawTimeValue : public QueClient
 	}
 };
 
-struct DawParameter
+struct DawParameter : public QueClient // also host-controls, might need to rename it.
 {
+	int32_t id{};
 	double valueReal = 0.0;
 	double valueLo = 0.0;
 	double valueHi = 1.0;
@@ -125,6 +126,23 @@ struct DawParameter
 		if (valueHi == valueLo)
 			return 0.0; // avoid divide by zero.
 		return (valueReal - valueLo) / (valueHi - valueLo);
+	}
+
+	int queryQueMessageLength(int availableBytes) override
+	{
+		return sizeof(double);
+	}
+
+	void getQueMessage(class my_output_stream& outStream, int messageLength) override
+	{
+		const bool hostNeedsParameterUpdate{};
+		const int32_t voice{};
+
+		outStream << id;
+		outStream << id_to_long("ppc2");
+		outStream << messageLength;
+
+		outStream << valueReal;
 	}
 };
 
@@ -143,6 +161,7 @@ public:
 		return {};
 	}
 
+	// return the parameter only if it changed.
 	DawParameter* setParameterNormalised(int id, double value)
 	{
 		auto it = parameters.find(id);
@@ -158,6 +177,22 @@ public:
 
 		param.valueReal = newValueReal;
 
+		return &param;
+	}
+
+	// return the parameter only if it changed.
+	DawParameter* setParameterReal(int id, double value)
+	{
+		auto it = parameters.find(id);
+		if (it == parameters.end())
+			return {};
+
+		auto& param = it->second;
+
+		if (value == param.valueReal)
+			return {};
+
+		param.valueReal = value;
 		return &param;
 	}
 };
@@ -217,6 +252,7 @@ public:
 	int32_t getBlockSize() override;
 	float getSampleRate() override;
 	int32_t getHandle() override;
+	void setHostControlFromDaw(wrapper::HostControls hc, double value);
 
 protected:
 	void CommunicationProc();

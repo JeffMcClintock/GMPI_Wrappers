@@ -232,9 +232,10 @@ SeProcessor::SeProcessor (pluginInfoSem& pinfo)
 	// init PatchManager parameters
 	for (const auto& param : info.parameters)
 	{
-		if (param.id >= 0)
+//		if (param.id >= 0)
 		{
 			DawParameter p;
+			p.id = param.id;
 			p.valueReal = atof(param.default_value.c_str());
 			p.valueLo = param.minimum;
 			p.valueHi = param.maximum;
@@ -699,6 +700,16 @@ void SeProcessor::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
 	events.push(ge);
 }
 
+void SeProcessor::setHostControlFromDaw(wrapper::HostControls hc, double value)
+{
+	const auto id = -1 - (int)hc;
+
+	if (auto param = patchManager.setParameterReal(id, value); param)
+	{
+		pendingControllerQueueClients.AddWaiter(param);
+	}
+}
+
 //-----------------------------------------------------------------------------
 tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 {
@@ -1079,13 +1090,12 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 		{
 			auto& vst3Time = *data.processContext;
 
-			if (vst3Time.tempo != timeInfo.tempo)
-			{
-				daw_bpm.value = static_cast<float>(vst3Time.tempo);
-				pendingControllerQueueClients.AddWaiter(&daw_bpm);
-			}
+			setHostControlFromDaw(wrapper::HC_TIME_BPM, timeInfo.tempo);
+			setHostControlFromDaw(wrapper::HC_TIME_NUMERATOR, timeInfo.timeSigNumerator);
+			setHostControlFromDaw(wrapper::HC_TIME_DENOMINATOR, timeInfo.timeSigDenominator);
+			setHostControlFromDaw(wrapper::HC_TIME_QUARTER_NOTE_POSITION, timeInfo.projectTimeMusic);
 
-			timeInfo = vst3Time;
+			timeInfo = vst3Time; // needed??
 #if 0
 			timeInfo.timeSigNumerator = vst3Time.timeSigNumerator;
 			timeInfo.timeSigDenominator = vst3Time.timeSigDenominator;

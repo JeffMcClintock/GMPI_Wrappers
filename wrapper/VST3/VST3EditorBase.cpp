@@ -106,8 +106,8 @@ void VST3EditorBase::onParameterUpdate(int32_t parameterHandle, gmpi::Field fiel
 	int32_t moduleParameterId{-2};
 	controller->getParameterModuleAndParamId(parameterHandle, &moduleHandle, &moduleParameterId);
 
-	if (-1 == moduleHandle) // not referenced by the GMPI plugin. e.g. HC_PROGRAM_MODIFIED
-		return;
+	//if (-1 == moduleHandle) // not referenced by the GMPI plugin. e.g. HC_PROGRAM_MODIFIED
+	//	return;
 
 	for (const auto& pin : info.guiPins)
 	{
