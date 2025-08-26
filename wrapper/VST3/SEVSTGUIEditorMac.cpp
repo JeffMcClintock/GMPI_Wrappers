@@ -17,6 +17,13 @@ SEVSTGUIEditorMac::SEVSTGUIEditorMac(pluginInfoSem const& info, gmpi::shared_ptr
 
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::attached (void* parent, Steinberg::FIDString type)
 {
+    const gmpi::drawing::Size availableSize{ 99999.f, 99999.f };//static_cast<float>(width), static_cast<float>(height) };
+    gmpi::drawing::Size desiredSize{ 100.f, 100.f };
+    pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
+
+    width = static_cast<int>(desiredSize.width);
+    height = static_cast<int>(desiredSize.height);
+    
     nsView = createNativeView(parent, (class IUnknown*) static_cast<gmpi::api::IEditorHost*>(&helper), (class IUnknown*) pluginGraphics_GMPI.get(), width, height);
 
     if (pluginParameters_GMPI)
