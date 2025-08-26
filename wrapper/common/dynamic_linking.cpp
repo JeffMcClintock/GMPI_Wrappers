@@ -95,7 +95,7 @@ namespace gmpi_dynamic_linking
     int32_t MP_GetDllHandle(DLL_HANDLE* returnDllHandle)
     {
         *returnDllHandle = {};
-        
+#if __APPLE__
         Dl_info info;
         if (dladdr ((const void*)MP_GetDllHandle, &info))
         {
@@ -124,16 +124,21 @@ namespace gmpi_dynamic_linking
                 }
             }
         }
+#endif
         return 0;
     }
 
     std::wstring MP_GetDllFilename()
     {
+#if __APPLE__
         Dl_info info;
         int rv = dladdr((void *)&localFuncWithUNlikelyName3456, &info);
         assert(rv != 0);
 
         return Utf8ToWstring(info.dli_fname);
+#else
+        return {}; // TODO Linux
+#endif
     }
 #endif
 }
