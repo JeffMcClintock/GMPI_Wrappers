@@ -83,13 +83,13 @@ bool MpParameter_base::setParameterRaw(gmpi::Field paramField, int32_t size, con
 		{
 // -ves fail			newRawValue = ToRaw4((int32_t)(0.5 + realWorld));
 			//newRawValue = ToRaw4((int32_t) static_cast<int32_t>(0.5 + realWorld));
-			newRawValue = ToRaw4(static_cast<int32_t>(round(realWorld)));
+			newRawValue = ToRaw4(static_cast<int32_t>(std::round(realWorld)));
 			break;
 		}
 		case gmpi::PinDatatype::Int64:
 		{
 			// -ves fail			newRawValue = ToRaw4((int64_t)(0.5 + realWorld));
-			newRawValue = ToRaw4(static_cast<int64_t>(round(realWorld)));
+			newRawValue = ToRaw4(static_cast<int64_t>(std::round(realWorld)));
 			break;
 		}
 		case gmpi::PinDatatype::Bool:
