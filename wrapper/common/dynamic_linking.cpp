@@ -31,12 +31,16 @@ namespace gmpi_dynamic_linking
 
 	int32_t MP_DllLoad(DLL_HANDLE* dll_handle, const wchar_t* dll_filename)
 	{
+        *dll_handle = {};
+
 #if defined( _WIN32)
 		*dll_handle = (DLL_HANDLE) LoadLibraryW(dll_filename);
 #else
-		*dll_handle = (DLL_HANDLE) dlopen(WStringToUtf8(dll_filename).c_str(), 0);
+#if __APPLE__
+        *dll_handle = (DLL_HANDLE) dlopen(WStringToUtf8(dll_filename).c_str(), 0);
 #endif
-		return *dll_handle == 0;
+#endif
+        return *dll_handle == 0;
 	}
 
 	int32_t MP_DllUnload(DLL_HANDLE dll_handle)
@@ -47,7 +51,9 @@ namespace gmpi_dynamic_linking
 #if defined( _WIN32)
 			r = FreeLibrary((HMODULE)dll_handle);
 #else
-			r = dlclose((MP_DllHandle)dll_handle);
+#if __APPLE__
+            r = dlclose((MP_DllHandle)dll_handle);
+#endif
 #endif
 		}
 		return r == 0;
@@ -60,7 +66,9 @@ namespace gmpi_dynamic_linking
 #if defined( _WIN32)
 		*returnFunction = (void*) GetProcAddress((HMODULE)dll_handle, symbol_name);
 #else
-		*returnFunction = dlsym((MP_DllHandle) dll_handle, symbol_name);
+#if __APPLE__
+        *returnFunction = dlsym((MP_DllHandle) dll_handle, symbol_name);
+#endif
 #endif
 		return *returnFunction == nullptr;
 	}
