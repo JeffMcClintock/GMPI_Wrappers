@@ -92,6 +92,26 @@ struct DawParameter : public QueClient // also host-controls, might need to rena
 	double valueLo = 0.0;
 	double valueHi = 1.0;
 
+	bool setNormalised(double value)
+	{
+		const auto newValueReal = valueLo + value * (valueHi - valueLo);
+
+		const bool r = newValueReal != valueReal;
+
+		valueReal = newValueReal;
+
+		return r;
+	}
+
+	bool setReal(double value)
+	{
+		const bool r = value != valueReal;
+
+		valueReal = value;
+
+		return r;
+	}
+
 	double normalisedValue() const
 	{
 		if (valueHi == valueLo)
@@ -141,14 +161,8 @@ public:
 
 		auto& param = it->second;
 
-		auto newValueReal = param.valueLo + value * (param.valueHi - param.valueLo);
-
-		if(newValueReal == param.valueReal)
-			return {};
-
-		param.valueReal = newValueReal;
-
-		return &param;
+		if(param.setNormalised(value))
+			return &param;
 	}
 
 	// return the parameter only if it changed.
