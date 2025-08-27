@@ -1,0 +1,363 @@
+#ifndef __SEInstrumentBase__
+#define __SEInstrumentBase__
+
+#include <vector>
+#include <mutex>
+#include <AudioUnit/AudioUnit.h>
+#include <AudioToolbox/AudioUnitUtilities.h>
+#include "AUMIDIBase.h"
+#include "SynthRuntime.h"
+#include "UMidiBuffer2.h"
+//#include "IGuiHost.h"
+#include "Controller.h"
+#include "MpParameter.h"
+#include "ProcessorStateManager.h"
+#include "mp_midi.h"
+#include "mfc_emulation.h"
+
+struct parameterChange
+{
+	UInt32					BufferOffsetInFrames;
+	AudioUnitParameterID	ID;
+	AudioUnitParameterValue	Value;
+};
+
+class MpParameterAU : public MpParameter_native
+{
+	bool isInverted = {};
+	class SEInstrumentBase* AUcontroller = {};
+	AudioUnitParameter nativeParameter_;
+	std::atomic<float> dawFacingValueReal = {}; // cache latest update from Ableton, least Ableton queries it while it's queued.
+
+public:
+
+	MpParameterAU(class SEInstrumentBase* controller, AudioUnitParameter nativeParameter, bool isInverted);
+
+    int getNativeTag() override
+    {
+        return nativeParameter_.mParameterID;
+    }
+    
+	void setRealFromDaw(double value)
+	{
+        _RPT1(0,"setRealFromDaw %f\n", value);
+		const auto normalised_se = static_cast<float>(RealToNormalized(value));
+		setParameterRaw(gmpi::MP_FT_NORMALIZED, sizeof(normalised_se), &normalised_se);
+	}
+
+	void setValueImmediate(float value)
+	{
+     //   _RPT1(0,"setValueImmediate %f\n", value);
+		dawFacingValueReal.store(value, std::memory_order_release);
+	}
+	float getValueImmediate() const
+	{
+        const auto value = dawFacingValueReal.load(std::memory_order_relaxed);
+        _RPT1(0,"getValueImmediate %f\n", value);
+
+        return value;
+	}
+
+	// AU host (e.g. Live) can que parameter changes which don't take affect immediatly,
+	// but expect to query current value immediatly. Cache latest value here (only for reporting to DAW).
+	void upDateImmediateValue() override
+	{
+    //    _RPT0(0,"upDateImmediateValue=> ");
+		setValueImmediate(getValueReal());
+	}
+
+	void updateProcessor(gmpi::FieldType filedId, int32_t voice) override;
+
+	float convertNormalized(float value) const
+	{
+		return isInverted ? 1.0f - value : value;
+	}
+    void updateDawUnsafe(const std::string& rawValue) override {}
+};
+
+class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase,
+ public MpController, public IShellServices, public IProcessorMessageQues //, public IAuGui
+{
+	friend class MpParameterAU;
+
+	SynthRuntime processor;
+
+	std::vector<parameterChange> parameterChanges[2];
+	my_VstTimeInfo timeInfo;
+	int latencyCompensation; // enum.
+	bool wantsMidi = false;
+	std::vector<float*> outputPtr;
+	std::vector<float*> inputPtr;
+	bool outputsAsStereoPairs = true;
+	bool monoUseOk = false;
+
+	std::vector<AUChannelInfo> busArrangement;
+	std::vector<AUChannelInfo> supportedChannels;
+
+	AudioUnitCocoaViewInfo cocoaInfo; // custom GUI class information.
+	std::map<std::wstring, std::vector<CFStringRef> > enumStrings; // cache of native enum lists
+	std::map<int, MpParameterAU*> tagToParameter;
+	UInt32 offLineRenderMode = 0;
+	interThreadQue queueToDsp_;
+	gmpi::midi_2_0::MidiConverter2 midiConverter;
+	gmpi::midi_2_0::MpeConverter mpeConverter;
+//    int userNotHoldingAControlCounter = 0;
+    
+	ProcessorStateMgr stateMgr;
+#ifdef _DEBUG
+    std::thread::id mainThreadID;
+#endif
+#if 0
+	// MPE
+	int lower_zone_size = 0; // both 0 = not MPE mode
+	int upper_zone_size = 0;
+	bool auto_mpe_mode = false;
+
+	unsigned short incoming_rpn[16];
+	// RPNs are 14 bit values, so this value never occurs, represents "no rpn"
+	static const unsigned short NULL_RPN = 0xffff;
+	void cntrl_update_msb(unsigned short& var, short hb) const
+	{
+		var = (var & 0x7f) + (hb << 7);	// mask off high bits and replace
+	}
+	void cntrl_update_lsb(unsigned short& var, short lb) const
+	{
+		var = (var & 0x3F80) + lb;			// mask off low bits and replace
+	}
+#endif
+
+	void reInitialize();
+protected:
+	AUEventListenerRef mParameterListener;
+	bool OnTimer() override;
+
+public:
+	SEInstrumentBase(AudioComponentInstance	inInstance);
+	virtual ~SEInstrumentBase();
+
+	// IShellServices
+	void onQueDataAvailable() override {}
+	void flushPendingParameterUpdates() override;
+	void EnableIgnoreProgramChange() override
+	{
+		stateMgr.enableIgnoreProgramChange();
+	}
+
+	virtual void                PostConstructor() override;
+	virtual OSStatus			Initialize() override;
+
+	virtual OSStatus            SaveState(CFPropertyListRef* outData) override;
+	virtual OSStatus            RestoreState(CFPropertyListRef inData) override;
+
+
+	/*! @method Parts */
+	ausdk::AUScope& Parts() { return mPartScope; }
+
+	/*! @method GetPart */
+	ausdk::AUElement* GetPart(AudioUnitElement inElement)
+	{
+		return mPartScope.SafeGetElement(inElement);
+	}
+
+	virtual ausdk::AUScope* GetScopeExtended(AudioUnitScope inScope) override;
+
+	virtual void				CreateExtendedElements() override;
+
+	virtual OSStatus			Reset(AudioUnitScope 					inScope,
+		AudioUnitElement 				inElement) override;
+
+	bool ValidFormat(AudioUnitScope inScope, AudioUnitElement inElement,
+		const AudioStreamBasicDescription& inNewFormat) override;
+
+	virtual UInt32              SupportedNumChannels(const AUChannelInfo** outInfo) override;
+
+	virtual bool				StreamFormatWritable(AudioUnitScope					scope,
+		AudioUnitElement				element) override;
+
+	virtual bool				CanScheduleParameters() const override { return false; }
+
+	virtual OSStatus			Render(AudioUnitRenderActionFlags& ioActionFlags,
+		const AudioTimeStamp& inTimeStamp,
+		UInt32							inNumberFrames) override;
+
+	// MIDI dispatch
+	OSStatus MIDIEvent(
+		UInt32 inStatus, UInt32 inData1, UInt32 inData2, UInt32 inOffsetSampleFrame) override;
+        
+#if AUSDK_MIDI2_AVAILABLE
+	OSStatus MIDIEventList(
+		UInt32 /*inOffsetSampleFrame*/, const struct MIDIEventList& /*eventList*/) override;
+#endif
+
+	void ParamGrabbed(MpParameter_native* param) override
+	{
+        _RPT2(0,"ParamGrabbed(%d) %d\n", (int) param->isGrabbed(), param->getNativeTag());
+
+		AudioUnitEvent e;
+		e.mArgument.mParameter.mAudioUnit = GetComponentInstance();
+		e.mArgument.mParameter.mParameterID = param->getNativeTag();
+		e.mArgument.mParameter.mScope = kAudioUnitScope_Global;
+		e.mArgument.mParameter.mElement = 0;
+
+		if (param->isGrabbed())
+		{
+			e.mEventType = kAudioUnitEvent_BeginParameterChangeGesture;
+//            userNotHoldingAControlCounter = std::numeric_limits<int>::max();
+		}
+		else
+		{
+			e.mEventType = kAudioUnitEvent_EndParameterChangeGesture;
+//            userNotHoldingAControlCounter = 4; // short delay before resuming updates from the processor (to avoid jitter)
+		}
+
+		AUEventListenerNotify(mParameterListener, NULL, &e);
+	}
+    
+#if 0 // test, no improvement in Logic Pro touch automation, issues in Ableton with param not getting to DSP
+    // notify DAW that parameter changed from the UI
+    void ParamChanged(MpParameter_native* param)
+    {
+        AudioUnitEvent e;
+        e.mArgument.mParameter.mAudioUnit = GetComponentInstance();
+        e.mArgument.mParameter.mParameterID = param->getNativeTag();
+        e.mArgument.mParameter.mScope = kAudioUnitScope_Global;
+        e.mArgument.mParameter.mElement = 0;
+        e.mEventType = kAudioUnitEvent_ParameterValueChange;
+
+        AUEventListenerNotify(mParameterListener, NULL, &e);
+    }
+#endif
+    
+	int32_t getController(int32_t handle, gmpi::IMpController** returnController) override
+	{
+		return 0;
+	}
+
+	virtual OSStatus 	SetParameter(AudioUnitParameterID			inID,
+		AudioUnitScope 					inScope,
+		AudioUnitElement 				inElement,
+		AudioUnitParameterValue			inValue,
+		UInt32							inBufferOffsetInFrames) override;
+
+	OSStatus 	GetParameter(AudioUnitParameterID			inID,
+		AudioUnitScope 					inScope,
+		AudioUnitElement 				inElement,
+		AudioUnitParameterValue& outValue) override;
+
+	virtual OSStatus            GetParameterValueStrings(AudioUnitScope                 inScope,
+		AudioUnitParameterID            inParameterID,
+		CFArrayRef* outStrings) override;
+
+	static void ParameterListener(void* inCallbackRefCon, void* inObject, const AudioUnitEvent* inEvent, UInt64 inEventHostTime, Float32 inParameterValue);
+//	// IAuGui interface
+//	void OnParameterUpdateFromDaw(int32_t tag, float normalised) override;
+
+	MpParameter_native* makeNativeParameter(int ParameterIndex, bool isInverted) override
+	{
+		AudioUnitParameter sPar = { GetComponentInstance(), static_cast<AudioUnitParameterID>(ParameterIndex), kAudioUnitScope_Global, 0 };
+
+		auto param = new MpParameterAU(this, sPar, isInverted);
+
+		tagToParameter.insert(std::make_pair(ParameterIndex, param));
+
+		return param;
+	}
+
+	MpParameterAU* getDawParameter(int nativeTag)
+	{
+		auto it = tagToParameter.find(nativeTag);
+		if (it != tagToParameter.end())
+		{
+			return (*it).second;
+		}
+		return {};
+	}
+
+	IWriteableQue* getQueueToDsp() override
+	{
+		return &queueToDsp_;
+	}
+
+	// IProcessorMessageQues
+	IWriteableQue* MessageQueToGui() override
+	{
+		return &message_que_dsp_to_ui;
+	}
+	void Service() override {} // VST3 only.
+	interThreadQue* ControllerToProcessorQue() override
+	{
+		return &queueToDsp_;
+	}
+
+	std::function<void(void)> callbackOnUnloadPlugin;
+
+protected:
+
+	void				PerformEvents(const AudioTimeStamp& inTimeStamp);
+
+	OSStatus GetPropertyInfo(AudioUnitPropertyID inID, AudioUnitScope inScope,
+		AudioUnitElement inElement, UInt32& outDataSize, bool& outWritable) override;
+
+	virtual OSStatus			GetProperty(AudioUnitPropertyID 	inID,
+		AudioUnitScope 			inScope,
+		AudioUnitElement 		inElement,
+		void* outData) override;
+
+	virtual OSStatus            SetProperty(AudioUnitPropertyID             inID,
+		AudioUnitScope                  inScope,
+		AudioUnitElement                inElement,
+		const void* inData,
+		UInt32                          inDataSize) override;
+
+	OSStatus GetParameterInfo(AudioUnitScope inScope, AudioUnitParameterID inParameterID,
+		AudioUnitParameterInfo& outParameterInfo) override;
+
+	Float64 GetLatency() override
+	{
+		return processor.getLatencySamples() / timeInfo.sampleRate;
+	}
+    void OnLatencyChanged() override
+    {
+        PropertyChanged(kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0);
+    }
+
+	// Presets
+	void setPresetXmlFromSelf(const std::string& xml) override;
+    void setPresetFromSelf(DawPreset const* preset) override;
+	virtual void OnStartPresetChange() override {};
+	virtual void OnEndPresetChange() override {};
+	std::wstring getNativePresetExtension() override
+	{
+		return L"aupreset";
+	}
+	void saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml) override;
+	std::string loadNativePreset(std::wstring sourceFilename) override;
+	std::vector< MpController::presetInfo > scanFactoryPresets() override { return {}; }
+//	void loadFactoryPreset(int index, bool fromDaw) override {};
+    void onSetParameter(int32_t handle, int32_t field, RawView rawValue, int voiceId) override {}; // VST3 Only
+    
+    std::string getFactoryPresetXml(std::string filename) override {return {};} // JUCE-only?
+    
+	SInt64 mAbsoluteSampleFrame;
+
+private:
+	// double-buffered incoming MIDI events.
+	MidiBuffer3 midiEvents[2];
+	std::atomic<int> curMidiEvents;
+
+	ausdk::AUScope			mPartScope;
+	const UInt32	mInitNumPartEls;
+
+	std::mutex hostMidiLock;
+	float dummyInputBuffer[kAUDefaultMaxFramesPerSlice];
+	float dummyOutputBuffer[kAUDefaultMaxFramesPerSlice];
+
+	std::string pluginType; // "aumu" : "aufx"
+	std::string manufacturerId;
+
+    uint8_t midi2conversionbuffer[256];
+    bool processorIsInitialized = false;
+};
+
+#endif
+

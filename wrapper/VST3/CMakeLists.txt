@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
 
-include(FetchContent)
-
 project(VST3_Wrapper)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -10,22 +8,12 @@ add_definitions(-D_UNICODE)
 add_definitions(-DSE_TARGET_PLUGIN)
 add_definitions(-DSE_TARGET_VST3)
 add_definitions(-DGMPI_VST3_WRAPPER)
-#add_definitions(-DGMPI_HOST_POINTER_SUPPORT)
 
 if (MSVC)
     # Floating Point Model: Fast (/fp:fast)
     # Buffer Security Check: No (/GS-)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fp:fast /GS-")
 endif()
-
-#factory.cpp
-# way to many dependancies
-#${ADAPTORS_COMMON_FOLDER}/dsp_patch_parameter_base.h
-#${ADAPTORS_COMMON_FOLDER}/dsp_patch_parameter.h
-#${ADAPTORS_COMMON_FOLDER}/dsp_patch_parameter.cpp
-#${ADAPTORS_COMMON_FOLDER}/dsp_patch_manager.h
-#${ADAPTORS_COMMON_FOLDER}/dsp_patch_manager.cpp
-#${ADAPTORS_COMMON_FOLDER}/se_sdk3_hasMidiTuning.h
 
 set(srcs
 MyVstPluginFactory.h
@@ -127,11 +115,6 @@ set(vst_gui_minimal_srcs
     ${VST3_SDK}/public.sdk/source/vst/vstparameters.cpp 
 )
 
-
-#${CMAKE_CURRENT_SOURCE_DIR}
-#${ADAPTORS_COMMON_FOLDER}
-#${ADAPTORS_COMMON_FOLDER}/../Shared/
-
 include_directories(
 ${VST3_SDK}
 ${DSP_CORE}
@@ -185,8 +168,6 @@ TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${QUARTZCORE_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} base )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} pluginterfaces )
 
-#TARGET_LINK_LIBRARIES( ${PROJECT_NAME} GMPIPluginlib )
-
 if(CMAKE_HOST_WIN32)
 target_link_libraries(${PROJECT_NAME} Dwmapi dxguid d3d11 d2d1 dwrite windowscodecs)
 endif()
@@ -196,16 +177,7 @@ target_compile_definitions (${PROJECT_NAME} PRIVATE -D_UNICODE -DUNICODE)
 if(APPLE)
 set_target_properties(${PROJECT_NAME} PROPERTIES BUNDLE TRUE)
 set_target_properties(${PROJECT_NAME} PROPERTIES BUNDLE_EXTENSION vst3)
-#  set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX )
-
-  # Place module xml in bundle 'Resources' folder.
-#  set(xml_path ${PROJECT_NAME}.xml)
-#  target_sources(${PROJECT_NAME} PUBLIC ${xml_path})
-#  set_source_files_properties(${xml_path} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
-
-# windows dll extension
-# set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".vst3")
 
 ########################### VST3 SDK #######################################
 
