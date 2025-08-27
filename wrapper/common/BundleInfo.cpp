@@ -223,18 +223,20 @@ std::wstring BundleInfo::getUserDocumentFolder()
 #else // Mac.
     const char *homeDir = getenv("HOME");
     
+#if __APPLE__
     if(!homeDir)
     {
         struct passwd* pwd = getpwuid(getuid());
         if (pwd)
             homeDir = pwd->pw_dir;
     }
-    
+#endif
+
     auto result = Utf8ToWstring(homeDir);
 	return result;
 #endif
-
 }
+
 #if 0
 std::wstring BundleInfo::getPresetFolder()
 {
