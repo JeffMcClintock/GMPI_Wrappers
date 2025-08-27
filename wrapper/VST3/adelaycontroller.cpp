@@ -277,6 +277,37 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 
 		MpController::Initialize();
 
+		// Add a bypass parameter if required.
+		{
+			constexpr auto ParameterId = -1 - HC_PROCESS_BYPASS;
+
+			for (auto& p : info.parameters)
+			{
+				if (p.id == ParameterId)
+				{
+					auto param = makeNativeParameter(ParameterId, false);
+					param->datatype_ = gmpi::PinDatatype::Bool;
+					param->name_ = "Bypass";
+					param->hostControl_ = HC_PROCESS_BYPASS;
+					param->parameterHandle_ = ParameterId;
+					param->moduleHandle_ = 0;
+					param->stateful_ = false;
+
+					ParameterHandleIndex.insert(std::make_pair(ParameterId, param));
+					moduleParameterIndex.insert(std::make_pair(std::make_pair(param->moduleHandle_, param->moduleParamId_), ParameterId));
+
+					// add one patch value
+					param->rawValues_.push_back(ParseToRaw(param->datatype_, ""));
+
+					parameters_.push_back(std::unique_ptr<MpParameter>(param));
+					// Ensure host queries return correct value.
+					param->upDateImmediateValue();
+
+					break;
+				}
+			}
+		}
+
 		supportedChannels = countPins(info, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) == 0 ? 0 : 16;
 
 //		const auto supportedChannels = info.midiInputCount ? 16 : 0;

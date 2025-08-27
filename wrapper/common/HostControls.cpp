@@ -27,112 +27,6 @@ struct HostControlStruct // holds XML -> enum info
 - Time  - Song position and tempo related.
 */
 
-static const HostControlStruct lookup[] =
-{
-	{("PatchCommands")			,HC_PATCH_COMMANDS, gmpi::PinDatatype::Int32,ControllerType::None},
-
-	{("MidiChannelIn")			,HC_MIDI_CHANNEL, gmpi::PinDatatype::Int32,ControllerType::None},
-
-	{("ProgramNamesList")		,HC_PROGRAM_NAMES_LIST, gmpi::PinDatatype::String,ControllerType::None},
-
-	{("Program")				,HC_PROGRAM, gmpi::PinDatatype::Int32,ControllerType::None},
-
-	{("ProgramName")			,HC_PROGRAM_NAME, gmpi::PinDatatype::String,ControllerType::None},
-
-	{("Voice/Trigger")			,HC_VOICE_TRIGGER, gmpi::PinDatatype::Float32,ControllerType::Trigger << 24},
-
-	{("Voice/Gate")			,HC_VOICE_GATE, gmpi::PinDatatype::Float32,ControllerType::Gate << 24},
-
-	{("Voice/Pitch")			,HC_VOICE_PITCH, gmpi::PinDatatype::Float32,ControllerType::Pitch << 24},
-
-	{("Voice/VelocityKeyOn")	,HC_VOICE_VELOCITY_KEY_ON, gmpi::PinDatatype::Float32,ControllerType::VelocityOn << 24},
-
-	{("Voice/VelocityKeyOff")	,HC_VOICE_VELOCITY_KEY_OFF, gmpi::PinDatatype::Float32,ControllerType::VelocityOff << 24},
-
-	{("Voice/Aftertouch")		,HC_VOICE_AFTERTOUCH, gmpi::PinDatatype::Float32,ControllerType::PolyAftertouch << 24},
-
-	{("Voice/VirtualVoiceId")	,HC_VOICE_VIRTUAL_VOICE_ID, gmpi::PinDatatype::Int32,ControllerType::VirtualVoiceId << 24},
-
-	{("Voice/Active")			,HC_VOICE_ACTIVE				, gmpi::PinDatatype::Float32,ControllerType::Active << 24},
-
-	{("XXXXXXXXXX")			,HC_UNUSED						, gmpi::PinDatatype::Float32, ControllerType::None},// was HC_VOICE_RESET -"Voice/Reset"
-
-	{("VoiceAllocationMode")	,HC_VOICE_ALLOCATION_MODE		, gmpi::PinDatatype::Int32, ControllerType::None},
-
-	{("Bender")				,HC_PITCH_BENDER				, gmpi::PinDatatype::Float32, ControllerType::Bender << 24},
-
-	{("HoldPeda")				,HC_HOLD_PEDAL					, gmpi::PinDatatype::Float32, (ControllerType::CC << 24) | 64}, // CC 64 = Hold Pedal
-
-	{("Channel Pressure")		,HC_CHANNEL_PRESSURE			, gmpi::PinDatatype::Float32, ControllerType::ChannelPressure << 24},
-
-	{("Time/BPM")				,HC_TIME_BPM					, gmpi::PinDatatype::Float32, ControllerType::BPM << 24},
-
-	{("Time/SongPosition")		,HC_TIME_QUARTER_NOTE_POSITION	, gmpi::PinDatatype::Float32, ControllerType::SongPosition << 24},
-
-	{("Time/TransportPlaying")	,HC_TIME_TRANSPORT_PLAYING		, gmpi::PinDatatype::Bool, ControllerType::TransportPlaying << 24},
-	{("Polyphony")				,HC_POLYPHONY					, gmpi::PinDatatype::Int32, ControllerType::None},
-	{("ReserveVoices")			,HC_POLYPHONY_VOICE_RESERVE		, gmpi::PinDatatype::Int32, ControllerType::None},
-	{("Oversampling/Rate")		,HC_OVERSAMPLING_RATE			, gmpi::PinDatatype::Enum, ControllerType::None},
-	{("Oversampling/Filter")	, HC_OVERSAMPLING_FILTER		, gmpi::PinDatatype::Enum, ControllerType::None},
-	{("User/Int0")				, HC_USER_SHARED_PARAMETER_INT0	, gmpi::PinDatatype::Int32, ControllerType::None},
-	{("Time/BarStartPosition"), HC_TIME_BAR_START				, gmpi::PinDatatype::Float32, ControllerType::barStartPosition << 24},
-	{("Time/Timesignature/Numerator"), HC_TIME_NUMERATOR		, gmpi::PinDatatype::Int32, ControllerType::timeSignatureNumerator << 24},
-	{("Time/Timesignature/Denominator"), HC_TIME_DENOMINATOR	, gmpi::PinDatatype::Int32, ControllerType::timeSignatureDenominator << 24},
-
-	// VST3 Note-expression (and MIDI 2.0 support)
-	// multitrack studio: "VST3 instruments that support VST3 note expression receive per-note Pitch Bend, Volume, Pan, Expression, Brightness and Vibrato Depth. Poly Aftertouch is sent as well."
-
-	// MIDI 2.0 Per-Note Expression 7
-	{("Voice/Volume")		, HC_VOICE_VOLUME, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | (ControllerType::kVolumeTypeID << 16)},
-
-	// MIDI 2.0 Per-Note Expression 10
-	{("Voice/Pan")			, HC_VOICE_PAN, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | (ControllerType::kPanTypeID << 16)},
-
-	// MIDI 2.0 Per-Note Pitch Bend Message (was "Tuning"). bi-polar. 0 = -10 octaves, 1.0 = +10 octaves. 
-	{("Voice/Bender")		, HC_VOICE_PITCH_BEND, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | (ControllerType::kTuningTypeID << 16)},
-
-	// MIDI 2.0 Per-Note Vibrato Depth. per-note CC 8
-	{("Voice/Vibrato")		, HC_VOICE_VIBRATO, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | (ControllerType::kVibratoTypeID << 16)},
-
-	// MIDI 2.0 Per-Note Expression. per-note CC 11
-	{("Voice/Expression")	, HC_VOICE_EXPRESSION, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | (ControllerType::kExpressionTypeID << 16)},
-
-	// MIDI 2.0 Per-Note Expression 5
-	{("Voice/Brightness")	, HC_VOICE_BRIGHTNESS, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | (ControllerType::kBrightnessTypeID << 16)},
-
-	{("Voice/UserControl0")	, HC_VOICE_USER_CONTROL0, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | (ControllerType::kCustomStart << 16)},
-	{("Voice/UserControl1")	, HC_VOICE_USER_CONTROL1, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | ((ControllerType::kCustomStart + 1) << 16)},
-	{("Voice/UserControl2")	, HC_VOICE_USER_CONTROL2, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteExpression << 24) | ((ControllerType::kCustomStart + 2) << 16)},
-	{("Voice/PortamentoEnable")	, HC_VOICE_PORTAMENTO_ENABLE, gmpi::PinDatatype::Float32, (ControllerType::VoiceNoteControl << 24) | ((ControllerType::kPortamentoEnable) << 16)},
-
-
-	{("SnapModulation")		, HC_SNAP_MODULATION__DEPRECATED, gmpi::PinDatatype::Int32, ControllerType::None},
-	{( "Portamento" )		, HC_PORTAMENTO, gmpi::PinDatatype::Float32, ( ControllerType::CC << 24 ) | 5}, // CC 5 = Portamento Time 
-	{( "Voice/GlideStartPitch" ), HC_GLIDE_START_PITCH, gmpi::PinDatatype::Float32, ControllerType::GlideStartPitch << 24},
-	{( "BenderRange" )		, HC_BENDER_RANGE, gmpi::PinDatatype::Float32, ( ControllerType::RPN << 24 ) | 0}, // RPN 0000 = Pitch bend range (course = semitones, fine = cents).
-
-	{"SubPatchCommands"		, HC_SUB_PATCH_COMMANDS, gmpi::PinDatatype::Int32, ControllerType::None},
-	{"Processor/OfflineRenderMode", HC_PROCESS_RENDERMODE, gmpi::PinDatatype::Enum, ControllerType::None}, // 0 = :Live", 2 = "Preview" (Offline)
-
-	{"User/Int1"				, HC_USER_SHARED_PARAMETER_INT1	, gmpi::PinDatatype::Int32, ControllerType::None},
-	{"User/Int2"				, HC_USER_SHARED_PARAMETER_INT2	, gmpi::PinDatatype::Int32, ControllerType::None},
-	{"User/Int3"				, HC_USER_SHARED_PARAMETER_INT3	, gmpi::PinDatatype::Int32, ControllerType::None},
-	{"User/Int4"				, HC_USER_SHARED_PARAMETER_INT4	, gmpi::PinDatatype::Int32, ControllerType::None},
-	{"PatchCables"				, HC_PATCH_CABLES				, gmpi::PinDatatype::Blob, ControllerType::None},
-
-	{"Processor/SilenceOptimisation", HC_SILENCE_OPTIMISATION	, gmpi::PinDatatype::Bool, ControllerType::None},
-
-	{"ProgramCategory"			,HC_PROGRAM_CATEGORY			, gmpi::PinDatatype::String, ControllerType::None},
-	{"ProgramCategoriesList"	,HC_PROGRAM_CATEGORIES_LIST		, gmpi::PinDatatype::String, ControllerType::None},
-
-	{"MpeMode"					,HC_MPE_MODE					, gmpi::PinDatatype::Int32, ControllerType::None},
-	{"Presets/ProgramModified"	,HC_PROGRAM_MODIFIED			, gmpi::PinDatatype::Bool, ControllerType::None},
-	{"Presets/CanUndo"			,HC_CAN_UNDO					, gmpi::PinDatatype::Bool, ControllerType::None},
-	{"Presets/CanRedo"			,HC_CAN_REDO					, gmpi::PinDatatype::Bool, ControllerType::None },
-
-	// MAINTAIN ORDER TO PRESERVE OLDER WAVES EXPORTS DSP.XML consistency
-};
-
 std::unordered_map<std::string_view, HostControls> hostControlNames =
 {
 	{"PatchCommands", HC_PATCH_COMMANDS},
@@ -203,6 +97,7 @@ std::unordered_map<std::string_view, HostControls> hostControlNames =
 	{"Presets/ProgramModified", HC_PROGRAM_MODIFIED},
 	{"Presets/CanUndo", HC_CAN_UNDO},
 	{"Presets/CanRedo", HC_CAN_REDO},
+	{"Processor/DawBypass", HC_PROCESS_BYPASS},
 };
 
 struct hcInfo
@@ -320,6 +215,7 @@ static hcInfo hostControlsInfo[] = {
 	{"Presets/ProgramModified", gmpi::PinDatatype::Bool, ControllerType::None},
 	{"Presets/CanUndo", gmpi::PinDatatype::Bool, ControllerType::None},
 	{"Presets/CanRedo", gmpi::PinDatatype::Bool, ControllerType::None},
+	{"Processor/DawBypass", gmpi::PinDatatype::Bool, ControllerType::None},
 };
 
 HostControls StringToHostControl(std::string_view txt )
