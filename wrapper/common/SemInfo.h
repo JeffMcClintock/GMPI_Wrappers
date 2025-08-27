@@ -19,7 +19,10 @@ struct pinInfoSem
 // todo might be helpful to flag if it's used on UI/Processor to save on pointless updates
 struct paramInfoSem
 {
-	int32_t id{};
+	// parameter can have id or host control, the special VST3 BYPASS parameter can be both.
+	int32_t id{-1};
+	wrapper::HostControls hostConnect{wrapper::HC_NONE};
+
 	std::string name;
 	gmpi::PinDatatype datatype;
 	std::string default_value;

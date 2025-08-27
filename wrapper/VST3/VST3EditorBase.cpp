@@ -102,16 +102,18 @@ void VST3EditorBase::onParameterUpdate(int32_t parameterHandle, gmpi::Field fiel
 	if (!pluginParameters_GMPI)
 		return;
 
+	/* redundant for a single module?
 	int32_t moduleHandle{-2};
 	int32_t moduleParameterId{-2};
 	controller->getParameterModuleAndParamId(parameterHandle, &moduleHandle, &moduleParameterId);
+	*/
 
 	//if (-1 == moduleHandle) // not referenced by the GMPI plugin. e.g. HC_PROGRAM_MODIFIED
 	//	return;
 
 	for (const auto& pin : info.guiPins)
 	{
-		if (pin.parameterId == moduleParameterId && pin.parameterFieldType == fieldId)
+		if (pin.parameterId == parameterHandle/*moduleParameterId*/ && pin.parameterFieldType == fieldId)
 		{
 			pluginParameters_GMPI->setPin(pin.id, voice, size, data);
 			pluginParameters_GMPI->notifyPin(pin.id, voice);

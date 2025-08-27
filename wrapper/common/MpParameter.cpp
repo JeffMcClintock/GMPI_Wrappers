@@ -138,7 +138,7 @@ void MpParameter_base::updateFromDsp(int recievingMessageId, my_input_stream & s
 
 	switch (recievingMessageId)
 	{
-	case code_to_long('p', 'p', 'c', '2'): // "ppc" Patch parameter change, always sent as a double
+	case code_to_long('p', 'p', 'c', '2'): // "ppc2" Patch parameter change, always sent as a double
 	{
 		double val{};
 		strm >> val;

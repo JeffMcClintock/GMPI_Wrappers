@@ -537,10 +537,9 @@ void MyVstPluginFactory::RegisterPin(
 			else // host-connect pin
 			{
 //				pind.flags |= IO_HOST_CONTROL | IO_HIDE_PIN;
-				const auto hostControlId = pind.hostConnect;
-				pind.parameterId = -1 - (int)hostControlId; // host controls are indicated with negative parameter ids
+				pind.parameterId = -2 - (int)pind.hostConnect; // host controls are indicated with negative parameter ids
 
-				if (hostControlId == wrapper::HC_NONE)
+				if (pind.hostConnect == wrapper::HC_NONE)
 				{
 					//std::wostringstream oss;
 					//oss << L"ERROR. module XML: '" << pind.hostConnect << L"' unknown HOST CONTROL.";
@@ -553,7 +552,7 @@ void MyVstPluginFactory::RegisterPin(
 					//Messagebox(oss);
 				}
 
-				expectedPinDatatype = (int) wrapper::GetHostControlDatatype(hostControlId);
+				expectedPinDatatype = (int) wrapper::GetHostControlDatatype(pind.hostConnect);
 				if (expectedPinDatatype == (int) gmpi::PinDatatype::Enum)
 				{
 					expectedPinDatatype = (int) gmpi::PinDatatype::Int32;
@@ -961,10 +960,42 @@ void MyVstPluginFactory::RegisterXml(const /*platform_*/std::string& pluginPath,
 			for(auto hc : host_controls)
 			{
 				paramInfoSem param{};
-				param.id = -1 - (int)hc.first; // ID becomes negative, derived from HC enum.
+				//param.id = - 1 - (int)hc.first; // ID becomes negative, derived from HC enum.
+				param.hostConnect = hc.first;
 				param.name = wrapper::GetHostControlName(hc.first);
 				param.datatype = wrapper::GetHostControlDatatype(hc.first);
 				param.is_private = true;
+
+				// on VST3 the bypass HC is represented by a standard parameter
+				if (wrapper::HC_PROCESS_BYPASS == param.hostConnect)
+				{
+					int bypassParamId = -1;
+					for(auto& p : info.parameters)
+					{
+						bypassParamId = (std::max)(bypassParamId, p.id);
+					}
+
+					++bypassParamId;
+
+					// treat it like a standard parameter at the end of the list.
+					param.id = bypassParamId;
+
+					// update all pins to use the new parameter id.
+					for (auto& pin : info.dspPins)
+					{
+						if (pin.hostConnect == wrapper::HC_PROCESS_BYPASS)
+						{
+							pin.parameterId = param.id;
+						}
+					}
+					for (auto& pin : info.guiPins)
+					{
+						if (pin.hostConnect == wrapper::HC_PROCESS_BYPASS)
+						{
+							pin.parameterId = param.id;
+						}
+					}
+				}
 
 				info.parameters.push_back(param);
 			}

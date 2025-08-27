@@ -163,6 +163,8 @@ public:
 
 		if(param.setNormalised(value))
 			return &param;
+
+		return {};
 	}
 
 	// return the parameter only if it changed.

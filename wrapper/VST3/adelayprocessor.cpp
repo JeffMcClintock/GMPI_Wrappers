@@ -232,15 +232,16 @@ SeProcessor::SeProcessor (pluginInfoSem& pinfo)
 	// init PatchManager parameters
 	for (const auto& param : info.parameters)
 	{
+		assert(param.id != -1 || param.hostConnect != wrapper::HC_NONE);
 //		if (param.id >= 0)
 		{
 			DawParameter p;
-			p.id = param.id;
+			p.id = param.id > -1 ? param.id : ( -2 - param.hostConnect);
 			p.valueReal = atof(param.default_value.c_str());
 			p.valueLo = param.minimum;
 			p.valueHi = param.maximum;
 
-			patchManager.parameters[param.id] = p;
+			patchManager.parameters[p.id] = p;
 		}
 	}
 
@@ -700,7 +701,7 @@ void SeProcessor::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
 
 void SeProcessor::setHostControlFromDaw(wrapper::HostControls hc, double value)
 {
-	const auto id = -1 - (int)hc;
+	const auto id = -2 - (int)hc;
 
 	if (auto param = patchManager.setParameterReal(id, value); param)
 	{

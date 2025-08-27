@@ -229,6 +229,7 @@ void MpController::Initialize()
 				param.datatype == gmpi::PinDatatype::String ||
 				param.datatype == gmpi::PinDatatype::Blob;
 
+
 			float pminimum = 0.0f;
 			float pmaximum = 1.0f;
 
@@ -245,16 +246,17 @@ void MpController::Initialize()
 				seParameter = makeNativeParameter(hostParameterIndex++, pminimum > pmaximum);
 			}
 			
-			const int ParameterHandle = param.id;
+			assert(param.id != -1 || param.hostConnect != wrapper::HC_NONE);
+			const int ParameterHandle = param.id > -1 ? param.id : (-2 - param.hostConnect);
 
-			seParameter->hostControl_ = -1; // TODO hostControl;
+			seParameter->hostControl_ = param.hostConnect;
 			seParameter->minimum = param.minimum;
 			seParameter->maximum = param.maximum;
 			seParameter->parameterHandle_ = ParameterHandle;
 			seParameter->datatype_ = param.datatype;
 			seParameter->moduleHandle_ = 0;
 			seParameter->moduleParamId_ = param.id;
-			seParameter->stateful_ = true; // stateful_;
+			seParameter->stateful_ = true; // todo !isSpecialVst3Bypass; // stateful_;
 			seParameter->name_ = param.name;
 			seParameter->enumList_ = Utf8ToWstring(param.enum_list); // enumList_;
 			seParameter->ignorePc_ = false; // ignorePc != 0;
@@ -276,8 +278,6 @@ void MpController::Initialize()
 
 			// Ensure host queries return correct value.
 			seParameter->upDateImmediateValue();
-
-//			++ParameterHandle;
 		}
 	}
 
