@@ -2,18 +2,24 @@
 #define __SEInstrumentBase__
 
 #include <vector>
+#include <map>
 #include <mutex>
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioUnitUtilities.h>
-#include "AUMIDIBase.h"
+#include "AudioUnitSDK/AUMIDIBase.h"
+#include "wrapper/common/MpParameter.h"
+#include "wrapper/common/interThreadQue.h"
+#include "GmpiMidi.h"
+
+#if 0
 #include "SynthRuntime.h"
 #include "UMidiBuffer2.h"
 //#include "IGuiHost.h"
 #include "Controller.h"
-#include "MpParameter.h"
 #include "ProcessorStateManager.h"
 #include "mp_midi.h"
 #include "mfc_emulation.h"
+#endif
 
 struct parameterChange
 {
@@ -22,7 +28,8 @@ struct parameterChange
 	AudioUnitParameterValue	Value;
 };
 
-class MpParameterAU : public MpParameter_native
+#if 1
+class MpParameterAU : public wrapper::MpParameter_native
 {
 	bool isInverted = {};
 	class SEInstrumentBase* AUcontroller = {};
@@ -40,9 +47,9 @@ public:
     
 	void setRealFromDaw(double value)
 	{
-        _RPT1(0,"setRealFromDaw %f\n", value);
+        //_RPT1(0,"setRealFromDaw %f\n", value);
 		const auto normalised_se = static_cast<float>(RealToNormalized(value));
-		setParameterRaw(gmpi::MP_FT_NORMALIZED, sizeof(normalised_se), &normalised_se);
+        setParameterRaw(gmpi::Field::Normalized, sizeof(normalised_se), &normalised_se);
 	}
 
 	void setValueImmediate(float value)
@@ -53,7 +60,7 @@ public:
 	float getValueImmediate() const
 	{
         const auto value = dawFacingValueReal.load(std::memory_order_relaxed);
-        _RPT1(0,"getValueImmediate %f\n", value);
+ //       _RPT1(0,"getValueImmediate %f\n", value);
 
         return value;
 	}
@@ -66,7 +73,7 @@ public:
 		setValueImmediate(getValueReal());
 	}
 
-	void updateProcessor(gmpi::FieldType filedId, int32_t voice) override;
+	void updateProcessor(gmpi::Field filedId, int32_t voice) override;
 
 	float convertNormalized(float value) const
 	{
@@ -74,16 +81,16 @@ public:
 	}
     void updateDawUnsafe(const std::string& rawValue) override {}
 };
+#endif
 
-class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase,
- public MpController, public IShellServices, public IProcessorMessageQues //, public IAuGui
+class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
+// public MpController, public IShellServices, public IProcessorMessageQues //, public IAuGui
 {
 	friend class MpParameterAU;
-
-	SynthRuntime processor;
+    static const int timerPeriodMs = 35;
 
 	std::vector<parameterChange> parameterChanges[2];
-	my_VstTimeInfo timeInfo;
+//	my_VstTimeInfo timeInfo;
 	int latencyCompensation; // enum.
 	bool wantsMidi = false;
 	std::vector<float*> outputPtr;
@@ -98,12 +105,14 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase,
 	std::map<std::wstring, std::vector<CFStringRef> > enumStrings; // cache of native enum lists
 	std::map<int, MpParameterAU*> tagToParameter;
 	UInt32 offLineRenderMode = 0;
-	interThreadQue queueToDsp_;
-	gmpi::midi_2_0::MidiConverter2 midiConverter;
-	gmpi::midi_2_0::MpeConverter mpeConverter;
+    wrapper::interThreadQue queueToDsp_;
+//	gmpi::midi_2_0::MidiConverter2 midiConverter;
+//	gmpi::midi_2_0::MpeConverter mpeConverter;
 //    int userNotHoldingAControlCounter = 0;
     
-	ProcessorStateMgr stateMgr;
+//	ProcessorStateMgr stateMgr;
+    wrapper::interThreadQue message_que_dsp_to_ui;
+
 #ifdef _DEBUG
     std::thread::id mainThreadID;
 #endif
@@ -129,18 +138,18 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase,
 	void reInitialize();
 protected:
 	AUEventListenerRef mParameterListener;
-	bool OnTimer() override;
+	bool OnTimer();
 
 public:
 	SEInstrumentBase(AudioComponentInstance	inInstance);
 	virtual ~SEInstrumentBase();
 
 	// IShellServices
-	void onQueDataAvailable() override {}
-	void flushPendingParameterUpdates() override;
-	void EnableIgnoreProgramChange() override
+	void onQueDataAvailable() {}
+	void flushPendingParameterUpdates();
+	void EnableIgnoreProgramChange()
 	{
-		stateMgr.enableIgnoreProgramChange();
+//		stateMgr.enableIgnoreProgramChange();
 	}
 
 	virtual void                PostConstructor() override;
@@ -189,9 +198,9 @@ public:
 		UInt32 /*inOffsetSampleFrame*/, const struct MIDIEventList& /*eventList*/) override;
 #endif
 
-	void ParamGrabbed(MpParameter_native* param) override
+    void ParamGrabbed(wrapper::MpParameter_native* param) 
 	{
-        _RPT2(0,"ParamGrabbed(%d) %d\n", (int) param->isGrabbed(), param->getNativeTag());
+ //       _RPT2(0,"ParamGrabbed(%d) %d\n", (int) param->isGrabbed(), param->getNativeTag());
 
 		AudioUnitEvent e;
 		e.mArgument.mParameter.mAudioUnit = GetComponentInstance();
@@ -227,12 +236,14 @@ public:
         AUEventListenerNotify(mParameterListener, NULL, &e);
     }
 #endif
-    
+
+#if 0
 	int32_t getController(int32_t handle, gmpi::IMpController** returnController) override
 	{
 		return 0;
 	}
-
+#endif
+    
 	virtual OSStatus 	SetParameter(AudioUnitParameterID			inID,
 		AudioUnitScope 					inScope,
 		AudioUnitElement 				inElement,
@@ -252,7 +263,7 @@ public:
 //	// IAuGui interface
 //	void OnParameterUpdateFromDaw(int32_t tag, float normalised) override;
 
-	MpParameter_native* makeNativeParameter(int ParameterIndex, bool isInverted) override
+    wrapper::MpParameter_native* makeNativeParameter(int ParameterIndex, bool isInverted) 
 	{
 		AudioUnitParameter sPar = { GetComponentInstance(), static_cast<AudioUnitParameterID>(ParameterIndex), kAudioUnitScope_Global, 0 };
 
@@ -263,7 +274,7 @@ public:
 		return param;
 	}
 
-	MpParameterAU* getDawParameter(int nativeTag)
+    wrapper::MpParameter* getDawParameter(int nativeTag)
 	{
 		auto it = tagToParameter.find(nativeTag);
 		if (it != tagToParameter.end())
@@ -273,18 +284,18 @@ public:
 		return {};
 	}
 
-	IWriteableQue* getQueueToDsp() override
+    wrapper::IWriteableQue* getQueueToDsp() //override
 	{
 		return &queueToDsp_;
 	}
 
 	// IProcessorMessageQues
-	IWriteableQue* MessageQueToGui() override
+    wrapper::IWriteableQue* MessageQueToGui() //override
 	{
 		return &message_que_dsp_to_ui;
 	}
-	void Service() override {} // VST3 only.
-	interThreadQue* ControllerToProcessorQue() override
+    void Service()  {} // VST3 only.
+    wrapper::interThreadQue* ControllerToProcessorQue() //override
 	{
 		return &queueToDsp_;
 	}
@@ -314,38 +325,38 @@ protected:
 
 	Float64 GetLatency() override
 	{
-		return processor.getLatencySamples() / timeInfo.sampleRate;
+        return 0;//processor.getLatencySamples() / timeInfo.sampleRate;
 	}
-    void OnLatencyChanged() override
+    void OnLatencyChanged() 
     {
         PropertyChanged(kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0);
     }
 
 	// Presets
-	void setPresetXmlFromSelf(const std::string& xml) override;
-    void setPresetFromSelf(DawPreset const* preset) override;
-	virtual void OnStartPresetChange() override {};
-	virtual void OnEndPresetChange() override {};
-	std::wstring getNativePresetExtension() override
+    void setPresetXmlFromSelf(const std::string& xml); //override;
+ //   void setPresetFromSelf(DawPreset const* preset); //override;
+	virtual void OnStartPresetChange()  {};
+	virtual void OnEndPresetChange()  {};
+	std::wstring getNativePresetExtension()
 	{
 		return L"aupreset";
 	}
-	void saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml) override;
-	std::string loadNativePreset(std::wstring sourceFilename) override;
-	std::vector< MpController::presetInfo > scanFactoryPresets() override { return {}; }
+    void saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml) ;
+    std::string loadNativePreset(std::wstring sourceFilename) ;
+//    std::vector< wrapper::MpController::presetInfo > scanFactoryPresets() override { return {}; }
 //	void loadFactoryPreset(int index, bool fromDaw) override {};
-    void onSetParameter(int32_t handle, int32_t field, RawView rawValue, int voiceId) override {}; // VST3 Only
+    void onSetParameter(int32_t handle, int32_t field, RawView rawValue, int voiceId)  {}; // VST3 Only
     
-    std::string getFactoryPresetXml(std::string filename) override {return {};} // JUCE-only?
+    std::string getFactoryPresetXml(std::string filename)  {return {};} // JUCE-only?
     
 	SInt64 mAbsoluteSampleFrame;
 
 private:
 	// double-buffered incoming MIDI events.
-	MidiBuffer3 midiEvents[2];
+//	MidiBuffer3 midiEvents[2];
 	std::atomic<int> curMidiEvents;
 
-	ausdk::AUScope			mPartScope;
+	ausdk::AUScope	mPartScope;
 	const UInt32	mInitNumPartEls;
 
 	std::mutex hostMidiLock;

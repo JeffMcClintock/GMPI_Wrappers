@@ -10,48 +10,97 @@ set(CMAKE_CXX_STANDARD 20)
 add_definitions(-D_UNICODE)
 add_definitions(-DSE_TARGET_PLUGIN)
 add_definitions(-DSE_TARGET_AU)
-    
+add_definitions(-DGMPI_VST3_WRAPPER)
+
+# CocoaNamespaceMacros.h
+# SeAuVersion.h
+# SeAuEditor.mm
+# SEVSTGUIEditorMac.h
+# SEVSTGUIEditorMac.cpp
+
 set(srcs
-CocoaNamespaceMacros.h
-SeAuVersion.h
-SeAuEditor.mm
 AudioUnit.cpp
 AudioUnit.h
-SEVSTGUIEditorMac.h
-SEVSTGUIEditorMac.cpp
+
+${ADAPTORS_COMMON_FOLDER}/interThreadQue.h
+${ADAPTORS_COMMON_FOLDER}/interThreadQue.cpp
+${ADAPTORS_COMMON_FOLDER}/HostControls.h
+${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
+${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
+${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp
+${ADAPTORS_COMMON_FOLDER}/it_enum_list.h
+${ADAPTORS_COMMON_FOLDER}/it_enum_list.cpp
+${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
+${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
+
+${ADAPTORS_COMMON_FOLDER}/GmpiResourceManager.h
+${ADAPTORS_COMMON_FOLDER}/GmpiResourceManager.cpp
+${ADAPTORS_COMMON_FOLDER}/MyTypeTraits.h
+${ADAPTORS_COMMON_FOLDER}/MyTypeTraits.cpp
+${ADAPTORS_COMMON_FOLDER}/RawConversions.h
+${ADAPTORS_COMMON_FOLDER}/RawConversions.cpp
+${ADAPTORS_COMMON_FOLDER}/BundleInfo.h
+${ADAPTORS_COMMON_FOLDER}/BundleInfo.cpp
+${ADAPTORS_COMMON_FOLDER}/ProcessorStateManager.h
+${ADAPTORS_COMMON_FOLDER}/ProcessorStateManager.cpp
+${ADAPTORS_COMMON_FOLDER}/conversion.h
+${ADAPTORS_COMMON_FOLDER}/conversion.cpp
+${ADAPTORS_COMMON_FOLDER}/FileFinder.h
+${ADAPTORS_COMMON_FOLDER}/FileFinder.cpp
+${ADAPTORS_COMMON_FOLDER}/FileWatcher.h
+${ADAPTORS_COMMON_FOLDER}/FileWatcher.cpp
+${ADAPTORS_COMMON_FOLDER}/MpParameter.h
+${ADAPTORS_COMMON_FOLDER}/MpParameter.cpp
+${ADAPTORS_COMMON_FOLDER}/Controller.h
+${ADAPTORS_COMMON_FOLDER}/Controller.cpp
+
+${gmpi_ui_folder}/backends/DrawingFrameCommon.h
+${gmpi_ui_folder}/backends/DrawingFrameCommon.cpp
+${gmpi_ui_folder}/helpers/Timer.h
+${gmpi_ui_folder}/helpers/Timer.cpp
 )
 
+IF(WIN32)
+ELSE()
+set(srcs ${srcs}
+${gmpi_ui_folder}/backends/DrawingFrameMac.mm
+${gmpi_ui_folder}/backends/CocoaGfx.h
+${gmpi_ui_folder}/backends/Gfx_base.h
+${gmpi_ui_folder}/backends/Bezier.h
+)
+ENDIF()
+
 set(au_sdk_srcs
-${AU_SDK}/AUBase.cpp
-${AU_SDK}/AUBase.h
-${AU_SDK}/AUBuffer.cpp
-${AU_SDK}/AUBuffer.h
-${AU_SDK}/AUBufferAllocator.cpp
-${AU_SDK}/AUEffectBase.cpp
-${AU_SDK}/AUEffectBase.h
-${AU_SDK}/AUInputElement.cpp
-${AU_SDK}/AUInputElement.h
-${AU_SDK}/AUMIDIBase.cpp
-${AU_SDK}/AUMIDIBase.h
-${AU_SDK}/AUMIDIUtility.h
-${AU_SDK}/AUOutputElement.cpp
-${AU_SDK}/AUOutputElement.h
-${AU_SDK}/AUPlugInDispatch.cpp
-${AU_SDK}/AUPlugInDispatch.h
-${AU_SDK}/AUScopeElement.cpp
-${AU_SDK}/AUScopeElement.h
-${AU_SDK}/AUSilentTimeout.h
-${AU_SDK}/AUUtility.h
-${AU_SDK}/AudioUnitSDK.h
-${AU_SDK}/ComponentBase.cpp
-${AU_SDK}/ComponentBase.h
-${AU_SDK}/MusicDeviceBase.cpp
-${AU_SDK}/MusicDeviceBase.h
+${AU_SDK}/src/AudioUnitSDK/AUBase.cpp
+${AU_SDK_H}/AudioUnitSDK/AUBase.h
+${AU_SDK_SRC}/AudioUnitSDK/AUBuffer.cpp
+${AU_SDK_H}/AudioUnitSDK/AUBuffer.h
+${AU_SDK_SRC}/AudioUnitSDK/AUBufferAllocator.cpp
+${AU_SDK_SRC}/AudioUnitSDK/AUEffectBase.cpp
+${AU_SDK_H}/AudioUnitSDK/AUEffectBase.h
+${AU_SDK_SRC}/AudioUnitSDK/AUInputElement.cpp
+${AU_SDK_H}/AudioUnitSDK/AUInputElement.h
+${AU_SDK_SRC}/AudioUnitSDK/AUMIDIBase.cpp
+${AU_SDK_H}/AudioUnitSDK/AUMIDIBase.h
+${AU_SDK_H}/AudioUnitSDK/AUMIDIUtility.h
+${AU_SDK_SRC}/AudioUnitSDK/AUOutputElement.cpp
+${AU_SDK_H}/AudioUnitSDK/AUOutputElement.h
+${AU_SDK_SRC}/AudioUnitSDK/AUPlugInDispatch.cpp
+${AU_SDK_H}/AudioUnitSDK/AUPlugInDispatch.h
+${AU_SDK_SRC}/AudioUnitSDK/AUScopeElement.cpp
+${AU_SDK_H}/AudioUnitSDK/AUScopeElement.h
+${AU_SDK_H}/AudioUnitSDK/AUSilentTimeout.h
+${AU_SDK_H}/AudioUnitSDK/AUUtility.h
+${AU_SDK_H}/AudioUnitSDK/AudioUnitSDK.h
+${AU_SDK_SRC}/AudioUnitSDK/ComponentBase.cpp
+${AU_SDK_H}/AudioUnitSDK/ComponentBase.h
+${AU_SDK_SRC}/AudioUnitSDK/MusicDeviceBase.cpp
+${AU_SDK_H}/AudioUnitSDK/MusicDeviceBase.h
 )
 
 include_directories(
 ${DSP_CORE}
-${AU_SDK}
+${AU_SDK_H}
 ${gmpi_sdk_folder}/Core
 ${gmpi_ui_folder}
 ${gmpi_ui_folder}/helpers
@@ -83,7 +132,8 @@ MARK_AS_ADVANCED (AUDIOTOOLBOX_LIBRARY)
 endif()
 
 include (GenerateExportHeader)
-add_library(${PROJECT_NAME} MODULE ${sdk_srcs} ${srcs} ${au_sdk_srcs})
+#add_library(${PROJECT_NAME} MODULE ${sdk_srcs} ${srcs} ${au_sdk_srcs})
+add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${au_sdk_srcs})
 
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREFOUNDATION_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COCOA_LIBRARY} )
@@ -96,7 +146,7 @@ TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${QUARTZCORE_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${AUDIOUNIT_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${AUDIOTOOLBOX_LIBRARY} )
 
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} SynthEditLib )
+# TARGET_LINK_LIBRARIES( ${PROJECT_NAME} SynthEditLib )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE 
   $<$<CONFIG:Debug>:_DEBUG>

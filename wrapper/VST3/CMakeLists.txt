@@ -31,8 +31,6 @@ ${ADAPTORS_COMMON_FOLDER}/HostControls.h
 ${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp
-${ADAPTORS_COMMON_FOLDER}/interThreadQue.cpp
-${ADAPTORS_COMMON_FOLDER}/interThreadQue.h
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 

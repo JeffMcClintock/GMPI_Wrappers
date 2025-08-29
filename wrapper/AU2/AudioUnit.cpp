@@ -1,13 +1,15 @@
-#include "SEInstrumentBase.h"
-#include "BundleInfo.h"
-#include "mp_midi.h"
-#include "UgDatabase.h"
-#include "tinyxml/tinyxml.h"
-#include "CocoaNamespaceMacros.h"
-#include "../Shared/AuPreset.h"
-#include "mfc_emulation.h"
+#include "AudioUnit.h"
+#include "wrapper/common/BundleInfo.h"
+#include "wrapper/common/it_enum_list.h"
 
-using namespace GmpiMidi;
+//#include "mp_midi.h"
+//#include "UgDatabase.h"
+//#include "tinyxml/tinyxml.h"
+//#include "CocoaNamespaceMacros.h"
+//#include "../Shared/AuPreset.h"
+//#include "mfc_emulation.h"
+
+//using namespace GmpiMidi;
 using namespace ausdk;
 
 #ifdef DEBUG
@@ -26,24 +28,24 @@ extern void initialise_synthedit_extra_modules(bool passFalse)
 }
 
 MpParameterAU::MpParameterAU(SEInstrumentBase* controller, AudioUnitParameter nativeParameter, bool isinverted) :
-	MpParameter_native(controller)
+MpParameter_native({})//controller)
 	, AUcontroller(controller)
 	, nativeParameter_(nativeParameter)
 	, isInverted(isinverted)
 {
 }
 
-void MpParameterAU::updateProcessor(gmpi::FieldType fieldId, int32_t voice)
+void MpParameterAU::updateProcessor(gmpi::Field fieldId, int32_t voice)
 {
     switch(fieldId)
     {
-        case gmpi::MP_FT_GRAB:
+        case gmpi::Field::Grab:
             // AUcontroller->ParamGrabbed(this);
             onGrabbedChanged(); // combine MIDI-grab-emulation and mouse grab into unified grab messages
             break;
             
-        case gmpi::MP_FT_NORMALIZED:
-        case gmpi::MP_FT_VALUE:
+        case gmpi::Field::Normalized:
+        case gmpi::Field::Value:
         {
             const auto value = getValueReal();
 #ifdef _DEBUG
@@ -90,7 +92,9 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 	curMidiEvents(0),
 	mInitNumPartEls(1),
 	latencyCompensation(0),
-	queueToDsp_(SeAudioMaster::AUDIO_MESSAGE_QUE_SIZE),
+	queueToDsp_(0x500000),//SeAudioMaster::AUDIO_MESSAGE_QUE_SIZE),
+    message_que_dsp_to_ui(0x500000)
+#if 0
 	midiConverter(
 		// provide a lambda to accept converted MIDI 2.0 messages
 		[this](const gmpi::midi::message_view& msg, int timestamp) {
@@ -103,15 +107,16 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 			processor.MidiIn(timestamp, (const unsigned char*)msg.begin(), static_cast<int>(msg.size()));
 		}
 	)
+#endif
 {
-	TiXmlBase::SetCondenseWhiteSpace(false); // ensure text parameters preserve multiple spaces. e.g. "A     B" (else it collapses to "A B")
+//	TiXmlBase::SetCondenseWhiteSpace(false); // ensure text parameters preserve multiple spaces. e.g. "A     B" (else it collapses to "A B")
 
 	parameterChanges[0].reserve(200);
 	parameterChanges[1].reserve(200);
 
-	memset(&timeInfo, 0, sizeof(timeInfo));
+//	memset(&timeInfo, 0, sizeof(timeInfo));
 
-	processor.connectPeer(this);
+//	processor.connectPeer(this);
 
 #if DEBUG_PRINT
 	printf("new SEInstrumentBase\n");
@@ -137,8 +142,9 @@ void SEInstrumentBase::PostConstructor()
 
 	// Determine number of inputs and outputs here.
 	{
+#if 0
 		// Load factory xml
-		auto factoryXml = BundleInfo::instance()->getResource("factory.se.xml");
+        auto factoryXml = wrapper::BundleInfo::instance()->getResource("factory.se.xml");
 
 		TiXmlDocument doc;
 		doc.Parse(factoryXml.c_str());
@@ -160,6 +166,7 @@ void SEInstrumentBase::PostConstructor()
 		}
 		else
 		{
+
 			TiXmlHandle hDoc(&doc);
 			TiXmlElement* pElem;
 
@@ -224,7 +231,8 @@ void SEInstrumentBase::PostConstructor()
 					}
 				}
 			}
-		}
+#endif
+		
 	}
 
 	// Can't call base because num elements (busses) not avail in contructor. Do it myself.
@@ -338,7 +346,7 @@ void SEInstrumentBase::PostConstructor()
             }
 		}
 	}
-
+#if 0
     // STATE MANAGER
     {
         stateMgr.callback =
@@ -372,7 +380,7 @@ void SEInstrumentBase::PostConstructor()
     MpController::Initialize();
 
 	ScanPresets();
-
+#endif
     // Create Native Parameters.
     for (auto& it : tagToParameter)
     {
@@ -413,15 +421,16 @@ void SEInstrumentBase::PostConstructor()
             result = AUEventListenerAddEventType(mParameterListener, this, &myEvent);
         }
     }
-    
+#if 0
     {
         // DAW may not restore preset on first use.
         // but we still need to sync the preset controls, esp so that blank preset name gets changed to "Default" like on VST3
         auto preset = getPreset();
         setPreset(preset.get());
     }
-    
-	StartTimer(timerPeriodMs); // Service DSP Queue.
+#endif
+        
+//	StartTimer(timerPeriodMs); // Service DSP Queue.
 }
 
 SEInstrumentBase::~SEInstrumentBase()
@@ -463,6 +472,7 @@ void SEInstrumentBase::reInitialize()
     if(!processorIsInitialized)
         return;
 
+#if 0
 	processor.prepareToPlay(
 		this,
 		timeInfo.sampleRate,
@@ -471,6 +481,7 @@ void SEInstrumentBase::reInitialize()
 	);
 
 	wantsMidi = processor.wantsMidi();
+#endif
 }
 
 // called on a background thread in Logic Pro
@@ -487,6 +498,8 @@ OSStatus SEInstrumentBase::Initialize()
 
 		This is work still to be done - see AUEffectBase for the kind of logic that needs to be applied here
 	*/
+    
+#if 0
 	//    GetSampleRate();
 	timeInfo.sampleRate = Output(0).GetStreamFormat().mSampleRate;
 
@@ -505,7 +518,7 @@ OSStatus SEInstrumentBase::Initialize()
 	mAbsoluteSampleFrame = 0;
 
 	initSemControllers();
-
+#endif
     processorIsInitialized = true;
     
 	return noErr;
@@ -523,7 +536,7 @@ void SEInstrumentBase::ParameterListener(void* inCallbackRefCon, void* inObject,
 #ifdef _DEBUG
         std::cerr << "DAW => ParameterListener(" << inEvent->mArgument.mParameter.mParameterID << ", " << inParameterValue << ")" << std::endl;
 #endif
-			p->setRealFromDaw(inParameterValue);
+// TODO			p->setRealFromDaw(inParameterValue);
 		}
 	}
 }
@@ -540,8 +553,10 @@ bool SEInstrumentBase::OnTimer()
     {
         userNotHoldingAControlCounter--;
     }
-#endif    
+ 
 	return MpController::OnTimer();
+#endif
+    return false;
 }
 
 #if 0
@@ -566,7 +581,7 @@ OSStatus SEInstrumentBase::Reset(AudioUnitScope inScope, AudioUnitElement inElem
 		mAbsoluteSampleFrame = 0;
 
         // intended for situation where processor has been suspended/resumed and we don't want to hear the tail of old conent.
-        processor.ClearDelaysUnsafe();
+//        processor.ClearDelaysUnsafe();
 	}
 	return AUBase::Reset(inScope, inElement);
 }
@@ -580,7 +595,7 @@ void SEInstrumentBase::PerformEvents(const AudioTimeStamp& inTimeStamp)
 	{
 		curMidiEvents.store((readingMidiEvents + 1) & 1);
 	}
-
+#if 0
 	while (!midiEvents[readingMidiEvents].IsEmpty())
 	{
 		auto e = midiEvents[readingMidiEvents].Current();
@@ -589,12 +604,12 @@ void SEInstrumentBase::PerformEvents(const AudioTimeStamp& inTimeStamp)
 
 		midiEvents[readingMidiEvents].UpdateReadPos();
 	}
-
+#endif
 	for (auto& p : parameterChanges[readingMidiEvents])
 	{
         // we no longer use 'kMustUpdateUi' otherwise it results in events being sent back to GUI, except late. (jitter).
         // The GUI is already notified via it's event listerner when the DAW changes a param
-		processor.setParameterNormalizedDsp(p.BufferOffsetInFrames, p.ID, p.Value, 0);
+//		processor.setParameterNormalizedDsp(p.BufferOffsetInFrames, p.ID, p.Value, 0);
 	}
 
 	parameterChanges[readingMidiEvents].clear();
@@ -613,17 +628,17 @@ OSStatus SEInstrumentBase::SetParameter(
 		// communicate change to UI (GarageBand and Logic Pro don't seem to do this via the parameter listener (Ableton Live does))
 		stateMgr.onParameterAutomation(inID, inValue);
 #endif
-		p->setValueImmediate(inValue);
+//		p->setValueImmediate(inValue);
 
 #ifdef _DEBUG
 		std::cerr << "DAW => SetParameter(" << inID << ", " << inValue << ")" << std::endl;
 #endif
 
 //		_RPT2(_CRT_WARN, "            PRESETS-DSP: parameterChanges.push_back(P%d SPN(%f)\n", inID, inValue);
-		const auto daw_normalized = p->convertNormalized(p->RealToNormalized(inValue)); // normalized from the DAWs perspective (may be inverted)
+//		const auto daw_normalized = p->convertNormalized(p->RealToNormalized(inValue)); // normalized from the DAWs perspective (may be inverted)
 
 		std::lock_guard<std::mutex> guard(hostMidiLock);
-		parameterChanges[curMidiEvents.load()].push_back({inBufferOffsetInFrames, inID, static_cast<AudioUnitParameterValue>(daw_normalized)});
+//		parameterChanges[curMidiEvents.load()].push_back({inBufferOffsetInFrames, inID, static_cast<AudioUnitParameterValue>(daw_normalized)});
 	}
 	return noErr;
 }
@@ -639,7 +654,7 @@ OSStatus SEInstrumentBase::GetParameter(AudioUnitParameterID	inID,
 	{
 		if (auto p = getDawParameter(inID); p)
 		{
-			outValue = p->getValueImmediate();
+//			outValue = p->getValueImmediate();
 #if 0 //def _DEBUG
 			std::cerr << "GetParameter(" << inID << ", " << outValue << ")" << std::endl;
 #endif
@@ -661,6 +676,7 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 	}
 #endif
 
+#if 0
 	if (processor.NeedsTempo())
 	{
 		enum
@@ -750,7 +766,8 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 
 		processor.UpdateTempo(&timeInfo);
 	}
-
+#endif
+    
 	PerformEvents(inTimeStamp);
 
 	int validInputChannels = 0;
@@ -794,7 +811,7 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 
 	int64_t allSilenceFlagsIn{};
 	int64_t allSilenceFlagsOut{};
-	
+/*
 	processor.process(
 		inNumberFrames
 		, (const float**)inputPtr.data()
@@ -804,7 +821,7 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 		, allSilenceFlagsIn
 		, allSilenceFlagsOut
 		);
-
+*/
 	mAbsoluteSampleFrame += inNumberFrames;
 
 	return noErr;
@@ -903,7 +920,7 @@ OSStatus SEInstrumentBase::MIDIEvent(
 		(unsigned char)inData2 };
 
 	std::lock_guard<std::mutex> guard(hostMidiLock);
-	midiEvents[curMidiEvents.load()].Add(inOffsetSampleFrame, data, 3);
+//	midiEvents[curMidiEvents.load()].Add(inOffsetSampleFrame, data, 3);
 
 	return noErr;
 }
@@ -1040,6 +1057,7 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 			//
 		case kAudioUnitProperty_CocoaUI:
 		{
+            /*
 			// invalid code:  if (cocoaInfo.mCocoaAUViewClass )
 			{
 				CFBundleRef bundle = CreatePluginBundleRef();
@@ -1057,6 +1075,7 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 			}
 
 			*((AudioUnitCocoaViewInfo*)outData) = cocoaInfo;
+             */
 			return noErr;
 		}
 
@@ -1122,7 +1141,7 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 					return kAudioUnitErr_InvalidParameter;
 				}
 
-				const auto text = Utf8ToWstring(buffer);
+                const auto text = wrapper::Utf8ToWstring(buffer);
 
 				it_enum_list it(p->enumList_);
 				for (it.First(); !it.IsDone(); ++it)
@@ -1154,7 +1173,7 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 				it.FindIndex(static_cast<int>(0.5f + *pv->inValue));
 				if (!it.IsDone())
 				{
-					auto text = WStringToUtf8(it.CurrentItem()->text);
+                    auto text = wrapper::WStringToUtf8(it.CurrentItem()->text);
 
 					pv->outString = CFStringCreateWithCString(
 						kCFAllocatorDefault,
@@ -1294,18 +1313,19 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 	}
 	else
 	{
+        /*
 		outParameterInfo.minValue = p->normalisedToReal(p->convertNormalized(0));
 		outParameterInfo.maxValue = p->normalisedToReal(p->convertNormalized(1));
-
+*/
 		outParameterInfo.flags |= kAudioUnitParameterFlag_CanRamp;
 		outParameterInfo.unit = kAudioUnitParameterUnit_Generic;
 	}
 
-	outParameterInfo.defaultValue = p->normalisedToReal(p->convertNormalized(p->getNormalized()));
+//	outParameterInfo.defaultValue = p->normalisedToReal(p->convertNormalized(p->getNormalized()));
 
 	outParameterInfo.clumpID = 0;
 
-	auto name_utf8 = WStringToUtf8(p->name_);
+    auto name_utf8 = p->name_;
 	strlcpy(outParameterInfo.name, name_utf8.c_str(), sizeof(outParameterInfo.name));
 
 	outParameterInfo.cfNameString = CFStringCreateWithCString(NULL, name_utf8.c_str(), kCFStringEncodingUTF8);
@@ -1349,7 +1369,7 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(AudioUnitScope          inSc
 		it_enum_list it(enumList);
 		for (it.First(); !it.IsDone(); ++it)
 		{
-			const auto text = WStringToUtf8(it.CurrentItem()->text);
+            const auto text = wrapper::WStringToUtf8(it.CurrentItem()->text);
 
 			strings->push_back(
 				CFStringCreateWithCString(
@@ -1374,13 +1394,13 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(AudioUnitScope          inSc
 OSStatus SEInstrumentBase::SaveState(CFPropertyListRef* outData)
 {
 	auto result = AUBase::SaveState(outData);
-
+/*
 	if (result == noErr)
 	{
 		auto dict = (CFMutableDictionaryRef)*outData;
 
         assert(std::this_thread::get_id() == mainThreadID );
-        const auto chunk = getPreset()->toString(BundleInfo::instance()->getPluginId());
+        const auto chunk = getPreset()->toString(wrapper::BundleInfo::instance()->getPluginId());
         
 //		std::string chunk;
 //		processor.getPresetState(chunk, true);
@@ -1390,7 +1410,7 @@ OSStatus SEInstrumentBase::SaveState(CFPropertyListRef* outData)
 
 		CFRelease(s);
 	}
-
+*/
 	return result;
 }
 
@@ -1405,7 +1425,7 @@ void SEInstrumentBase::flushPendingParameterUpdates()
 	const int timestamp = 0;
 	for (auto& p : parameterChanges[current])
 	{
-		processor.setParameterNormalizedDsp(timestamp, p.ID, p.Value, 0);
+//		processor.setParameterNormalizedDsp(timestamp, p.ID, p.Value, 0);
 	}
 
 	parameterChanges[current].clear();
@@ -1441,7 +1461,7 @@ OSStatus SEInstrumentBase::RestoreState(CFPropertyListRef plist)
 		}
 
 // moved		setPresetFromDaw(chunk, false);
-        stateMgr.setPresetFromXml(chunk);
+//        stateMgr.setPresetFromXml(chunk);
 	}
 	//    std::cout << "SEInstrumentBase::RestoreState() - END" << std::endl;
 
@@ -1450,17 +1470,19 @@ OSStatus SEInstrumentBase::RestoreState(CFPropertyListRef plist)
 
 void SEInstrumentBase::setPresetXmlFromSelf(const std::string& xml)
 {
-	stateMgr.setPresetFromXml(xml);
+//	stateMgr.setPresetFromXml(xml);
 }
 
+    /*
 void SEInstrumentBase::setPresetFromSelf(DawPreset const* preset)
 {
-    stateMgr.setPresetFromUnownedPtr(preset);
+//    stateMgr.setPresetFromUnownedPtr(preset);
 }
-
+*/
+    
 void SEInstrumentBase::saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml)
 {
-	const auto p_id = BundleInfo::instance()->getPluginId();
+    const auto p_id = wrapper::BundleInfo::instance()->getPluginId();
 
 	char i[5];
 	i[3] = p_id & 0xff;
@@ -1470,7 +1492,7 @@ void SEInstrumentBase::saveNativePreset(const char* filename, const std::string&
 	i[4] = 0;
 
 	const std::string pluginId(i);
-
+/*
 	AuPresetUtil::WritePreset(
 		Utf8ToWstring(filename),
 		presetName,
@@ -1479,9 +1501,10 @@ void SEInstrumentBase::saveNativePreset(const char* filename, const std::string&
 		pluginId,
 		xml
 	);
+ */
 }
 
 std::string SEInstrumentBase::loadNativePreset(std::wstring sourceFilename)
 {
-	return AuPresetUtil::ReadPreset(sourceFilename);
+    return {};//AuPresetUtil::ReadPreset(sourceFilename);
 }
