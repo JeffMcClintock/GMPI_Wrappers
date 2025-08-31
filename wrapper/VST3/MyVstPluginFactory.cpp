@@ -156,7 +156,7 @@ If you are using the CPluginFactory implementation provided by the SDK, it retur
 int32 MyVstPluginFactory::countClasses ()
 {
 	initialize();
-	return plugins.size() * 2;
+	return static_cast<int32>(plugins.size() * 2);
 }
 
 uint32 hashString(const std::string& s)

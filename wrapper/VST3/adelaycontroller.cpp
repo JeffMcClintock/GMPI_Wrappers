@@ -677,7 +677,7 @@ void VST3Controller::setPresetXmlFromSelf(const std::string& xml)
 		FReleaser msgReleaser(message);
 		message->setMessageID("BinaryMessage");
 
-		message->getAttributes()->setBinary("Preset", xml.data(), xml.size());
+		message->getAttributes()->setBinary("Preset", xml.data(), static_cast<uint32>(xml.size()));
 		sendMessage(message);
 	}
 
