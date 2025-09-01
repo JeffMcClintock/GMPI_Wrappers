@@ -143,7 +143,10 @@ MARK_AS_ADVANCED (ACCELERATE_LIBRARY)
 endif()
 
 include (GenerateExportHeader)
-#add_library(${PROJECT_NAME} MODULE ${sdk_srcs} ${srcs} ${vst_gui_minimal_srcs})
+
+# TESTING ONLY!!!!! this is for AU
+add_executable(gmpi_InfoPlistGen ${CMAKE_CURRENT_LIST_DIR}/InfoPlistGen.cpp)
+
 add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${vst_gui_minimal_srcs})
 
 # 'DEBUG' is a steinberg thing, ('_DEBUG' is standard C++)

@@ -33,52 +33,44 @@ public:
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
-template<int N>
 class EventQue
 {
-	std::array<gmpi::api::Event, N> events;
-	int tail = 0;
-public:
+	std::vector<gmpi::api::Event> events;
 
-	EventQue()
+public:
+	EventQue(size_t capacity = 1000)
 	{
-		for (size_t i = 0 ; i < events.size() - 1; ++i)
-		{
-			events[i].next = &events[i + 1];
-		}
+		events.reserve(capacity);
 	}
 
 	void push(gmpi::api::Event event)
 	{
-		assert(tail != events.size()); // opps, filled event list up.
-
-		if (tail < events.size() - 1)
-		{
-			//if(tail > 0)
-			//	events[tail - 1].next = &(events[tail]);
-
-			events[tail++] = event;
-		}
+		// insert in sorted order.
+		auto it = std::lower_bound(events.begin(), events.end(), event, [](const gmpi::api::Event& a, const gmpi::api::Event& b)
+			{ return a.timeDelta < b.timeDelta;	}
+		);
+		events.insert(it, event);
 	}
 
 	gmpi::api::Event* head()
 	{
-		if (tail == 0)
+		if (events.empty())
 			return {};
-
+		
 		// create linked list.
-		for (int i = 0; i < tail - 1; ++i)
+		for (int i = 1; i < events.size(); ++i)
 		{
-			events[i].next = &events[i + 1];
+			events[i - 1].next = &events[i];
 		}
 
-		events[tail - 1].next = {};
+		events.back().next = {};
+
 		return &events[0];
 	}
 
 	void clear()
 	{
-		tail = 0;
+		events.clear();
 	}
 };
 
@@ -261,7 +253,7 @@ protected:
 
 	gmpi::shared_ptr<gmpi::api::IProcessor> plugin_;
 
-	EventQue<1000> events;
+	EventQue events;
 
 	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle = {};
 	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle_to_unload = {};

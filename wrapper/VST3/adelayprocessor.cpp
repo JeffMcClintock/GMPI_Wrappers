@@ -713,7 +713,7 @@ void SeProcessor::setHostControlFromDaw(wrapper::HostControls hc, double value)
 tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 {
     assert(!plugin_.isNull());
-    
+
 	if (data.inputParameterChanges)
 	{
 		int32 paramChangeCount = data.inputParameterChanges->getParameterCount ();
@@ -724,7 +724,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 			{
 				int32 valueChangeCount = queue->getPointCount ();
 				ParamValue valueNormalized;
-				int32 sampleOffset;
+				int32 sampleOffset{};
 
 				if (queue->getPoint (valueChangeCount-1, sampleOffset, valueNormalized) == kResultTrue)
 				{
@@ -732,8 +732,9 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 
 					if( id < MidiControllersParameterId)
 					{
+						auto prev_sampleOffset{ sampleOffset };
 						//_RPTW1( _CRT_WARN, L"Processor : %f\n", value );
-						assert(sampleOffset >=0 && sampleOffset < data.numSamples);
+						assert(sampleOffset >= prev_sampleOffset && sampleOffset < data.numSamples);
 //						_RPT1(_CRT_WARN, "                     PRESETS-DSP: P%d Set in Process()\n", id);
 
 						auto param = patchManager.setParameterNormalised(id, valueNormalized);
@@ -859,7 +860,13 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 
 	if (MidiInputPinIdx > -1)
 	{
+
 		const int32 numEvents = data.inputEvents ? data.inputEvents->getEventCount() : 0;
+		
+		{
+			if (numEvents > 0)
+				_RPT0(0, "--------------\n");
+		}
 
 		for (int32 eventIndex = 0; eventIndex < numEvents; ++eventIndex)
 		{
@@ -869,14 +876,9 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 				break;
 			}
 
-			/* Steinberg seem to use smaller sub-blocks
-			// if the event is not in the current processing block then adapt offset for next block
-			if (e.sampleOffset > samplesToProcess)
-			{
-				e.sampleOffset -= samplesToProcess;
-				break;
-			}
-			*/
+			_RPTN(0, "event %3d : type %d\n", e.sampleOffset, (int) e.type);
+
+
 			switch (e.type)
 			{
 			case Event::kNoteOnEvent:
