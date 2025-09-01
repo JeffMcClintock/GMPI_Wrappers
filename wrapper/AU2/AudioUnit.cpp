@@ -7,7 +7,6 @@
 //#include "tinyxml/tinyxml.h"
 //#include "CocoaNamespaceMacros.h"
 //#include "../Shared/AuPreset.h"
-//#include "mfc_emulation.h"
 
 //using namespace GmpiMidi;
 using namespace ausdk;
@@ -18,7 +17,7 @@ using namespace ausdk;
 #define DEBUG_PRINT_RENDER 0
 #endif
 
-AUSDK_COMPONENT_ENTRY(ausdk::AUMusicDeviceFactory, SEInstrumentBase);
+//AUSDK_COMPONENT_ENTRY(ausdk::AUMusicDeviceFactory, SEInstrumentBase);
 
 // provide extensibility to add extra modules on a per-project basis.
 // SE2JUCE Controller must implement this function
@@ -121,6 +120,8 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 #if DEBUG_PRINT
 	printf("new SEInstrumentBase\n");
 #endif
+    
+    fprintf(stderr, "AU WRAPPER CONSTRUCTOR!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 	SetWantsRenderThreadID(true);
 }
 

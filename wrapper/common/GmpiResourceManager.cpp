@@ -305,3 +305,13 @@ int32_t GmpiResourceManager::OpenUri(const char* fullUri, gmpi::IProtectedFile2*
 }
 #endif
 }
+
+// Meyer's singleton. see also GmpiResourceManager_editor.cpp
+namespace wrapper
+{
+    GmpiResourceManager* GmpiResourceManager::Instance()
+    {
+        static GmpiResourceManager obj;
+        return &obj;
+    }
+} // namespace
