@@ -1,5 +1,6 @@
 #include <iostream>
 #include <filesystem>
+#include <fstream>
 #include "tinyXml2/tinyxml2.h"
 #include "dynamic_linking.h"
 #include "GmpiApiCommon.h"
@@ -303,7 +304,7 @@ int main(int argc, char** argv)
 {
     if (argc < 3)
     {
-        std::cerr << "Usage: plist_util <plugin_path> <output path>\n"
+        std::cerr << "Usage: plist_util <plugin_path> <output path>\n";
         return 2;
     }
 
