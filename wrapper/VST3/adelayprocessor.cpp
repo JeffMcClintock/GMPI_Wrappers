@@ -863,11 +863,6 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 
 		const int32 numEvents = data.inputEvents ? data.inputEvents->getEventCount() : 0;
 		
-		{
-			if (numEvents > 0)
-				_RPT0(0, "--------------\n");
-		}
-
 		for (int32 eventIndex = 0; eventIndex < numEvents; ++eventIndex)
 		{
 			Event e;
@@ -875,9 +870,6 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 			{
 				break;
 			}
-
-			_RPTN(0, "event %3d : type %d\n", e.sampleOffset, (int) e.type);
-
 
 			switch (e.type)
 			{
@@ -1001,9 +993,9 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 					const double semitones = (e.noteExpressionValue.value - 0.5) * 2.0 * pitchBendRangeExpr;
 					const double normalized = (std::max)(0.0, std::min(1.0, 0.5 + 0.5 * semitones * pitchBendRangeMidiInv));
 
-					//						_RPTN(0, "makePolyBender %f => %f semitones, %f normal\n", e.noteExpressionValue.value, semitones, normalized);
+					_RPTN(0, "makePolyBender %f => %f semitones, %f normal\n", e.noteExpressionValue.value, semitones, normalized);
 
-										// Send MIDI HD-Protocol Note Expression message.
+					// Send MIDI HD-Protocol Note Expression message.
 					const auto msg = gmpi::midi_2_0::makePolyBender(
 						keyInfo->MidiKeyNumber,
 						static_cast<float>(normalized),

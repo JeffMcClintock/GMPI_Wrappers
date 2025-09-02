@@ -145,7 +145,7 @@ endif()
 include (GenerateExportHeader)
 
 # TESTING ONLY!!!!! this is for AU
-add_executable(gmpi_InfoPlistGen ${CMAKE_CURRENT_LIST_DIR}/InfoPlistGen.cpp)
+#add_executable(gmpi_InfoPlistGen ${CMAKE_CURRENT_LIST_DIR}/InfoPlistGen.cpp ${gmpi_hosting_srcs} ${srcs})
 
 add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${vst_gui_minimal_srcs})
 

@@ -29,6 +29,20 @@ namespace gmpi_dynamic_linking
 	typedef void* MP_DllHandle;
 #endif
 
+    int32_t MP_DllLoad(DLL_HANDLE* dll_handle, const char* dll_filename)
+    {
+        *dll_handle = {};
+
+#if defined( _WIN32)
+        *dll_handle = (DLL_HANDLE)LoadLibraryA(dll_filename);
+#else
+#if __APPLE__
+        * dll_handle = (DLL_HANDLE)dlopen(dll_filename, 0);
+#endif
+#endif
+        return *dll_handle == 0;
+    }
+
 	int32_t MP_DllLoad(DLL_HANDLE* dll_handle, const wchar_t* dll_filename)
 	{
         *dll_handle = {};
