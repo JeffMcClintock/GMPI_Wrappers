@@ -20,8 +20,15 @@ ${gmpi_sdk_folder}/Core
 ${ADAPTORS_COMMON_FOLDER}
 )
 
+if(APPLE)
+FIND_LIBRARY(COREFOUNDATION_LIBRARY CoreFoundation )
+MARK_AS_ADVANCED (COREFOUNDATION_LIBRARY)
+endif()
+
 # Build the Info.plist generator
 add_executable(plist_util ${srcs})
+
+TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREFOUNDATION_LIBRARY} )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE 
   $<$<CONFIG:Debug>:_DEBUG>

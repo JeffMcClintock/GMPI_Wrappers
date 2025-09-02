@@ -1,11 +1,15 @@
 #include <iostream>
 #include <filesystem>
-#include "tinyxml2/tinyxml2.h"
+#include "tinyXml2/tinyxml2.h"
 #include "dynamic_linking.h"
 #include "GmpiApiCommon.h"
 #include "GmpiSdkCommon.h"
+#if __APPLE__
+#include <dlfcn.h>
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 
-typedef int32_t(__stdcall* MP_DllEntry)(void**);
+typedef int32_t(/*__stdcall*/ * MP_DllEntry)(void**);
 
 std::string to4charId(std::string s)
 {
@@ -45,12 +49,17 @@ std::string attributeOr(const char* attribute, std::string def)
     return attribute ? attribute : def;
 }
 
-int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE hinstLib, std::string exeName)
+int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, std::string exeName)
 {
     MP_DllEntry dll_entry_point{};
     const char* gmpi_dll_entrypoint_name = "MP_GetFactory";
-    auto r = wrapper::gmpi_dynamic_linking::MP_DllSymbol(hinstLib, gmpi_dll_entrypoint_name, (void**)&dll_entry_point);
-
+#ifdef _WIN32
+    auto r = wrapper::gmpi_dynamic_linking::MP_DllSymbol(dllHandle, gmpi_dll_entrypoint_name, (void**)&dll_entry_point);
+#else
+    dll_entry_point = (MP_DllEntry) CFBundleGetFunctionPointerForName((CFBundleRef)dllHandle, CFSTR("MP_GetFactory"));
+    int r = 0;
+#endif
+    
     if (!dll_entry_point || r != 0)
     {
         std::cerr << "ERROR: Can't locate entry point\n";
@@ -301,18 +310,45 @@ int main(int argc, char** argv)
 
     const std::filesystem::path pluginPath(argv[1]);
 
-    wrapper::gmpi_dynamic_linking::DLL_HANDLE hinstLib{};
-    auto r = wrapper::gmpi_dynamic_linking::MP_DllLoad(&hinstLib, pluginPath.c_str());
+    wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle{};
+    
+#ifdef _WIN32
+    auto r = wrapper::gmpi_dynamic_linking::MP_DllLoad(&dllHandle, pluginPath.c_str());
+#else
+    int r = 0;
+    // int32_t r = MP_DllLoad( &dllHandle, load_filename.c_str() );
 
-    if (!hinstLib || r != 0)
+    // Create a path to the bundle
+    CFStringRef pluginPathStringRef = CFStringCreateWithCString(NULL,
+        pluginPath.c_str(), kCFStringEncodingASCII);
+
+    CFURLRef bundleUrl = CFURLCreateWithFileSystemPath(kCFAllocatorDefault,
+    pluginPathStringRef, kCFURLPOSIXPathStyle, true);
+    if(bundleUrl == NULL) {
+        printf("Couldn't make URL reference for plugin\n");
+        return;
+    }
+
+    // Open the bundle
+    dllHandle = (wrapper::gmpi_dynamic_linking::DLL_HANDLE) CFBundleCreate(kCFAllocatorDefault, bundleUrl);
+    CFRelease(bundleUrl);
+    CFRelease(pluginPathStringRef);
+
+    if(dllHandle == 0) {
+        printf("Couldn't create bundle reference\n");
+        return;
+    }
+#endif
+
+    if (!dllHandle || r != 0)
     {
         std::cerr << "ERROR: Can't load plugin\n";
         return 2;
     }
 
-    r = scanDll(hinstLib, pluginPath.filename().string() );
+    r = scanDll(dllHandle, pluginPath.filename().string() );
 
-    wrapper::gmpi_dynamic_linking::MP_DllUnload(hinstLib);
+    wrapper::gmpi_dynamic_linking::MP_DllUnload(dllHandle);
 
     return r;
 }

@@ -133,9 +133,6 @@ endif()
 
 include (GenerateExportHeader)
 
-# Build the Info.plist generator
-add_executable(gmpi_InfoPlistGen ${CMAKE_CURRENT_LIST_DIR}/InfoPlistGen.cpp)
-
 add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${au_sdk_srcs})
 
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREFOUNDATION_LIBRARY} )
