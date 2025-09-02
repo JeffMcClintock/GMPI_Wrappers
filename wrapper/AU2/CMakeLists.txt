@@ -98,13 +98,13 @@ ${AU_SDK_SRC}/AudioUnitSDK/MusicDeviceBase.cpp
 ${AU_SDK_H}/AudioUnitSDK/MusicDeviceBase.h
 )
 
-include_directories(
-${DSP_CORE}
-${AU_SDK_H}
-${gmpi_sdk_folder}/Core
-${gmpi_ui_folder}
-${gmpi_ui_folder}/helpers
-)
+# include_directories(
+# ${DSP_CORE}
+# ${AU_SDK_H}
+# ${gmpi_sdk_folder}/Core
+# ${gmpi_ui_folder}
+# ${gmpi_ui_folder}/helpers
+# )
 
 source_group(se_sdk FILES ${sdk_srcs})
 
@@ -133,7 +133,36 @@ endif()
 
 include (GenerateExportHeader)
 
+################################ plist utility ##########################################
+set(plist_srcs
+plist_util.cpp
+${ADAPTORS_COMMON_FOLDER}/dynamic_linking.h
+${ADAPTORS_COMMON_FOLDER}/dynamic_linking.cpp
+${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
+${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
+)
+
+add_executable(plist_util ${plist_srcs})
+
+# Include paths ONLY for plist_util
+target_include_directories(plist_util PRIVATE
+    ${gmpi_sdk_folder}/Core
+    ${ADAPTORS_COMMON_FOLDER}
+)
+
+target_link_libraries( plist_util ${COREFOUNDATION_LIBRARY} )
+################################ plist utility ##########################################
+
 add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${au_sdk_srcs})
+
+# Include paths ONLY for the AU wrapper library
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${DSP_CORE}
+    ${AU_SDK_H}
+    ${gmpi_sdk_folder}/Core
+    ${gmpi_ui_folder}
+    ${gmpi_ui_folder}/helpers
+)
 
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREFOUNDATION_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COCOA_LIBRARY} )
