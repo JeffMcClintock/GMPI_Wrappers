@@ -133,26 +133,6 @@ endif()
 
 include (GenerateExportHeader)
 
-################################ plist utility ##########################################
-set(plist_srcs
-plist_util.cpp
-${ADAPTORS_COMMON_FOLDER}/dynamic_linking.h
-${ADAPTORS_COMMON_FOLDER}/dynamic_linking.cpp
-${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
-${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
-)
-
-add_executable(plist_util ${plist_srcs})
-
-# Include paths ONLY for plist_util
-target_include_directories(plist_util PRIVATE
-    ${gmpi_sdk_folder}/Core
-    ${ADAPTORS_COMMON_FOLDER}
-)
-
-target_link_libraries( plist_util ${COREFOUNDATION_LIBRARY} )
-################################ plist utility ##########################################
-
 add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${au_sdk_srcs})
 
 # Include paths ONLY for the AU wrapper library
