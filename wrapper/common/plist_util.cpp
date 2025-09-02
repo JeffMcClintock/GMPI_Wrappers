@@ -198,8 +198,8 @@ int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, std::string exe
         }
 
         // emit the Info.plist file
-        out << R"XML(
-<?xml version="1.0" encoding="UTF-8"?>
+
+out << R"XML(<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
