@@ -253,11 +253,13 @@ out << R"XML(
 	<string>English</string>
 	<key>CFBundleExecutable</key>
 )XML";
-out << "\t<string>" << plugin_id << "</string>";
+out << "\t<string>" << exeName << "</string>";
+        // build warning
 out << R"XML(
 	<key>CFBundleIdentifier</key>
 )XML";
 out << "\t<string>com." << vendor_code << "." << plugin_id << "</string>";
+         
 out << R"XML(
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
@@ -350,7 +352,7 @@ int main(int argc, char** argv)
 	// open a filestream for the output file.
 	std::ofstream ofs(outputPath);
 
-    r = scanDll(dllHandle, pluginPath.filename().string(), ofs);
+    r = scanDll(dllHandle, pluginPath.stem().string() + "_AU", ofs);
 
     wrapper::gmpi_dynamic_linking::MP_DllUnload(dllHandle);
 
