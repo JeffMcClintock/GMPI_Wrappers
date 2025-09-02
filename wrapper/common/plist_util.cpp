@@ -254,12 +254,14 @@ out << R"XML(
 	<key>CFBundleExecutable</key>
 )XML";
 out << "\t<string>" << exeName << "</string>";
-        // build warning
+
+#if 0         // build warning about bundle ID not matching
 out << R"XML(
 	<key>CFBundleIdentifier</key>
 )XML";
 out << "\t<string>com." << vendor_code << "." << plugin_id << "</string>";
-         
+#endif
+        
 out << R"XML(
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
