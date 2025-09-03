@@ -9,8 +9,6 @@
 #include <pluginterfaces/vst/ivstunits.h>
 #include <pluginterfaces/vst/ivstnoteexpression.h>
 #include <pluginterfaces/vst/ivstphysicalui.h>
-#include "wrapper/common/StagingMemoryBuffer.h"
-#include "wrapper/common/interThreadQue.h"
 #include "wrapper/common/Controller.h"
 #include "wrapper/common/MpParameter.h"
 #include "wrapper/common/conversion.h"
@@ -44,6 +42,44 @@ public:
 	void updateDawUnsafe(const std::string& rawValue) override {}
 
 	bool isInverted_ = false;
+};
+
+class StagingMemoryBuffer : public gmpi::hosting::IWriteableQue
+{
+public:
+	StagingMemoryBuffer(size_t bufferSize = 1000000) : writePos_(0)
+	{
+		storage_.assign(bufferSize, 0);
+	}
+
+	int writePos_;
+	std::vector<char> storage_;
+
+	int size() { return writePos_; }
+	inline char* data() { return storage_.data(); }
+	inline void clear() { writePos_ = 0; }
+	inline int freeSpace() override { return (int)(storage_.size() - writePos_); }
+	inline int totalSize() { return (int)storage_.size(); }
+	inline bool empty() { return writePos_ == 0; }
+
+	// IWriteableQue
+	void pushString(int p_length, const unsigned char* p_data) override
+	{
+		if (p_length <= totalSize() - writePos_)
+		{
+			memcpy(data() + writePos_, p_data, p_length);
+			writePos_ += p_length;
+		}
+		else
+		{
+			// Buffer full.
+			assert(false);
+		}
+	}
+	void Send() override
+	{
+		// for compatibility only.
+	}
 };
 
 // Manages plugin parameters.
@@ -315,7 +351,7 @@ public:
 
 	bool onTimer() override;
 
-	IWriteableQue* getQueueToDsp() override
+	gmpi::hosting::IWriteableQue* getQueueToDsp() override
 	{
 		return &queueToDsp_;
 	}

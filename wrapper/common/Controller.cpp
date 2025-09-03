@@ -12,6 +12,7 @@
 #include "BundleInfo.h"
 #include "FileFinder.h"
 #include "midi_defs.h"
+#include "conversion.h"
 #include "ListBuilder.h"
 #include "wrapper/common/it_enum_list.h"
 #include "wrapper/common/string_utilities.h"
@@ -783,7 +784,7 @@ void MpController::setParameterValue(RawView value, int32_t parameterHandle, gmp
 		//---send a binary message
 		if (cc != 0)
 		{
-			my_msg_que_output_stream s(getQueueToDsp(), parameterHandle, "CCID");
+			gmpi::hosting::my_msg_que_output_stream s(getQueueToDsp(), parameterHandle, "CCID");
 
 			s << (int)sizeof(int);
 			s << cc;
@@ -1240,7 +1241,7 @@ void MpController::HostControlToDsp(MpParameter* param, int32_t voice)
 }
 #endif
 
-void MpController::SerialiseParameterValueToDsp(my_msg_que_output_stream& stream, MpParameter* param, int32_t voice)
+void MpController::SerialiseParameterValueToDsp(gmpi::hosting::my_msg_que_output_stream& stream, MpParameter* param, int32_t voice)
 {
 	//---send a binary message
 	bool isVariableSize = param->datatype_ == gmpi::PinDatatype::String || param->datatype_ == gmpi::PinDatatype::Blob;
@@ -1281,7 +1282,7 @@ void MpController::ParamToDsp(MpParameter* param, int32_t voice)
 {
 	assert(dynamic_cast<SeParameter_vst3_hostControl*>(param) == nullptr); // These have (not) "unique" handles that may map to totally random DSP parameters.
 
-	my_msg_que_output_stream s(getQueueToDsp(), param->parameterHandle_, "ppc\0"); // "ppc"
+	gmpi::hosting::my_msg_que_output_stream s(getQueueToDsp(), param->parameterHandle_, "ppc\0"); // "ppc"
 	SerialiseParameterValueToDsp(s, param, voice);
 }
 
@@ -1464,7 +1465,7 @@ void MpController::initializeGui(gmpi::api::IParameterObserver* gui, int32_t par
 	}
 }
 
-bool MpController::onQueMessageReady(int recievingHandle, int recievingMessageId, class my_input_stream& p_stream)
+bool MpController::onQueMessageReady(int recievingHandle, int recievingMessageId, gmpi::hosting::my_input_stream& p_stream)
 {
 	auto it = ParameterHandleIndex.find(recievingHandle);
 	if (it != ParameterHandleIndex.end())
@@ -1549,7 +1550,7 @@ void MpController::OnStartupTimerExpired()
 		// class UniqueSnowflake
 		enum { NONE = -1, DEALLOCATED = -2, APPLICATION = -4 };
 
-		my_msg_que_output_stream s(getQueueToDsp(), /*UniqueSnowflake::*/ APPLICATION, "EIPC"); // Emulate Ignore Program Change
+		gmpi::hosting::my_msg_que_output_stream s(getQueueToDsp(), /*UniqueSnowflake::*/ APPLICATION, "EIPC"); // Emulate Ignore Program Change
 		s << (uint32_t)0;
 		s.Send();
 	}

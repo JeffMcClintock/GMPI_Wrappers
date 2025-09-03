@@ -5,7 +5,7 @@
 #include "Controller.h"
 //#include "../se_sdk2/se_datatypes.h"
 #include "RawConversions.h"
-//#include "../../conversion.h"
+#include "conversion.h"
 //#include "HostControls.h"
 #include "it_enum_list.h"
 #include "Hosting/xml_spec_reader.h"
@@ -133,7 +133,7 @@ int MpParameter_base::getNativeTag()
 	return -1; // -1 = not exported to DAW.
 }
 
-void MpParameter_base::updateFromDsp(int recievingMessageId, my_input_stream & strm)
+void MpParameter_base::updateFromDsp(int recievingMessageId, gmpi::hosting::my_input_stream & strm)
 {
 	MpParameter::updateFromDsp(recievingMessageId, strm);
 
@@ -221,7 +221,7 @@ void MpParameter_base::updateFromDsp(int recievingMessageId, my_input_stream & s
 	}
 }
 
-void MpParameter::updateFromDsp(int recievingMessageId, my_input_stream & strm)
+void MpParameter::updateFromDsp(int recievingMessageId, gmpi::hosting::my_input_stream & strm)
 {
 	switch (recievingMessageId)
 	{

@@ -8,10 +8,11 @@
 #include <AudioToolbox/AudioUnitUtilities.h>
 #include "AudioUnitSDK/AUMIDIBase.h"
 #include "wrapper/common/MpParameter.h"
-#include "wrapper/common/interThreadQue.h"
+//#include "wrapper/common/interThreadQue.h"
 #include "GmpiMidi.h"
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/plugin_holder.h"
+#include "Hosting/message_queues.h"
 
 #if 0
 #include "SynthRuntime.h"
@@ -227,7 +228,6 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 	gmpi::hosting::gmpi_processor plugin;
 
 	std::vector<parameterChange> parameterChanges[2];
-//	my_VstTimeInfo timeInfo;
 	int latencyCompensation; // enum.
 	bool wantsMidi = false;
 	std::vector<float*> outputPtr;
@@ -242,13 +242,13 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 	std::map<std::wstring, std::vector<CFStringRef> > enumStrings; // cache of native enum lists
 	std::map<int, MpParameterAU*> tagToParameter;
 	UInt32 offLineRenderMode = 0;
-    wrapper::interThreadQue queueToDsp_;
+	gmpi::hosting::interThreadQue queueToDsp_;
 	gmpi::midi_2_0::MidiConverter2 midiConverter;
 //	gmpi::midi_2_0::MpeConverter mpeConverter;
 //    int userNotHoldingAControlCounter = 0;
     
 //	ProcessorStateMgr stateMgr;
-    wrapper::interThreadQue message_que_dsp_to_ui;
+	gmpi::hosting::interThreadQue message_que_dsp_to_ui;
 
 #ifdef _DEBUG
     std::thread::id mainThreadID;

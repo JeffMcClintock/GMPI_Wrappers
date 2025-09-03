@@ -13,11 +13,10 @@
 #include <condition_variable>
 #include <optional>
 #include "GmpiMidi.h"
-#include "wrapper/common/lock_free_fifo.h"
-#include "wrapper/common/interThreadQue.h"
 #include "wrapper/common/dynamic_linking.h"
 #include "Hosting/xml_spec_reader.h"
-#include "Hosting/plugin_holder.h"
+#include "Hosting/processor_holder.h"
+#include "Hosting/message_queues.h"
 
 static const int MidiControllersParameterId = 10000;
 
@@ -37,105 +36,6 @@ public:
 
 //-----------------------------------------------------------------------------
 typedef int64_t timestamp_t;
-
-struct DawParameter : public QueClient // also host-controls, might need to rename it.
-{
-	int32_t id{};
-	double valueReal = 0.0;
-	double valueLo = 0.0;
-	double valueHi = 1.0;
-
-	bool setNormalised(double value)
-	{
-		const auto newValueReal = valueLo + value * (valueHi - valueLo);
-
-		const bool r = newValueReal != valueReal;
-
-		valueReal = newValueReal;
-
-		return r;
-	}
-
-	bool setReal(double value)
-	{
-		const bool r = value != valueReal;
-
-		valueReal = value;
-
-		return r;
-	}
-
-	double normalisedValue() const
-	{
-		if (valueHi == valueLo)
-			return 0.0; // avoid divide by zero.
-		return (valueReal - valueLo) / (valueHi - valueLo);
-	}
-
-	int queryQueMessageLength(int availableBytes) override
-	{
-		return sizeof(double);
-	}
-
-	void getQueMessage(class my_output_stream& outStream, int messageLength) override
-	{
-		const bool hostNeedsParameterUpdate{};
-		const int32_t voice{};
-
-		outStream << id;
-		outStream << id_to_long("ppc2");
-		outStream << messageLength;
-
-		outStream << valueReal;
-	}
-};
-
-class PatchManager
-{
-public:
-	std::unordered_map<int, DawParameter> parameters;
-
-	PatchManager() = default;
-
-	DawParameter* getParameter(int id)
-	{
-		if (auto it = parameters.find(id) ; it != parameters.end())
-			return &(it->second);
-
-		return {};
-	}
-
-	// return the parameter only if it changed.
-	DawParameter* setParameterNormalised(int id, double value)
-	{
-		auto it = parameters.find(id);
-		if (it == parameters.end())
-			return {};
-
-		auto& param = it->second;
-
-		if(param.setNormalised(value))
-			return &param;
-
-		return {};
-	}
-
-	// return the parameter only if it changed.
-	DawParameter* setParameterReal(int id, double value)
-	{
-		auto it = parameters.find(id);
-		if (it == parameters.end())
-			return {};
-
-		auto& param = it->second;
-
-		if (value == param.valueReal)
-			return {};
-
-		param.valueReal = value;
-		return &param;
-	}
-};
 
 class SeProcessor : public Steinberg::Vst::AudioEffect, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
 {
@@ -165,7 +65,7 @@ public:
 	void onQueDataAvailable();// override;
 
 	// IProcessorMessageQues
-	IWriteableQue* MessageQueToGui() // override
+	gmpi::hosting::IWriteableQue* MessageQueToGui() // override
 	{
 		return &m_message_que_dsp_to_ui;
 	}
@@ -222,8 +122,6 @@ protected:
 	bool active_;
 //	Steinberg::Vst::ProcessContext timeInfo{};
 
-	PatchManager patchManager;
-
 	std::vector<float*> inputBuffers;
 	std::vector<float*> outputBuffers;
 	bool outputsAsStereoPairs;
@@ -238,11 +136,8 @@ protected:
 	vstNoteInfo noteIds[16][128] = {};
 	int noteIdsRoundRobin = -1;
 
-    lock_free_fifo m_message_que_dsp_to_ui;
-	interThreadQue m_message_que_ui_to_dsp;
-
-	// Communication pipes Controller<->Processor
-	QueuedUsers pendingControllerQueueClients; // parameters waiting to be sent to GUI
+	gmpi::hosting::lock_free_fifo m_message_que_dsp_to_ui;
+	gmpi::hosting::interThreadQue m_message_que_ui_to_dsp;
 
 	// MIDI output
 	void MidiToHost(class MidiBuffer3* mb, timestamp_t SeStartClock, int numSamples);

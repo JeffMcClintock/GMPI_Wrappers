@@ -22,8 +22,10 @@ endif()
 set(srcs
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
-${gmpi_sdk_folder}/Hosting/plugin_holder.h
-${gmpi_sdk_folder}/Hosting/plugin_holder.cpp
+${gmpi_sdk_folder}/Hosting/processor_holder.h
+${gmpi_sdk_folder}/Hosting/processor_holder.cpp
+${gmpi_sdk_folder}/Hosting/message_queues.h
+${gmpi_sdk_folder}/Hosting/message_queues.cpp
 MyVstPluginFactory.h
 MyVstPluginFactory.cpp
 adelayprocessor.h
@@ -32,9 +34,6 @@ adelaycontroller.h
 adelaycontroller.cpp
 VST3EditorBase.h
 VST3EditorBase.cpp
-${ADAPTORS_COMMON_FOLDER}/StagingMemoryBuffer.h
-${ADAPTORS_COMMON_FOLDER}/interThreadQue.h
-${ADAPTORS_COMMON_FOLDER}/interThreadQue.cpp
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h

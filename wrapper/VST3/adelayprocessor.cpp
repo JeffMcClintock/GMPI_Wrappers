@@ -11,7 +11,6 @@
 #include "wrapper/common/Controller.h"
 #include "wrapper/common/dynamic_linking.h"
 #include "wrapper/common/it_enum_list.h"
-#include "Hosting/plugin_holder.h"
 
 using namespace wrapper::JmUnicodeConversions;
 
@@ -233,13 +232,13 @@ SeProcessor::SeProcessor (gmpi::hosting::pluginInfo& pinfo)
 		assert(param.id != -1 || param.hostConnect != gmpi::hosting::HostControls::None);
 //		if (param.id >= 0)
 		{
-			DawParameter p;
+			gmpi::hosting::DawParameter p;
 			p.id = param.id > -1 ? param.id : ( -2 - (int) param.hostConnect);
 			p.valueReal = atof(param.default_value.c_str());
 			p.valueLo = param.minimum;
 			p.valueHi = param.maximum;
 
-			patchManager.parameters[p.id] = p;
+			plugin.patchManager.parameters[p.id] = p;
 		}
 	}
 
@@ -304,7 +303,7 @@ void SeProcessor::reInitialise()
 			if (pin.direction == gmpi::PinDirection::Out || pin.parameterId == -1)
 				continue;
 
-			auto param = patchManager.getParameter(pin.parameterId);
+			auto param = plugin.patchManager.getParameter(pin.parameterId);
 			if(!param)
 				continue;
 
@@ -603,9 +602,9 @@ void SeProcessor::setHostControlFromDaw(gmpi::hosting::HostControls hc, double v
 {
 	const auto id = -2 - (int)hc;
 
-	if (auto param = patchManager.setParameterReal(id, value); param)
+	if (auto param = plugin.patchManager.setParameterReal(id, value); param)
 	{
-		pendingControllerQueueClients.AddWaiter(param);
+		plugin.pendingControllerQueueClients.AddWaiter(param);
 	}
 }
 
@@ -640,7 +639,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 						assert(sampleOffset >= prev_sampleOffset && sampleOffset < data.numSamples);
 //						_RPT1(_CRT_WARN, "                     PRESETS-DSP: P%d Set in Process()\n", id);
 
-						auto param = patchManager.setParameterNormalised(id, valueNormalized);
+						auto param = plugin.patchManager.setParameterNormalised(id, valueNormalized);
 
 						if (param)
 						{
@@ -1191,7 +1190,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 #endif
 #endif
 
-	pendingControllerQueueClients.ServiceWaitersIncremental(
+	plugin.pendingControllerQueueClients.ServiceWaitersIncremental(
 		  &m_message_que_dsp_to_ui
 		, data.numSamples
 	);
@@ -1463,7 +1462,7 @@ gmpi::ReturnCode SeProcessor::setPin(int32_t timestamp, int32_t pinId, int32_t s
 		if (pinId != pin.id || pin.direction != gmpi::PinDirection::Out || pin.parameterId == -1)
 			continue;
 
-		auto param = patchManager.getParameter(pin.parameterId);
+		auto param = plugin.patchManager.getParameter(pin.parameterId);
 		if (!param)
 			continue;
 
@@ -1474,7 +1473,7 @@ gmpi::ReturnCode SeProcessor::setPin(int32_t timestamp, int32_t pinId, int32_t s
 			assert(size == sizeof(float));
 
 			if (param->setNormalised(static_cast<double>(*reinterpret_cast<const float*>(data))))
-				pendingControllerQueueClients.AddWaiter(param);
+				plugin.pendingControllerQueueClients.AddWaiter(param);
 		}
 		break;
 
@@ -1485,19 +1484,19 @@ gmpi::ReturnCode SeProcessor::setPin(int32_t timestamp, int32_t pinId, int32_t s
 			case gmpi::PinDatatype::Float32:
 			{
 				if (param->setReal(static_cast<double>(*reinterpret_cast<const float*>(data))))
-					pendingControllerQueueClients.AddWaiter(param);
+					plugin.pendingControllerQueueClients.AddWaiter(param);
 			}
 			break;
 			case gmpi::PinDatatype::Int32:
 			{
 				if (param->setReal(static_cast<double>(*reinterpret_cast<const int32_t*>(data))))
-					pendingControllerQueueClients.AddWaiter(param);
+					plugin.pendingControllerQueueClients.AddWaiter(param);
 			}
 			break;
 			case gmpi::PinDatatype::Bool:
 			{
 				if (param->setReal(static_cast<double>(*reinterpret_cast<const bool*>(data))))
-					pendingControllerQueueClients.AddWaiter(param);
+					plugin.pendingControllerQueueClients.AddWaiter(param);
 			}
 			break;
 			default:

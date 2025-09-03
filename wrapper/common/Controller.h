@@ -13,12 +13,10 @@
 #include "ControllerHost.h"
 #include "GmpiApiEditor.h"
 #include "wrapper/common/FileWatcher.h"
-#include "wrapper/common/interThreadQue.h"
 #include "wrapper/common/ProcessorStateManager.h"
-//#include "wrapper/common/SemInfo.h"
 #include "GmpiSdkCommon.h"
-//#include "IGuiHost2.h"
 #include "Hosting/xml_spec_reader.h"
+#include "Hosting/message_queues.h"
 
 namespace SynthEdit2
 {
@@ -123,7 +121,7 @@ public:
 	bool canRedo();
 };
 
-class MpController : /*public IGuiHost2,*/ public interThreadQueUser, public gmpi::TimerClient
+class MpController : /*public IGuiHost2,*/ public gmpi::hosting::interThreadQueUser, public gmpi::TimerClient
 {
 	friend class UndoManager;
 	static const int UI_MESSAGE_QUE_SIZE2 = 0x500000; // 5MB. see also AUDIO_MESSAGE_QUE_SIZE
@@ -171,7 +169,7 @@ protected:
 	
 //	SE2::IPresenter* presenter_ = nullptr;
 
-    interThreadQue message_que_dsp_to_ui;
+	gmpi::hosting::interThreadQue message_que_dsp_to_ui;
 	bool isSemControllersInitialised = false;
 
 	// see also VST3Controller.programNames
@@ -252,7 +250,7 @@ public:
 	std::vector<MpController::presetInfo> scanPresetFolder(platform_string PresetFolder, platform_string extension);
 
 	void ParamToDsp(MpParameter* param, int32_t voice = 0);
-	void SerialiseParameterValueToDsp(my_msg_que_output_stream& stream, MpParameter* param, int32_t voice = 0);
+	void SerialiseParameterValueToDsp(gmpi::hosting::my_msg_que_output_stream& stream, MpParameter* param, int32_t voice = 0);
 	void UpdateProgramCategoriesHc(MpParameter * param);
 	MpParameter* createHostParameter(int32_t hostControl);
 //	virtual int32_t sendSdkMessageToAudio(int32_t handle, int32_t id, int32_t size, const void* messageData) override;
@@ -359,12 +357,11 @@ void initializeGui(gmpi::IMpParameterObserver* gui, int32_t parameterHandle, gmp
 
 	// interThreadQueUser
 	bool onTimer() override;
-	bool onQueMessageReady(int handle, int msg_id, class my_input_stream& p_stream) override;
+	bool onQueMessageReady(int handle, int msg_id, gmpi::hosting::my_input_stream& p_stream) override;
 
+	virtual gmpi::hosting::IWriteableQue* getQueueToDsp() = 0;
 
-	virtual IWriteableQue* getQueueToDsp() = 0;
-
-	interThreadQue* getQueueToGui()
+	gmpi::hosting::interThreadQue* getQueueToGui()
 	{
 		return &message_que_dsp_to_ui;
 	}

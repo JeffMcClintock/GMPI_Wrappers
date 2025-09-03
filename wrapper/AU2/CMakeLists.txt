@@ -24,15 +24,13 @@ AudioUnit.h
 
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
-${gmpi_sdk_folder}/Hosting/plugin_holder.h
-${gmpi_sdk_folder}/Hosting/plugin_holder.cpp
+${gmpi_sdk_folder}/Hosting/processor_holder.h
+${gmpi_sdk_folder}/Hosting/processor_holder.cpp
+${gmpi_sdk_folder}/Hosting/message_queues.h
+${gmpi_sdk_folder}/Hosting/message_queues.cpp
 
-${ADAPTORS_COMMON_FOLDER}/interThreadQue.h
-${ADAPTORS_COMMON_FOLDER}/interThreadQue.cpp
 ${ADAPTORS_COMMON_FOLDER}/HostControls.h
 ${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
-${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
-${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp
 ${ADAPTORS_COMMON_FOLDER}/it_enum_list.h
 ${ADAPTORS_COMMON_FOLDER}/it_enum_list.cpp
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
