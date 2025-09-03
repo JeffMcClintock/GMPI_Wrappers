@@ -88,6 +88,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 {
 	friend class MpParameterAU;
     static const int timerPeriodMs = 35;
+	static std::vector<gmpi::hosting::pluginInfo> plugins;
 
 	std::vector<parameterChange> parameterChanges[2];
 //	my_VstTimeInfo timeInfo;
