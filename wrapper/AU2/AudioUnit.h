@@ -10,6 +10,7 @@
 #include "wrapper/common/MpParameter.h"
 #include "wrapper/common/interThreadQue.h"
 #include "GmpiMidi.h"
+#include "Hosting/xml_spec_reader.h"
 
 #if 0
 #include "SynthRuntime.h"
@@ -20,6 +21,138 @@
 #include "mp_midi.h"
 #include "mfc_emulation.h"
 #endif
+
+struct MidiEvent3
+{
+    int64_t timestamp;
+    int size;
+    unsigned char data[10]; // 10 is just token value.
+};
+
+class MidiBuffer3
+{
+    static const int nullentry = -9999;
+    enum { BUFFER_SIZE = 1024}; // * 4 bytes. power-or-two please.
+    static const int bufferwrapper = BUFFER_SIZE-1;
+
+    std::vector<int32_t> buffer;
+    size_t m_read_pos;
+    size_t m_write_pos;
+
+    inline void UpdateReadPosImp()
+    {
+        auto e = (MidiEvent3*)&buffer[m_read_pos];
+        auto totalSize = (sizeof(e->timestamp) + sizeof(e->size) + e->size + sizeof(int32_t) - 1) / sizeof(int32_t);
+
+        m_read_pos = (m_read_pos + totalSize) & bufferwrapper;
+    }
+
+public:
+    MidiBuffer3() :
+        m_read_pos(0)
+        ,m_write_pos(0)
+    {
+        buffer.assign(BUFFER_SIZE, 0);
+    }
+
+    void Clear()
+    {
+        m_read_pos = m_write_pos = 0;
+    }
+
+    inline void Add(int64_t timestamp, const unsigned char* data, int size)
+    {
+        assert(m_write_pos >= 0 && m_write_pos < buffer.size());
+        const size_t sizeof_header = sizeof(timestamp) + sizeof(int32_t);
+
+        if (size + sizeof_header > FreeSpace() * sizeof(int32_t))
+        {
+            // _RPT0(_CRT_WARN, "OVERLOAD on MIDI input!!!!\n");
+            return;
+        }
+
+        // check if enough space before end of buffer.
+        auto e = (MidiEvent3*)&buffer[m_write_pos];
+        auto totalSize = (sizeof(e->timestamp) + sizeof(e->size) + size + sizeof(int32_t) - 1) / sizeof(int32_t);
+        if (m_write_pos + totalSize > buffer.size())
+        {
+            // skip remainder of buffer and wrap.
+            Add(nullentry, reinterpret_cast<const unsigned char*>( buffer.data() ), (int) (sizeof(int32_t) * (buffer.size() - m_write_pos) - sizeof_header));
+
+            Add(timestamp, data, size);
+            return;
+        }
+
+        e->timestamp = timestamp;
+        e->size = size;
+
+        auto dest = e->data;
+        for (int i = 0; i < size; i++)
+        {
+            *dest++ = data[i];
+        }
+
+        // commit.
+        m_write_pos = (m_write_pos + totalSize) & bufferwrapper;
+    }
+
+    inline bool IsEmpty()
+    {
+        auto isempty = (m_read_pos == m_write_pos);
+        if (!isempty)
+        {
+            auto e = (MidiEvent3*)&buffer[m_read_pos];
+
+            if (e->timestamp == nullentry)
+            {
+                UpdateReadPosImp();
+                return IsEmpty();
+            }
+        }
+
+        return isempty;
+    }
+
+    inline int64_t PeekNextTimestamp()
+    {
+        if (IsEmpty())
+        {
+            return 0;
+        }
+
+        return *(int64_t*)&buffer[m_read_pos];
+    }
+
+    inline MidiEvent3* Current()
+    {
+        assert(!IsEmpty());
+        auto e = (MidiEvent3*)&buffer[m_read_pos];
+
+        if (e->timestamp == nullentry)
+        {
+            UpdateReadPosImp();
+            assert(!IsEmpty());
+            return Current();
+        }
+        return e;
+    }
+
+    inline void UpdateReadPos()
+    {
+        assert(!IsEmpty());
+        UpdateReadPosImp();
+    }
+
+    inline size_t FreeSpace()
+    {
+        if (m_read_pos > m_write_pos)
+        {
+            return m_read_pos - m_write_pos - 1;
+        }
+
+        return m_read_pos + buffer.size() - m_write_pos - 1;
+    }
+};
 
 struct parameterChange
 {
@@ -107,7 +240,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 	std::map<int, MpParameterAU*> tagToParameter;
 	UInt32 offLineRenderMode = 0;
     wrapper::interThreadQue queueToDsp_;
-//	gmpi::midi_2_0::MidiConverter2 midiConverter;
+	gmpi::midi_2_0::MidiConverter2 midiConverter;
 //	gmpi::midi_2_0::MpeConverter mpeConverter;
 //    int userNotHoldingAControlCounter = 0;
     
@@ -354,7 +487,7 @@ protected:
 
 private:
 	// double-buffered incoming MIDI events.
-//	MidiBuffer3 midiEvents[2];
+	MidiBuffer3 midiEvents[2];
 	std::atomic<int> curMidiEvents;
 
 	ausdk::AUScope	mPartScope;
@@ -364,8 +497,8 @@ private:
 	float dummyInputBuffer[kAUDefaultMaxFramesPerSlice];
 	float dummyOutputBuffer[kAUDefaultMaxFramesPerSlice];
 
-	std::string pluginType; // "aumu" : "aufx"
-	std::string manufacturerId;
+//	std::string pluginType; // "aumu" : "aufx"
+//	std::string manufacturerId;
 
     uint8_t midi2conversionbuffer[256];
     bool processorIsInitialized = false;

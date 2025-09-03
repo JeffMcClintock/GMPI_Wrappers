@@ -14,6 +14,7 @@ using namespace std;
 namespace wrapper
 {
 
+#if 0
 struct HostControlStruct // holds XML -> enum info
 {
 	const char* display;
@@ -21,6 +22,7 @@ struct HostControlStruct // holds XML -> enum info
 	gmpi::PinDatatype datatype;
 	int automation;
 };
+#endif
 
 /* categories:
 - Voice - Note expression. Polyphonic parameters targeted at individual voices.

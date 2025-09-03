@@ -22,6 +22,9 @@ set(srcs
 AudioUnit.cpp
 AudioUnit.h
 
+${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
+${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
+
 ${ADAPTORS_COMMON_FOLDER}/interThreadQue.h
 ${ADAPTORS_COMMON_FOLDER}/interThreadQue.cpp
 ${ADAPTORS_COMMON_FOLDER}/HostControls.h
@@ -139,9 +142,11 @@ add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${au_sdk_srcs})
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${DSP_CORE}
     ${AU_SDK_H}
+    ${gmpi_sdk_folder}
     ${gmpi_sdk_folder}/Core
     ${gmpi_ui_folder}
     ${gmpi_ui_folder}/helpers
+    ${ADAPTORS_COMMON_FOLDER}
 )
 
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREFOUNDATION_LIBRARY} )

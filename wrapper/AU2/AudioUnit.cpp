@@ -1,6 +1,8 @@
 #include "AudioUnit.h"
 #include "wrapper/common/BundleInfo.h"
 #include "wrapper/common/it_enum_list.h"
+#include "Hosting/xml_spec_reader.h"
+#include "GmpiSdkCommon.h"
 
 //#include "mp_midi.h"
 //#include "UgDatabase.h"
@@ -18,6 +20,8 @@ using namespace ausdk;
 #endif
 
 //AUSDK_COMPONENT_ENTRY(ausdk::AUMusicDeviceFactory, SEInstrumentBase);
+extern "C"
+gmpi::ReturnCode MP_GetFactory(void** returnInterface);
 
 // provide extensibility to add extra modules on a per-project basis.
 // SE2JUCE Controller must implement this function
@@ -95,17 +99,18 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 	latencyCompensation(0),
 	queueToDsp_(0x500000),//SeAudioMaster::AUDIO_MESSAGE_QUE_SIZE),
     message_que_dsp_to_ui(0x500000)
-#if 0
-	midiConverter(
+
+	,midiConverter(
 		// provide a lambda to accept converted MIDI 2.0 messages
 		[this](const gmpi::midi::message_view& msg, int timestamp) {
-			processor.MidiIn(timestamp, (const unsigned char*)msg.begin(), static_cast<int>(msg.size()));
+//			processor.MidiIn(timestamp, (const unsigned char*)msg.begin(), static_cast<int>(msg.size()));
 		}
-	),
-	mpeConverter(
+	)
+#if 0
+	, mpeConverter(
 		// provide a lambda to accept converted MIDI 2.0 messages
 		[this](const gmpi::midi::message_view& msg, int timestamp) {
-			processor.MidiIn(timestamp, (const unsigned char*)msg.begin(), static_cast<int>(msg.size()));
+//			processor.MidiIn(timestamp, (const unsigned char*)msg.begin(), static_cast<int>(msg.size()));
 		}
 	)
 #endif
@@ -126,15 +131,16 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 		}
 
 		int index = 0;
-		while (gmpi_factory)
+		while (factory)
 		{
-			gmpi::ReturnString s;
-			const auto r = gmpi_factory->getPluginInformation(index++, &s); // FULL XML
+			gmpi::ReturnString xml;
+			const auto r = factory->getPluginInformation(index++, &xml); // FULL XML
 
 			if (r != gmpi::ReturnCode::Ok)
 				break;
 
-			RegisterXml(pluginPath, s.c_str());
+			// RegisterXml("", s.c_str());
+            gmpi::hosting::readpluginXml(xml.c_str(), plugins);
 		}
 	}
 
@@ -261,9 +267,24 @@ void SEInstrumentBase::PostConstructor()
 				}
 			}
 #endif
-		
-	}
+        auto& info = plugins[0];
+        
+        inputCount  = countPins(info, gmpi::PinDirection::In , gmpi::PinDatatype::Audio);
+        outputCount = countPins(info, gmpi::PinDirection::Out, gmpi::PinDatatype::Audio);
+            
+        inputPtr.assign(inputCount, nullptr);
+        outputPtr.assign(outputCount, nullptr);
 
+        for(auto& pin : info.dspPins)
+        {
+            if(pin.datatype == gmpi::PinDatatype::Audio && pin.direction == gmpi::PinDirection::Out)
+                outputNames.push_back(pin.name);
+            
+            if(pin.datatype == gmpi::PinDatatype::Midi && pin.direction == gmpi::PinDirection::In)
+                wantsMidi = true;
+        }
+    }
+	
 	// Can't call base because num elements (busses) not avail in contructor. Do it myself.
 	// MusicDeviceBase::PostConstructor();
 	{
@@ -624,7 +645,7 @@ void SEInstrumentBase::PerformEvents(const AudioTimeStamp& inTimeStamp)
 	{
 		curMidiEvents.store((readingMidiEvents + 1) & 1);
 	}
-#if 0
+#if 1
 	while (!midiEvents[readingMidiEvents].IsEmpty())
 	{
 		auto e = midiEvents[readingMidiEvents].Current();
