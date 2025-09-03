@@ -16,12 +16,12 @@
 #include "wrapper/common/lock_free_fifo.h"
 #include "wrapper/common/interThreadQue.h"
 #include "wrapper/common/dynamic_linking.h"
-#include "wrapper/common/HostControls.h"
+//#include "wrapper/common/HostControls.h"
+#include "Hosting/xml_spec_reader.h"
 
 static const int MidiControllersParameterId = 10000;
 
 enum class VoiceAllocationHint {Keyboard, MPE};
-struct pluginInfoSem;
 
 namespace wrapper
 {
@@ -179,7 +179,7 @@ public:
 class SeProcessor : public Steinberg::Vst::AudioEffect, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
 {
 public:
-	SeProcessor (pluginInfoSem& pinfo);
+	SeProcessor (gmpi::hosting::pluginInfo& pinfo);
 	~SeProcessor ();
 	
 	Steinberg::tresult PLUGIN_API initialize (FUnknown* context) override;
@@ -231,7 +231,7 @@ public:
 	int32_t getBlockSize() override;
 	float getSampleRate() override;
 	int32_t getHandle() override;
-	void setHostControlFromDaw(wrapper::HostControls hc, double value);
+	void setHostControlFromDaw(gmpi::hosting::HostControls hc, double value);
 
 protected:
 	void CommunicationProc();
@@ -298,7 +298,7 @@ protected:
 
 //	std::unordered_map<int32_t, int32_t> param2pin;
 	std::vector<float> silence;
-	pluginInfoSem const& info;
+	gmpi::hosting::pluginInfo const& info;
 	int MidiInputPinIdx = -1;
 
 //	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IAudioPluginHost);

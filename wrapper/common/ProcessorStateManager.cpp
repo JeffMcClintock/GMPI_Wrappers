@@ -6,7 +6,7 @@
 #include "my_msg_que_input_stream.h"
 #include "my_msg_que_output_stream.h"
 #include "tinyXml2/tinyxml2.h"
-#include "HostControls.h"
+//#include "HostControls.h"
 
 #ifndef GMPI_VST3_WRAPPER
 #include "SeAudioMaster.h"
@@ -315,8 +315,10 @@ void DawPreset::initFromXML(const std::map<int32_t, paramInfo>& parametersInfo, 
 	// except for preset name and category
 	for (auto& [paramHandle, info] : parametersInfo)
 	{
+#if 0
 		if (info.hostControl == HC_PROGRAM_NAME || HC_PROGRAM_CATEGORY == info.hostControl)
 			continue;
+#endif
 
 		if (params.find(paramHandle) == params.end())
 		{
@@ -658,6 +660,7 @@ void ProcessorStateMgrVst3::serviceQueue()
 			const auto asString = RawToXml(info.dataType, rawValue);
 			_RPTN(0, "PSM: param:%d val:%s\n", paramHandle, asString.c_str());
 #endif
+#if 0
 			if (info.hostControl != HC_PROGRAM_NAME && HC_PROGRAM_CATEGORY != info.hostControl)
 			{
 #if 0
@@ -683,6 +686,7 @@ void ProcessorStateMgrVst3::serviceQueue()
 			{
 //				_RPT0(0, "PSM: IGNORED program name/category\n");
 			}
+#endif
 		}
 		break;
 
@@ -873,6 +877,7 @@ void init(std::map<int32_t, paramInfo>& parametersInfo, tinyxml2::XMLNode* param
 		{
 			assert(!stateful_);
 
+#if 0
 			// Special case HC_VOICE_PITCH needs to be initialized to standard western scale
 			if (HC_VOICE_PITCH == p.hostControl)
 			{
@@ -887,6 +892,7 @@ void init(std::map<int32_t, paramInfo>& parametersInfo, tinyxml2::XMLNode* param
 				}
 			}
 			else
+#endif
 			{
 				// init to zero
 				const char* nothing = "\0\0\0\0\0\0\0\0";

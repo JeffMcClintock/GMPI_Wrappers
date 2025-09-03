@@ -4,7 +4,7 @@
 namespace wrapper
 {
 // TODO !!! pass IUnknown to constructor, then QueryInterface for IDrawingClient
-SEVSTGUIEditorWin::SEVSTGUIEditorWin(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
+SEVSTGUIEditorWin::SEVSTGUIEditorWin(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
 	VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
     // DPI of system. only a GUESS at this point of DPI we will be using. (until we know DAW window handle).

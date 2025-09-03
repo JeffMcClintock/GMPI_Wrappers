@@ -104,7 +104,7 @@ void MpParameterVst3::updateProcessor(gmpi::Field fieldId, int32_t voice)
 }
 
 
-VST3Controller::VST3Controller(pluginInfoSem& pinfo) :
+VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
 	MpController(pinfo)
 	, isInitialised(false)
 	, isConnected(false)
@@ -576,7 +576,7 @@ tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& info)
 	}
 
 	// Support for VSTs special bypass parameter. Make a bool param called "BYPASS" 
-	if (/*p->datatype_ == gmpi::PinDatatype::Bool &&*/ p->getHostControl() == wrapper::HC_PROCESS_BYPASS) // >name_ == "BYPASS")
+	if (/*p->datatype_ == gmpi::PinDatatype::Bool &&*/ p->getHostControl() == (int) gmpi::hosting::HostControls::ProcessBypass) // >name_ == "BYPASS")
 	{
 		info.flags |= Steinberg::Vst::ParameterInfo::kIsBypass;
 	}

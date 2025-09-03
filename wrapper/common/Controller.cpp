@@ -6,7 +6,7 @@
 #include "Controller.h"
 #include "tinyXml2/tinyxml2.h"
 #include "RawConversions.h"
-#include "HostControls.h"
+//#include "HostControls.h"
 #include "GmpiResourceManager.h"
 //#include "./Presenter.h"
 #include "BundleInfo.h"
@@ -184,6 +184,8 @@ void MpController::ScanPresets()
 
 void MpController::UpdatePresetBrowser()
 {
+#if 0
+
 	// Update preset browser
 	for (auto& p : parameters_)
 	{
@@ -193,6 +195,7 @@ void MpController::UpdatePresetBrowser()
 			updateGuis(p.get(), gmpi::Field::Value);
 		}
 	}
+#endif
 }
 
 void MpController::Initialize()
@@ -246,10 +249,10 @@ void MpController::Initialize()
 				seParameter = makeNativeParameter(hostParameterIndex++, pminimum > pmaximum);
 			}
 			
-			assert(param.id != -1 || param.hostConnect != wrapper::HC_NONE);
-			const int ParameterHandle = param.id > -1 ? param.id : (-2 - param.hostConnect);
+			assert(param.id != -1 || param.hostConnect != gmpi::hosting::HostControls::None);
+			const int ParameterHandle = param.id > -1 ? param.id : (-2 - (int) param.hostConnect);
 
-			seParameter->hostControl_ = param.hostConnect;
+			seParameter->hostControl_ = (int) param.hostConnect;
 			seParameter->minimum = param.minimum;
 			seParameter->maximum = param.maximum;
 			seParameter->parameterHandle_ = ParameterHandle;
@@ -874,9 +877,11 @@ bool UndoManager::canRedo()
 
 void UndoManager::UpdateGui(MpController* controller)
 {
+#if 0
 	*(controller->getHostParameter(HC_CAN_UNDO)) = canUndo();
 	*(controller->getHostParameter(HC_CAN_REDO)) = canRedo();
 	*(controller->getHostParameter(HC_PROGRAM_MODIFIED)) = canUndo();
+#endif
 }
 
 DawPreset const* UndoManager::push(std::string description, std::unique_ptr<const DawPreset> preset)
@@ -1034,6 +1039,7 @@ gmpi_gui::IMpGraphicsHost* MpController::getGraphicsHost()
 
 void MpController::OnSetHostControl(int hostControl, gmpi::Field paramField, int32_t size, const void* data, int32_t voice)
 {
+#if 0
 	switch (hostControl)
 	{
 	case HC_PROGRAM:
@@ -1194,6 +1200,7 @@ void MpController::OnSetHostControl(int hostControl, gmpi::Field paramField, int
 
 		break;
 	}
+#endif
 }
 
 #if 0 // TODO
@@ -1280,6 +1287,7 @@ void MpController::ParamToDsp(MpParameter* param, int32_t voice)
 
 void MpController::UpdateProgramCategoriesHc(MpParameter* param)
 {
+#if 0
 	ListBuilder_base<char> l;
 	for (auto& preset : presets)
 	{
@@ -1295,11 +1303,13 @@ void MpController::UpdateProgramCategoriesHc(MpParameter* param)
 	auto enumList = Utf8ToWstring(l.str());
 
 	param->setParameterRaw(gmpi::Field::Value, RawView(enumList));
+#endif
 }
 
 MpParameter* MpController::createHostParameter(int32_t hostControl)
 {
 	SeParameter_vst3_hostControl* p = {};
+#if 0
 
 	switch (hostControl)
 	{
@@ -1370,6 +1380,7 @@ MpParameter* MpController::createHostParameter(int32_t hostControl)
 	break;
 	*/
 	}
+#endif
 
 	if (!p)
 		return {};
@@ -1691,6 +1702,7 @@ std::unique_ptr<const DawPreset> MpController::getPreset(std::string presetNameO
 
 	for (auto& p : parameters_)
 	{
+#if 0
 		if (p->getHostControl() == HC_PROGRAM_NAME)
 		{
 			preset->name = WStringToUtf8((std::wstring)p->getValueRaw(gmpi::Field::Value, 0));
@@ -1701,6 +1713,7 @@ std::unique_ptr<const DawPreset> MpController::getPreset(std::string presetNameO
 			preset->category = WStringToUtf8((std::wstring)p->getValueRaw(gmpi::Field::Value, 0));
 			continue; // force non-save
 		}
+#endif
 
 		if (p->stateful_)
 		{
@@ -2326,6 +2339,8 @@ void MpController::ImportBankXml(const char* xmlfilename)
 
 void MpController::setModified(bool presetIsModified)
 {
+#if 0
 	(*getHostParameter(HC_PROGRAM_MODIFIED)) = presetIsModified;
+#endif
 }
 }

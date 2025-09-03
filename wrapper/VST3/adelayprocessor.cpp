@@ -30,7 +30,7 @@ namespace wrapper
 {
 
 //-----------------------------------------------------------------------------
-SeProcessor::SeProcessor (pluginInfoSem& pinfo)
+SeProcessor::SeProcessor (gmpi::hosting::pluginInfo& pinfo)
 : active_(false)
 , info(pinfo)
 , outputsAsStereoPairs(true)
@@ -232,11 +232,11 @@ SeProcessor::SeProcessor (pluginInfoSem& pinfo)
 	// init PatchManager parameters
 	for (const auto& param : info.parameters)
 	{
-		assert(param.id != -1 || param.hostConnect != wrapper::HC_NONE);
+		assert(param.id != -1 || param.hostConnect != gmpi::hosting::HostControls::None);
 //		if (param.id >= 0)
 		{
 			DawParameter p;
-			p.id = param.id > -1 ? param.id : ( -2 - param.hostConnect);
+			p.id = param.id > -1 ? param.id : ( -2 - (int) param.hostConnect);
 			p.valueReal = atof(param.default_value.c_str());
 			p.valueLo = param.minimum;
 			p.valueHi = param.maximum;
@@ -699,7 +699,7 @@ void SeProcessor::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
 	events.push(ge);
 }
 
-void SeProcessor::setHostControlFromDaw(wrapper::HostControls hc, double value)
+void SeProcessor::setHostControlFromDaw(gmpi::hosting::HostControls hc, double value)
 {
 	const auto id = -2 - (int)hc;
 
@@ -1083,10 +1083,10 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 		{
 			auto& vst3Time = *data.processContext;
 
-			setHostControlFromDaw(wrapper::HC_TIME_BPM,                   vst3Time.tempo);
-			setHostControlFromDaw(wrapper::HC_TIME_NUMERATOR,             vst3Time.timeSigNumerator);
-			setHostControlFromDaw(wrapper::HC_TIME_DENOMINATOR,           vst3Time.timeSigDenominator);
-			setHostControlFromDaw(wrapper::HC_TIME_QUARTER_NOTE_POSITION, vst3Time.projectTimeMusic);
+			setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm,                 vst3Time.tempo);
+			setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator,           vst3Time.timeSigNumerator);
+			setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator,         vst3Time.timeSigDenominator);
+			setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, vst3Time.projectTimeMusic);
 
 //			timeInfo = vst3Time; // needed??
 #if 0

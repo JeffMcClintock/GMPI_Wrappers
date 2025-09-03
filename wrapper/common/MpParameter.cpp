@@ -6,8 +6,9 @@
 //#include "../se_sdk2/se_datatypes.h"
 #include "RawConversions.h"
 //#include "../../conversion.h"
-#include "HostControls.h"
+//#include "HostControls.h"
 #include "it_enum_list.h"
+#include "Hosting/xml_spec_reader.h"
 
 using namespace std;
 
@@ -714,8 +715,17 @@ double MpParameter_base::RealToNormalized(double real) const
 SeParameter_vst3_hostControl::SeParameter_vst3_hostControl(MpController* controller, int hostControl) : MpParameter_private(controller)
 {
 	hostControl_ = hostControl;
-	name_ = GetHostControlName((HostControls) hostControl_);
-	datatype_ = GetHostControlDatatype((HostControls)hostControl_);
+	if(auto hc = gmpi::hosting::intToHostControlSafe(hostControl_) ; hc)
+	{
+		name_ = getHostControlNiceName(hc.value());
+		datatype_ = getHostControlDatatype(hc.value());
+	}
+	else
+	{
+		name_ = "error";
+	}
+
+//	datatype_ = GetHostControlDatatype((HostControls)hostControl_);
 	moduleHandle_ = -1;
 	moduleParamId_ = -1;
 	stateful_ = false;

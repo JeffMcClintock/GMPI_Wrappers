@@ -5,8 +5,7 @@
 #include "GmpiSdkCommon.h"
 #include "GmpiApiEditor.h"
 #include "helpers/NativeUi.h"
-
-struct pluginInfoSem;
+#include "Hosting/xml_spec_reader.h"
 
 namespace wrapper
 {
@@ -56,7 +55,7 @@ class VST3EditorBase : public Steinberg::FObject, public Steinberg::IPlugView
 	friend class ParameterHelper;
 
 protected:
-	pluginInfoSem const& info;
+	gmpi::hosting::pluginInfo const& info;
 	wrapper::VST3Controller* controller = {};
     int width, height;
     
@@ -65,7 +64,7 @@ protected:
 	ParameterHelper helper;
 
 public:
-	VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight);
+	VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight);
 	~VST3EditorBase();
 
     void initPlugin();//gmpi::api::IUnknown* host);

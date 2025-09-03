@@ -83,6 +83,8 @@ void MpParameterAU::updateProcessor(gmpi::Field fieldId, int32_t voice)
     }
 }
 
+std::vector<gmpi::hosting::pluginInfo> SEInstrumentBase::plugins;
+
 SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 	: AUBase(inInstance, 0, 0, 1),
     AUMIDIBase(*static_cast<AUBase*>(this)),
@@ -109,6 +111,32 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 #endif
 {
 //	TiXmlBase::SetCondenseWhiteSpace(false); // ensure text parameters preserve multiple spaces. e.g. "A     B" (else it collapses to "A B")
+
+	if (plugins.empty())
+	{
+		gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
+		auto r = MP_GetFactory(factoryBase.put_void());
+
+		gmpi::shared_ptr<gmpi::api::IPluginFactory> factory;
+		auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.put_void());
+
+		if (!factory || r != gmpi::ReturnCode::Ok)
+		{
+			return;
+		}
+
+		int index = 0;
+		while (gmpi_factory)
+		{
+			gmpi::ReturnString s;
+			const auto r = gmpi_factory->getPluginInformation(index++, &s); // FULL XML
+
+			if (r != gmpi::ReturnCode::Ok)
+				break;
+
+			RegisterXml(pluginPath, s.c_str());
+		}
+	}
 
 	parameterChanges[0].reserve(200);
 	parameterChanges[1].reserve(200);

@@ -13,6 +13,7 @@ To add a host control:
  */
 namespace wrapper
 {
+#if 0
 enum HostControls { HC_NONE=-1, HC_PATCH_COMMANDS, HC_MIDI_CHANNEL, HC_PROGRAM_NAMES_LIST,
 
 					HC_PROGRAM, HC_PROGRAM_NAME, HC_VOICE_TRIGGER, HC_VOICE_GATE, HC_VOICE_PITCH,
@@ -75,6 +76,7 @@ HC_VOICE_TUNING, // psudo host-control. used only for persistance of tuning tabl
 
 					HC_NUM_HOST_CONTROLS,
 };
+#endif
 
 enum class EPatchCommands
 {
@@ -85,6 +87,7 @@ enum class EPatchCommands
 	CompareGet_CopyAB
 };
 
+#if 0
 HostControls StringToHostControl( std::string_view txt );
 gmpi::PinDatatype GetHostControlDatatype( HostControls hc );
 const char* GetHostControlName( HostControls hc );
@@ -93,5 +96,6 @@ const char* GetHostControlName( HostControls hc );
 bool HostControlAttachesToParentContainer( HostControls hostControlId );
 bool HostControlisPolyphonic(HostControls hostControlId);
 bool AffectsVoiceAllocation(HostControls hostControlId);
+#endif
 
 }

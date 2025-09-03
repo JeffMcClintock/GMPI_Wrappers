@@ -1,39 +1,16 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <algorithm>
 #include "pluginterfaces/base/ipluginbase.h"
 #include "pluginterfaces/base/funknown.h"
-#include "GmpiApiCommon.h"
-#include "GmpiApiEditor.h"
-#include "wrapper/common/platform_string.h"
-#include "wrapper/common/SemInfo.h"
-
-namespace tinyxml2
-{
-	class XMLElement;
-}
-
-struct pluginInfo
-{
-	std::string name_;
-	std::string version_;
-	std::string subCategories_;
-	Steinberg::FUID processorId;
-	Steinberg::FUID controllerId;
-	int ElatencyCompensation;
-
-	bool outputsAsStereoPairs;
-	bool emulateIgnorePC = false;
-	std::string outputNames;
-};
+#include "Hosting/xml_spec_reader.h"
 
 class MyVstPluginFactory :
 	public Steinberg::IPluginFactory3
 {
 public:
-	MyVstPluginFactory();
-	~MyVstPluginFactory();
+	MyVstPluginFactory() = default;
+	~MyVstPluginFactory() = default;
 
 	static MyVstPluginFactory* GetInstance();
 
@@ -53,7 +30,6 @@ public:
 	/** Returns the class info (version 2) for a given index. */
 	virtual Steinberg::tresult PLUGIN_API getClassInfo2 (Steinberg::int32 index, Steinberg::PClassInfo2* info);
 
-//	int32_t getVst2Id(int32_t index); // not used. Same ID as 32-bit version.
 	int32_t getVst2Id64(int32_t index); // generated from hash of GUID. Not compatible w 32-bit VSTs.
 
 	/** Returns the unicode class info for a given index. */
@@ -74,35 +50,14 @@ public:
 		return 1;
 	}
 
-#if !defined( _WIN32 ) // Mac Only.
-//    std::wstring getSemFolder(); // mac only.
-#endif
 	std::string getVendorName();
-	//std::string getProductName()
-	//{
-	//	return pluginInfo_.name_;
-	//}
 	bool GetOutputsAsStereoPairs();
-	//std::wstring GetOutputsName(int index);
-	//const pluginInfo& getPluginInfo()
-	//{
-	//	return pluginInfo_;
-	//}
 
-	std::vector<pluginInfoSem> plugins;
+	std::vector<gmpi::hosting::pluginInfo> plugins;
 
 private:
 	void initialize();
 	void RegisterXml(const /*platform_*/ std::string& pluginPath, const char* xml);
-	void RegisterPin(tinyxml2::XMLElement* pin, std::vector<pinInfoSem>* pinlist, gmpi::api::PluginSubtype plugin_sub_type,
-		int nextPinId);
 	bool initializeFactory();
-
-	std::string vendorName_;
-	std::string vendorUrl_;
-	std::string vendorEmail_;
-
-//	pluginInfo pluginInfo_;
-//	int32_t backwardCompatible4charId = -1;
 };
 

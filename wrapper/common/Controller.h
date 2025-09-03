@@ -15,9 +15,10 @@
 #include "wrapper/common/FileWatcher.h"
 #include "wrapper/common/interThreadQue.h"
 #include "wrapper/common/ProcessorStateManager.h"
-#include "wrapper/common/SemInfo.h"
+//#include "wrapper/common/SemInfo.h"
 #include "GmpiSdkCommon.h"
 //#include "IGuiHost2.h"
+#include "Hosting/xml_spec_reader.h"
 
 namespace SynthEdit2
 {
@@ -142,7 +143,7 @@ public:
 
 protected:
 	static const int timerPeriodMs = 35;
-	pluginInfoSem const& info;
+	gmpi::hosting::pluginInfo const& info;
 
 private:
 	ControllerManager semControllers;
@@ -187,13 +188,11 @@ protected:
 
 public:
 
-	MpController(pluginInfoSem& pinfo) :
+	MpController(gmpi::hosting::pluginInfo& pinfo) :
 		message_que_dsp_to_ui(UI_MESSAGE_QUE_SIZE2),
 		info(pinfo),
 		semControllers(this)
 	{
-//		semControllers.patchManager = this;
-//		RegisterGui2(&semControllers);
 	}
     
     ~MpController();

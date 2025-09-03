@@ -27,6 +27,7 @@ struct HostControlStruct // holds XML -> enum info
 - Time  - Song position and tempo related.
 */
 
+#if 0
 std::unordered_map<std::string_view, HostControls> hostControlNames =
 {
 	{"PatchCommands", HC_PATCH_COMMANDS},
@@ -99,7 +100,6 @@ std::unordered_map<std::string_view, HostControls> hostControlNames =
 	{"Presets/CanRedo", HC_CAN_REDO},
 	{"Processor/DawBypass", HC_PROCESS_BYPASS},
 };
-
 struct hcInfo
 {
 	const char* name;
@@ -382,4 +382,6 @@ bool AffectsVoiceAllocation(HostControls hostControlId)
 
 	return false;
 }
+#endif
+
 }

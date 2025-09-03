@@ -15,7 +15,13 @@ if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fp:fast /GS-")
 endif()
 
+# ${ADAPTORS_COMMON_FOLDER}/HostControls.h
+# ${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
+
+
 set(srcs
+${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
+${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
 MyVstPluginFactory.h
 MyVstPluginFactory.cpp
 adelayprocessor.h
@@ -27,8 +33,6 @@ VST3EditorBase.cpp
 ${ADAPTORS_COMMON_FOLDER}/StagingMemoryBuffer.h
 ${ADAPTORS_COMMON_FOLDER}/interThreadQue.h
 ${ADAPTORS_COMMON_FOLDER}/interThreadQue.cpp
-${ADAPTORS_COMMON_FOLDER}/HostControls.h
-${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
@@ -116,9 +120,11 @@ set(vst_gui_minimal_srcs
 include_directories(
 ${VST3_SDK}
 ${DSP_CORE}
+${gmpi_sdk_folder}
 ${gmpi_sdk_folder}/Core
 ${gmpi_ui_folder}
 ${gmpi_ui_folder}/helpers
+${ADAPTORS_COMMON_FOLDER}
 )
 
 source_group(se_sdk FILES ${sdk_srcs})

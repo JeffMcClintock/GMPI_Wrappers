@@ -15,8 +15,6 @@
 #include "wrapper/common/MpParameter.h"
 #include "wrapper/common/conversion.h"
 
-struct pluginInfoSem;
-
 namespace wrapper {
 	class VST3Controller;
 }
@@ -69,7 +67,7 @@ class VST3Controller :
 	int supportedChannels = 1;
 
 public:
-	VST3Controller(pluginInfoSem& pinfo);
+	VST3Controller(gmpi::hosting::pluginInfo& pinfo);
 	~VST3Controller();
 
 	Steinberg::tresult PLUGIN_API initialize (FUnknown* context) override;

@@ -59,7 +59,7 @@ void ParameterHelper::invalidateRect(const gmpi::drawing::Rect* invalidRect)
 #endif
 
 // TODO !!! pass IUnknown to constructor, then QueryInterface for IDrawingClient
-VST3EditorBase::VST3EditorBase(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
+VST3EditorBase::VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
 	controller(pcontroller)
 	, width(pwidth)
 	, height(pheight)
