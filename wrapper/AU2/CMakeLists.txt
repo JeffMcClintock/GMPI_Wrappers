@@ -24,6 +24,8 @@ AudioUnit.h
 
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
+${gmpi_sdk_folder}/Hosting/plugin_holder.h
+${gmpi_sdk_folder}/Hosting/plugin_holder.cpp
 
 ${ADAPTORS_COMMON_FOLDER}/interThreadQue.h
 ${ADAPTORS_COMMON_FOLDER}/interThreadQue.cpp

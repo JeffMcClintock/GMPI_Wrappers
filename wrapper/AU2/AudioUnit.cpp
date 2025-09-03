@@ -516,24 +516,6 @@ AUScope* SEInstrumentBase::GetScopeExtended(AudioUnitScope inScope)
 	return NULL;
 }
 
-void SEInstrumentBase::reInitialize()
-{
-    // Reaper may trigger this too early. In which case no need to reinit (since we didn't init yet)
-    if(!processorIsInitialized)
-        return;
-
-#if 0
-	processor.prepareToPlay(
-		this,
-		timeInfo.sampleRate,
-		kAUDefaultMaxFramesPerSlice,
-		0 == offLineRenderMode
-	);
-
-	wantsMidi = processor.wantsMidi();
-#endif
-}
-
 // called on a background thread in Logic Pro
 OSStatus SEInstrumentBase::Initialize()
 {
@@ -569,9 +551,39 @@ OSStatus SEInstrumentBase::Initialize()
 
 	initSemControllers();
 #endif
+
+	plugin.start_processor(this, info);
+
+	if (!plugin.processor)
+		return 1;
+
     processorIsInitialized = true;
     
 	return noErr;
+}
+
+void SEInstrumentBase::reInitialize()
+{
+	// Reaper may trigger this too early. In which case no need to reinit (since we didn't init yet)
+	if (!processorIsInitialized)
+		return;
+
+#if 0
+	processor.prepareToPlay(
+		this,
+		timeInfo.sampleRate,
+		kAUDefaultMaxFramesPerSlice,
+		0 == offLineRenderMode
+	);
+
+	wantsMidi = processor.wantsMidi();
+#endif
+
+	plugin.start_processor(this, info);
+
+	if (!plugin.processor)
+		return;
+
 }
 
 // receive notifications of parameter updates from DAW only (not my own GUI)
@@ -719,6 +731,9 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 	const AudioTimeStamp& inTimeStamp,
 	UInt32 inNumberFrames)
 {
+	auto& plugin_ = plugin.processor;
+	auto& events = plugin.events;
+
 #if 0
 	if (processor.reinitializeFlag)
 	{
@@ -872,6 +887,10 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 		, allSilenceFlagsOut
 		);
 */
+	plugin_->process(inNumberFrames, events.head());
+
+	events.clear();
+
 	mAbsoluteSampleFrame += inNumberFrames;
 
 	return noErr;

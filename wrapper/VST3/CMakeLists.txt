@@ -22,6 +22,8 @@ endif()
 set(srcs
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
+${gmpi_sdk_folder}/Hosting/plugin_holder.h
+${gmpi_sdk_folder}/Hosting/plugin_holder.cpp
 MyVstPluginFactory.h
 MyVstPluginFactory.cpp
 adelayprocessor.h

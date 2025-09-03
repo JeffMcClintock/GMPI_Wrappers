@@ -11,6 +11,7 @@
 #include "wrapper/common/interThreadQue.h"
 #include "GmpiMidi.h"
 #include "Hosting/xml_spec_reader.h"
+#include "Hosting/plugin_holder.h"
 
 #if 0
 #include "SynthRuntime.h"
@@ -222,6 +223,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 	friend class MpParameterAU;
     static const int timerPeriodMs = 35;
 	static std::vector<gmpi::hosting::pluginInfo> plugins;
+	gmpi::hosting::gmpi_processor plugin;
 
 	std::vector<parameterChange> parameterChanges[2];
 //	my_VstTimeInfo timeInfo;

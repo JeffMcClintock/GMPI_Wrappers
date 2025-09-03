@@ -120,6 +120,15 @@ SMTG_EXPORT_SYMBOL IPluginFactory* PLUGIN_API GetPluginFactory ()
 bool InitModule() { return true; }
 bool DeinitModule() { return true; }
 
+std::string calcSubCategories(gmpi::hosting::pluginInfo const& plugin)
+{
+	if (countPins(plugin, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) > 0)
+	{
+		return "Instrument|Synth";
+	}
+	return "Fx";
+}
+
 MyVstPluginFactory* MyVstPluginFactory::GetInstance()
 {
 	static MyVstPluginFactory singleton;

@@ -16,8 +16,8 @@
 #include "wrapper/common/lock_free_fifo.h"
 #include "wrapper/common/interThreadQue.h"
 #include "wrapper/common/dynamic_linking.h"
-//#include "wrapper/common/HostControls.h"
 #include "Hosting/xml_spec_reader.h"
+#include "Hosting/plugin_holder.h"
 
 static const int MidiControllersParameterId = 10000;
 
@@ -33,46 +33,7 @@ public:
 	GMPI_REFCOUNT_NO_DELETE;
 };
 
-class EventQue
-{
-	std::vector<gmpi::api::Event> events;
 
-public:
-	EventQue(size_t capacity = 1000)
-	{
-		events.reserve(capacity);
-	}
-
-	void push(gmpi::api::Event event)
-	{
-		// insert in sorted order.
-		auto it = std::lower_bound(events.begin(), events.end(), event, [](const gmpi::api::Event& a, const gmpi::api::Event& b)
-			{ return a.timeDelta < b.timeDelta;	}
-		);
-		events.insert(it, event);
-	}
-
-	gmpi::api::Event* head()
-	{
-		if (events.empty())
-			return {};
-		
-		// create linked list.
-		for (int i = 1; i < events.size(); ++i)
-		{
-			events[i - 1].next = &events[i];
-		}
-
-		events.back().next = {};
-
-		return &events[0];
-	}
-
-	void clear()
-	{
-		events.clear();
-	}
-};
 
 //-----------------------------------------------------------------------------
 typedef int64_t timestamp_t;
@@ -251,9 +212,8 @@ protected:
 
 	SeProcessor::vstNoteInfo& allocateKey(const Steinberg::Vst::NoteOnEvent& note);
 
-	gmpi::shared_ptr<gmpi::api::IProcessor> plugin_;
-
-	EventQue events;
+//	gmpi::shared_ptr<gmpi::api::IProcessor> plugin_;
+	gmpi::hosting::gmpi_processor plugin;
 
 	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle = {};
 	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle_to_unload = {};
