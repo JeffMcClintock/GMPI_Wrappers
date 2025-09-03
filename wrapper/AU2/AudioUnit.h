@@ -218,6 +218,7 @@ public:
 #endif
 
 class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
+, public gmpi::api::IProcessorHost
 // public MpController, public IShellServices, public IProcessorMessageQues //, public IAuGui
 {
 	friend class MpParameterAU;
@@ -438,6 +439,17 @@ public:
 
 	std::function<void(void)> callbackOnUnloadPlugin;
 
+    float sampleRate{44100.f};
+    
+    // IAudioPluginHost
+    gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override;
+    gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override;
+    gmpi::ReturnCode setLatency(int32_t latency) override;
+    gmpi::ReturnCode sleep() override;
+    int32_t getBlockSize() override;
+    float getSampleRate() override;
+    int32_t getHandle() override;
+    
 protected:
 
 	void				PerformEvents(const AudioTimeStamp& inTimeStamp);
@@ -504,6 +516,18 @@ private:
 
     uint8_t midi2conversionbuffer[256];
     bool processorIsInitialized = false;
+    
+    GMPI_REFCOUNT_NO_DELETE;
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = 0;
+        if ((*iid) == gmpi::api::IProcessorHost::guid || (*iid) == gmpi::api::IUnknown::guid)
+        {
+            *returnInterface = static_cast<gmpi::api::IProcessorHost*>(this); addRef();
+            return gmpi::ReturnCode::Ok;
+        }
+        return gmpi::ReturnCode::NoSupport;
+    }
 };
 
 #endif

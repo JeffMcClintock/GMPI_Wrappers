@@ -530,7 +530,7 @@ OSStatus SEInstrumentBase::Initialize()
 
 		This is work still to be done - see AUEffectBase for the kind of logic that needs to be applied here
 	*/
-    
+    sampleRate = Output(0).GetStreamFormat().mSampleRate;
 #if 0
 	//    GetSampleRate();
 	timeInfo.sampleRate = Output(0).GetStreamFormat().mSampleRate;
@@ -552,6 +552,8 @@ OSStatus SEInstrumentBase::Initialize()
 	initSemControllers();
 #endif
 
+    auto& info = plugins[0];
+    
 	plugin.start_processor(this, info);
 
 	if (!plugin.processor)
@@ -579,6 +581,8 @@ void SEInstrumentBase::reInitialize()
 	wantsMidi = processor.wantsMidi();
 #endif
 
+    auto& info = plugins[0];
+    
 	plugin.start_processor(this, info);
 
 	if (!plugin.processor)
@@ -1576,4 +1580,95 @@ void SEInstrumentBase::saveNativePreset(const char* filename, const std::string&
 std::string SEInstrumentBase::loadNativePreset(std::wstring sourceFilename)
 {
     return {};//AuPresetUtil::ReadPreset(sourceFilename);
+}
+
+// IAudioPluginHost
+gmpi::ReturnCode SEInstrumentBase::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
+{
+    auto& info = plugins[0];
+    
+    for (auto& pin : info.dspPins)
+    {
+        // only output parameter pins.
+        if (pinId != pin.id || pin.direction != gmpi::PinDirection::Out || pin.parameterId == -1)
+            continue;
+#if 0 // TODO!!!
+        auto param = patchManager.getParameter(pin.parameterId);
+        if (!param)
+            continue;
+
+        switch (pin.parameterFieldType)
+        {
+        case gmpi::Field::Normalized:
+        {
+            assert(size == sizeof(float));
+
+            if (param->setNormalised(static_cast<double>(*reinterpret_cast<const float*>(data))))
+                pendingControllerQueueClients.AddWaiter(param);
+        }
+        break;
+
+        case gmpi::Field::Value:
+        {
+            switch (pin.datatype)
+            {
+            case gmpi::PinDatatype::Float32:
+            {
+                if (param->setReal(static_cast<double>(*reinterpret_cast<const float*>(data))))
+                    pendingControllerQueueClients.AddWaiter(param);
+            }
+            break;
+            case gmpi::PinDatatype::Int32:
+            {
+                if (param->setReal(static_cast<double>(*reinterpret_cast<const int32_t*>(data))))
+                    pendingControllerQueueClients.AddWaiter(param);
+            }
+            break;
+            case gmpi::PinDatatype::Bool:
+            {
+                if (param->setReal(static_cast<double>(*reinterpret_cast<const bool*>(data))))
+                    pendingControllerQueueClients.AddWaiter(param);
+            }
+            break;
+            default:
+                assert(false); // unsupported type.
+            }
+        }
+        break;
+        }
+        
+#endif
+    }
+
+    return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode SEInstrumentBase::setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming)
+{
+    return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode SEInstrumentBase::setLatency(int32_t latency)
+{
+    return gmpi::ReturnCode::Ok;
+}
+
+gmpi::ReturnCode SEInstrumentBase::sleep()
+{
+    return gmpi::ReturnCode::Ok;
+}
+
+int32_t SEInstrumentBase::getBlockSize()
+{
+    return kAUDefaultMaxFramesPerSlice;
+}
+
+float SEInstrumentBase::getSampleRate()
+{
+    return sampleRate;
+}
+
+int32_t SEInstrumentBase::getHandle()
+{
+    return 0; // only one plugin, can have handle zero.
 }

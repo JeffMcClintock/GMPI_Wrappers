@@ -192,6 +192,7 @@ public:
 	int32_t getBlockSize() override;
 	float getSampleRate() override;
 	int32_t getHandle() override;
+    
 	void setHostControlFromDaw(gmpi::hosting::HostControls hc, double value);
 
 protected:
