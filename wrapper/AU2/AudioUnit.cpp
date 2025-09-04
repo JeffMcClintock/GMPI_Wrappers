@@ -4,6 +4,7 @@
 #include "Hosting/xml_spec_reader.h"
 #include "GmpiSdkCommon.h"
 #include "conversion.h"
+//#include "backends/DrawingFrameMac.h"
 
 //#include "mp_midi.h"
 //#include "UgDatabase.h"
@@ -1159,6 +1160,8 @@ OSStatus	SEInstrumentBase::GetPropertyInfo(AudioUnitPropertyID		inID,
 	return AUBase::GetPropertyInfo(inID, inScope, inElement, outDataSize, outWritable);
 }
 
+int shittyFunction();
+    
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //	Filter::GetProperty
 //
@@ -1174,6 +1177,10 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 		{
 		case kAudioUnitProperty_CocoaUI:
 		{
+            static AudioUnitCocoaViewInfo info;
+            
+            shittyFunction();
+            
             CFBundleRef bundle = wrapper::BundleInfo::instance()->GetBundle();
 
             if (bundle == NULL) return 1;
@@ -1181,12 +1188,13 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
             CFURLRef url = CFBundleCopyBundleURL(bundle);
             CFRetain(url);
 
-            CFStringRef className = CFStringCreateWithCString(NULL, "GMPI_VIEW_VERSION_02", kCFStringEncodingUTF8);
+            CFStringRef className = CFStringCreateWithCString(NULL, "GMPI_VIEW_MAKER_VERSION_02", kCFStringEncodingUTF8);
 
-            auto& cocoaInfo = *((AudioUnitCocoaViewInfo*)outData);
-            cocoaInfo = { url, {className} };
+            info = { url, {className} };
 
             CFRelease(bundle);
+            
+            *((AudioUnitCocoaViewInfo*)outData) = info;
 
 			return noErr;
 		}
@@ -1699,7 +1707,7 @@ gmpi::ReturnCode SEInstrumentBase::sleep()
 
 int32_t SEInstrumentBase::getBlockSize()
 {
-    return kAUDefaultMaxFramesPerSlice;
+    return GetMaxFramesPerSlice();
 }
 
 float SEInstrumentBase::getSampleRate()
