@@ -1320,11 +1320,11 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 			*(UInt32*) outData = kMIDIProtocol_2_0;
 			return noErr;
 
-		case 64000:
+		case 64000: // get EditorHost
 		{
 			if (true)//VST3DynLibrary::gInstance)
 			{
-				void* ptr = this; //(TPtrInt)VST3DynLibrary::gInstance;
+				void* ptr = static_cast<gmpi::api::IEditorHost*>(&gmpiController));
 				*((void**)outData) = ptr;
 				return noErr;
 			}
