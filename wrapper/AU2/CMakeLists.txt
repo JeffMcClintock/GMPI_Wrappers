@@ -24,6 +24,8 @@ set(srcs
 AudioUnit.cpp
 AudioUnit.h
 
+AudioUnitView.mm
+
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
 ${gmpi_sdk_folder}/Hosting/processor_holder.h

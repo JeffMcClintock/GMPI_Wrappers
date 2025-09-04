@@ -171,7 +171,7 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 	printf("new SEInstrumentBase\n");
 #endif
     
-    fprintf(stderr, "AU WRAPPER CONSTRUCTOR!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+//    fprintf(stderr, "AU WRAPPER CONSTRUCTOR!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 	SetWantsRenderThreadID(true);
 }
 
@@ -1160,7 +1160,7 @@ OSStatus	SEInstrumentBase::GetPropertyInfo(AudioUnitPropertyID		inID,
 	return AUBase::GetPropertyInfo(inID, inScope, inElement, outDataSize, outWritable);
 }
 
-int shittyFunction();
+int heyLinkerDontDiscardAudioUnitView_mm();
     
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //	Filter::GetProperty
@@ -1179,7 +1179,7 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 		{
             static AudioUnitCocoaViewInfo info;
             
-            shittyFunction();
+            heyLinkerDontDiscardAudioUnitView_mm();
             
             CFBundleRef bundle = wrapper::BundleInfo::instance()->GetBundle();
 
@@ -1324,7 +1324,7 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 		{
 			if (true)//VST3DynLibrary::gInstance)
 			{
-				void* ptr = static_cast<gmpi::api::IEditorHost*>(&gmpiController));
+				void* ptr = static_cast<gmpi::api::IEditorHost*>(&gmpiController);
 				*((void**)outData) = ptr;
 				return noErr;
 			}

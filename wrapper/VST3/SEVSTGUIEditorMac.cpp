@@ -26,12 +26,10 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::attached (void* parent, Steinbe
     
     nsView = createNativeView(parent, (class IUnknown*) static_cast<gmpi::api::IEditorHost*>(&helper), (class IUnknown*) pluginGraphics_GMPI.get(), width, height);
 
-    if (pluginParameters_GMPI)
-    {
-//        pluginParameters_GMPI->setHost(drawingFrame);
-        
-        pluginParameters_GMPI->initialize();
-    }
+// moved    if (pluginParameters_GMPI)
+//    {
+ //       pluginParameters_GMPI->initialize();
+//    }
     
     initPlugin();
     
