@@ -1181,7 +1181,7 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
             CFURLRef url = CFBundleCopyBundleURL(bundle);
             CFRetain(url);
 
-            CFStringRef className = CFStringCreateWithCString(NULL, "GMPI_VIEW_VERSION_01", kCFStringEncodingUTF8);
+            CFStringRef className = CFStringCreateWithCString(NULL, "GMPI_VIEW_VERSION_02", kCFStringEncodingUTF8);
 
             auto& cocoaInfo = *((AudioUnitCocoaViewInfo*)outData);
             cocoaInfo = { url, {className} };
