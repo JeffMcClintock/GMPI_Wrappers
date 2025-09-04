@@ -9,7 +9,7 @@
 #import <AudioUnit/AUCocoaUIView.h>
 #endif
 
-#include "CocoaNamespaceMacros.h"
+//#include "CocoaNamespaceMacros.h"
 
 /*
 //#ifndef SMTG_AU_NAMESPACE

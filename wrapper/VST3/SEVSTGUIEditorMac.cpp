@@ -10,7 +10,7 @@ void resizeNativeView(void* view, int width, int height);
 namespace wrapper
 {
 
-SEVSTGUIEditorMac::SEVSTGUIEditorMac(pluginInfoSem const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, VST3Controller* pcontroller, int pwidth, int pheight) :
+SEVSTGUIEditorMac::SEVSTGUIEditorMac(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, VST3Controller* pcontroller, int pwidth, int pheight) :
     VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
 }

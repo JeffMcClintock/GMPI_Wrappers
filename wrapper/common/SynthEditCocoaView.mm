@@ -1,8 +1,9 @@
 #import <Foundation/Foundation.h>
 
 #import "SynthEditCocoaView.h"
-#include "CocoaNamespaceMacros.h"
+//#include "CocoaNamespaceMacros.h"
 
+#if 0
 #include "./CocoaGuiHost.h"
 #import "./ContainerView.h"
 #include "./JsonDocPresenter.h"
@@ -11,6 +12,7 @@
 #if defined(SE_TARGET_AU)
 #include "../../../se_au/SEInstrumentBase.h"
 #endif
+
 
 // In VST3 wrapper this object is a child window of SynthEditPluginCocoaView,
 // It serves to provide a C++ to Objective-C adaptor to the gmpi Drawing framework.
@@ -361,6 +363,7 @@ GmpiDrawing::Point mouseToGmpi(NSView* view, NSEvent* theEvent)
 }
 
 #define SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME SE_MAKE_CLASSNAME(Cocoa_NSViewWrapperForAU)
+#endif
 
 //--------------------------------------------------------------------------------------------------------------
 @interface SYNTHEDIT_PLUGIN_COCOA_NSVIEW_WRAPPER_CLASSNAME : NSView {

@@ -109,7 +109,7 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
                 {},                         // next (populated later)
                 sampleOffset,               // timeDelta
                 gmpi::api::EventType::Midi,
-                MidiInputPinIdx,            // pinIdx
+                plugin.MidiInputPinIdx,            // pinIdx
                 static_cast<int32_t>(msg.size()),                 // size_
                 {}                          // data_/oversizeData_
             };
@@ -301,7 +301,7 @@ void SEInstrumentBase::PostConstructor()
             if(pin.datatype == gmpi::PinDatatype::Midi && pin.direction == gmpi::PinDirection::In)
             {
                 wantsMidi = true;
-                MidiInputPinIdx = i;
+                plugin.MidiInputPinIdx = i;
             }
             ++i;
         }
@@ -1172,30 +1172,22 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 	{
 		switch (inID)
 		{
-			// This property allows the host application to find the UI associated with this
-			// AudioUnit
-			//
 		case kAudioUnitProperty_CocoaUI:
 		{
-            /*
-			// invalid code:  if (cocoaInfo.mCocoaAUViewClass )
-			{
-				CFBundleRef bundle = CreatePluginBundleRef();
+            CFBundleRef bundle = wrapper::BundleInfo::instance()->GetBundle();
 
-				if (bundle == NULL) return 1;
+            if (bundle == NULL) return 1;
 
-				CFURLRef url = CFBundleCopyBundleURL(bundle);
-				CFRetain(url);
+            CFURLRef url = CFBundleCopyBundleURL(bundle);
+            CFRetain(url);
 
-				CFStringRef className = CFStringCreateWithCString(NULL, SE_STRINGIFY(SYNTHEDIT_PLUGIN_COCOA_VIEW_CLASSNAME), kCFStringEncodingUTF8);
+            CFStringRef className = CFStringCreateWithCString(NULL, "GMPI_VIEW_VERSION_01", kCFStringEncodingUTF8);
 
-				cocoaInfo = { url, {className} };
+            auto& cocoaInfo = *((AudioUnitCocoaViewInfo*)outData);
+            cocoaInfo = { url, {className} };
 
-				CFRelease(bundle);
-			}
+            CFRelease(bundle);
 
-			*((AudioUnitCocoaViewInfo*)outData) = cocoaInfo;
-             */
 			return noErr;
 		}
 

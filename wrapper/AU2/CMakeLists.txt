@@ -17,6 +17,8 @@ add_definitions(-DGMPI_VST3_WRAPPER)
 # SeAuEditor.mm
 # SEVSTGUIEditorMac.h
 # SEVSTGUIEditorMac.cpp
+# ${ADAPTORS_COMMON_FOLDER}/SynthEditCocoaView.h
+# ${ADAPTORS_COMMON_FOLDER}/SynthEditCocoaView.mm
 
 set(srcs
 AudioUnit.cpp
@@ -68,6 +70,7 @@ ${gmpi_ui_folder}/helpers/Timer.cpp
 IF(WIN32)
 ELSE()
 set(srcs ${srcs}
+${gmpi_ui_folder}/backends/DrawingFrameMac.h
 ${gmpi_ui_folder}/backends/DrawingFrameMac.mm
 ${gmpi_ui_folder}/backends/CocoaGfx.h
 ${gmpi_ui_folder}/backends/Gfx_base.h
