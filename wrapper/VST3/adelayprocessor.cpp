@@ -1092,7 +1092,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 		}
 	}
 
-	// setup buffers
+	// pass buffer pointer to plugin
 	{
 		int inIdx = 0;
 		int outIdx = 0;

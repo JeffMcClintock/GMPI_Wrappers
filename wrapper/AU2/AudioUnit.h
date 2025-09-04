@@ -8,10 +8,9 @@
 #include <AudioToolbox/AudioUnitUtilities.h>
 #include "AudioUnitSDK/AUMIDIBase.h"
 #include "wrapper/common/MpParameter.h"
-//#include "wrapper/common/interThreadQue.h"
 #include "GmpiMidi.h"
 #include "Hosting/xml_spec_reader.h"
-#include "Hosting/plugin_holder.h"
+#include "Hosting/processor_holder.h"
 #include "Hosting/message_queues.h"
 
 #if 0
@@ -230,6 +229,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 	std::vector<parameterChange> parameterChanges[2];
 	int latencyCompensation; // enum.
 	bool wantsMidi = false;
+    int MidiInputPinIdx = -1;
 	std::vector<float*> outputPtr;
 	std::vector<float*> inputPtr;
 	bool outputsAsStereoPairs = true;
@@ -330,9 +330,9 @@ public:
 	OSStatus MIDIEvent(
 		UInt32 inStatus, UInt32 inData1, UInt32 inData2, UInt32 inOffsetSampleFrame) override;
         
-#if AUSDK_MIDI2_AVAILABLE
+#if AUSDK_HAVE_MIDI2
 	OSStatus MIDIEventList(
-		UInt32 /*inOffsetSampleFrame*/, const struct MIDIEventList& /*eventList*/) override;
+		UInt32 /*inOffsetSampleFrame*/, const struct MIDIEventList* /*eventList*/) override;
 #endif
 
     void ParamGrabbed(wrapper::MpParameter_native* param) 
@@ -421,18 +421,18 @@ public:
 		return {};
 	}
 
-    wrapper::IWriteableQue* getQueueToDsp() //override
+    gmpi::hosting::IWriteableQue* getQueueToDsp() //override
 	{
 		return &queueToDsp_;
 	}
 
 	// IProcessorMessageQues
-    wrapper::IWriteableQue* MessageQueToGui() //override
+    gmpi::hosting::IWriteableQue* MessageQueToGui() //override
 	{
 		return &message_que_dsp_to_ui;
 	}
     void Service()  {} // VST3 only.
-    wrapper::interThreadQue* ControllerToProcessorQue() //override
+    gmpi::hosting::interThreadQue* ControllerToProcessorQue() //override
 	{
 		return &queueToDsp_;
 	}

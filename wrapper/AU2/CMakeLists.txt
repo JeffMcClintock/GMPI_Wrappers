@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment version")
-set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build architectures for Mac OS X" FORCE)
+#set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment version")
+#set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build architectures for Mac OS X" FORCE)
 
 project(AU_Wrapper)
 
@@ -31,6 +31,8 @@ ${gmpi_sdk_folder}/Hosting/message_queues.cpp
 
 ${ADAPTORS_COMMON_FOLDER}/HostControls.h
 ${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
+${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
+${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp
 ${ADAPTORS_COMMON_FOLDER}/it_enum_list.h
 ${ADAPTORS_COMMON_FOLDER}/it_enum_list.cpp
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h

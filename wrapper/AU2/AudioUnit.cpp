@@ -3,6 +3,7 @@
 #include "wrapper/common/it_enum_list.h"
 #include "Hosting/xml_spec_reader.h"
 #include "GmpiSdkCommon.h"
+#include "conversion.h"
 
 //#include "mp_midi.h"
 //#include "UgDatabase.h"
@@ -102,8 +103,22 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 
 	,midiConverter(
 		// provide a lambda to accept converted MIDI 2.0 messages
-		[this](const gmpi::midi::message_view& msg, int timestamp) {
-//			processor.MidiIn(timestamp, (const unsigned char*)msg.begin(), static_cast<int>(msg.size()));
+		[this](const gmpi::midi::message_view& msg, int sampleOffset) {
+            gmpi::api::Event ge
+            {
+                {},                         // next (populated later)
+                sampleOffset,               // timeDelta
+                gmpi::api::EventType::Midi,
+                MidiInputPinIdx,            // pinIdx
+                static_cast<int32_t>(msg.size()),                 // size_
+                {}                          // data_/oversizeData_
+            };
+
+            auto dst = reinterpret_cast<uint8_t*>(&ge.data_);
+            auto data = msg.begin();
+            std::copy(data, data + msg.size(), dst);
+
+            plugin.events.push(ge);
 		}
 	)
 #if 0
@@ -275,13 +290,18 @@ void SEInstrumentBase::PostConstructor()
         inputPtr.assign(inputCount, nullptr);
         outputPtr.assign(outputCount, nullptr);
 
+        int i = 0;
         for(auto& pin : info.dspPins)
         {
             if(pin.datatype == gmpi::PinDatatype::Audio && pin.direction == gmpi::PinDirection::Out)
                 outputNames.push_back(pin.name);
             
             if(pin.datatype == gmpi::PinDatatype::Midi && pin.direction == gmpi::PinDirection::In)
+            {
                 wantsMidi = true;
+                MidiInputPinIdx = i;
+            }
+            ++i;
         }
     }
 	
@@ -891,6 +911,31 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 		, allSilenceFlagsOut
 		);
 */
+    auto& info = plugins[0];
+    
+    // pass buffer pointer to plugin
+    {
+        int inIdx = 0;
+        int outIdx = 0;
+        for (auto& pin : info.dspPins)
+        {
+            if (pin.datatype != gmpi::PinDatatype::Audio)
+                continue;
+
+            if (pin.direction == gmpi::PinDirection::In)
+            {
+                plugin_->setBuffer(pin.id, inputPtr[inIdx++]);
+            }
+            else
+            {
+                plugin_->setBuffer(pin.id, outputPtr[outIdx++]);
+            }
+        }
+
+        assert(inIdx == inputPtr.size());
+        assert(outIdx == outputPtr.size());
+    }
+    
 	plugin_->process(inNumberFrames, events.head());
 
 	events.clear();
@@ -998,9 +1043,9 @@ OSStatus SEInstrumentBase::MIDIEvent(
 	return noErr;
 }
 
-#if AUSDK_MIDI2_AVAILABLE
+#if AUSDK_HAVE_MIDI2
 OSStatus SEInstrumentBase::MIDIEventList(
-    UInt32 inOffsetSampleFrame, const struct MIDIEventList& eventList)
+    UInt32 inOffsetSampleFrame, const struct MIDIEventList* eventList)
 {
     if (!wantsMidi)
 	{
@@ -1011,8 +1056,8 @@ OSStatus SEInstrumentBase::MIDIEventList(
     
 	const int current = curMidiEvents.load();
 
- 	const auto* packet = &eventList.packet[0];
-	for (unsigned i = 0; i < eventList.numPackets; ++i)
+ 	const auto* packet = eventList->packet;
+	for (unsigned i = 0; i < eventList->numPackets; ++i)
     {
         // need to reverse endianess. same on M1?
         int bufferIndex = 0;
