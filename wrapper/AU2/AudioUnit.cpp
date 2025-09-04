@@ -283,7 +283,9 @@ void SEInstrumentBase::PostConstructor()
 			}
 #endif
         auto& info = plugins[0];
-        
+
+		plugin.patchManager.init(info);
+
         inputCount  = countPins(info, gmpi::PinDirection::In , gmpi::PinDatatype::Audio);
         outputCount = countPins(info, gmpi::PinDirection::Out, gmpi::PinDatatype::Audio);
             

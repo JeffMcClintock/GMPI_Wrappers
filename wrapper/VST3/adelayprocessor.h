@@ -152,10 +152,8 @@ protected:
 	avoidRepeatedCCs ControlChangeValue[128];
 	Steinberg::Vst::ProcessData* dataptr = {};
 
-//	std::unordered_map<int32_t, int32_t> param2pin;
 	std::vector<float> silence;
 	gmpi::hosting::pluginInfo const& info;
-	int MidiInputPinIdx = -1;
 
 //	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IAudioPluginHost);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override

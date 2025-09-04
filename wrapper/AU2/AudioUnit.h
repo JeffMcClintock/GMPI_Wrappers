@@ -229,7 +229,6 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 	std::vector<parameterChange> parameterChanges[2];
 	int latencyCompensation; // enum.
 	bool wantsMidi = false;
-    int MidiInputPinIdx = -1;
 	std::vector<float*> outputPtr;
 	std::vector<float*> inputPtr;
 	bool outputsAsStereoPairs = true;

@@ -227,20 +227,7 @@ SeProcessor::SeProcessor (gmpi::hosting::pluginInfo& pinfo)
 	}
 
 	// init PatchManager parameters
-	for (const auto& param : info.parameters)
-	{
-		assert(param.id != -1 || param.hostConnect != gmpi::hosting::HostControls::None);
-//		if (param.id >= 0)
-		{
-			gmpi::hosting::DawParameter p;
-			p.id = param.id > -1 ? param.id : ( -2 - (int) param.hostConnect);
-			p.valueReal = atof(param.default_value.c_str());
-			p.valueLo = param.minimum;
-			p.valueHi = param.maximum;
-
-			plugin.patchManager.parameters[p.id] = p;
-		}
-	}
+	plugin.patchManager.init(info);
 
 	//TODO	synthEditProject.connectPeer(this);
 }
@@ -261,14 +248,6 @@ SeProcessor::~SeProcessor ()
 	gmpi_dynamic_linking::MP_DllUnload(plugin_dllHandle_to_unload);
 }
 
-template<typename T>
-void copyValueToEvent(gmpi::api::Event& e, T value)
-{
-	const auto src = reinterpret_cast<const uint8_t*>(&value);
-	e.size_ = static_cast<int32_t>(sizeof(value));
-	std::copy(src, src + sizeof(value), e.data_);
-}
-
 void SeProcessor::reInitialise()
 {
 	silence.assign(processSetup.maxSamplesPerBlock, 0.0f);
@@ -277,79 +256,6 @@ void SeProcessor::reInitialise()
 
 	if (!plugin.processor)
 		return;
-
-	auto& events = plugin.events;
-
-	{
-		gmpi::api::Event e
-		{
-			{},            // next (populated later)
-			0,				// timeDelta
-			gmpi::api::EventType::PinSet,
-			0,				// pinIdx
-			0,             // size_
-			{}             // data_/oversizeData_
-		};
-
-		MidiInputPinIdx = -1;
-
-		for (auto& pin : info.dspPins)
-		{
-			if (pin.datatype == gmpi::PinDatatype::Midi && pin.direction == gmpi::PinDirection::In && -1 == MidiInputPinIdx)
-			{
-				MidiInputPinIdx = pin.id;
-			}
-
-			if (pin.direction == gmpi::PinDirection::Out || pin.parameterId == -1)
-				continue;
-
-			auto param = plugin.patchManager.getParameter(pin.parameterId);
-			if(!param)
-				continue;
-
-			{
-				e.pinIdx = pin.id;
-
-				switch (pin.parameterFieldType)
-				{
-				case gmpi::Field::Normalized:
-				{
-					copyValueToEvent(e, static_cast<float>(param->normalisedValue()));
-					events.push(e);
-				}
-				break;
-
-				case gmpi::Field::Value:
-				{
-					switch (pin.datatype)
-					{
-					case gmpi::PinDatatype::Float32:
-					{
-						copyValueToEvent(e, static_cast<float>(param->valueReal));
-					}
-					break;
-
-					case gmpi::PinDatatype::Int32:
-					{
-						copyValueToEvent(e, static_cast<int32_t>(std::round(param->valueReal)));
-					}
-					break;
-
-					case gmpi::PinDatatype::Bool:
-					{
-						copyValueToEvent(e, static_cast<bool>(std::round(param->valueReal)));
-					}
-					break;
-					default:
-						assert(false); // unsupported type.
-					}
-					events.push(e);
-				}
-				break;
-				}
-			}
-		}
-	}
 }
 
 //-----------------------------------------------------------------------------
@@ -580,14 +486,14 @@ SeProcessor::vstNoteInfo& SeProcessor::allocateKey(const NoteOnEvent& note)
 
 void SeProcessor::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
 {
-	assert(MidiInputPinIdx > -1);
+	assert(plugin.MidiInputPinIdx > -1);
 
 	gmpi::api::Event ge
 	{
 		{},							// next (populated later)
 		sampleOffset,				// timeDelta
 		gmpi::api::EventType::Midi,
-		MidiInputPinIdx,			// pinIdx
+		plugin.MidiInputPinIdx,			// pinIdx
 		size,						// size_
 		{}							// data_/oversizeData_
 	};
@@ -639,66 +545,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 						assert(sampleOffset >= prev_sampleOffset && sampleOffset < data.numSamples);
 //						_RPT1(_CRT_WARN, "                     PRESETS-DSP: P%d Set in Process()\n", id);
 
-						auto param = plugin.patchManager.setParameterNormalised(id, valueNormalized);
-
-						if (param)
-						{
-							gmpi::api::Event e
-							{
-								{},            // next (populated later)
-								sampleOffset,  // timeDelta
-								gmpi::api::EventType::PinSet,
-								0,				// pinIdx
-								0,             // size_
-								{}             // data_/oversizeData_
-							};
-
-							for (auto& pin : info.dspPins)
-							{
-								if (pin.parameterId == id && pin.direction == gmpi::PinDirection::In)
-								{
-									e.pinIdx = pin.id;
-
-									switch (pin.parameterFieldType)
-									{
-									case gmpi::Field::Normalized:
-									{
-										copyValueToEvent(e, static_cast<float>(valueNormalized));
-										events.push(e);
-									}
-									break;
-
-									case gmpi::Field::Value:
-										{
-											switch (pin.datatype)
-											{
-											case gmpi::PinDatatype::Float32:
-											{
-												copyValueToEvent(e, static_cast<float>(param->valueReal));
-											}
-											break;
-
-											case gmpi::PinDatatype::Int32:
-											{
-												copyValueToEvent(e, static_cast<int32_t>(std::round(param->valueReal)));
-											}
-											break;
-
-											case gmpi::PinDatatype::Bool:
-											{
-												copyValueToEvent(e, static_cast<bool>(std::round(param->valueReal)));
-											}
-											break;
-											default:
-												assert(false); // unsupported type.
-											}
-											events.push(e);
-											break;
-										}
-									}
-								}
-							}
-						}
+						plugin.setParameterNormalizedFromDaw(info, sampleOffset, id, valueNormalized);
 					}
 					else
 					{
@@ -760,9 +607,8 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 	if (data.numSamples <= 0)
 		return kResultTrue;
 
-	if (MidiInputPinIdx > -1)
+	if (plugin.MidiInputPinIdx > -1)
 	{
-
 		const int32 numEvents = data.inputEvents ? data.inputEvents->getEventCount() : 0;
 		
 		for (int32 eventIndex = 0; eventIndex < numEvents; ++eventIndex)
