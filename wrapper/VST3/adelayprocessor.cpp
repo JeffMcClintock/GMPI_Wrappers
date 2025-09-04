@@ -741,7 +741,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 					const double semitones = (e.noteExpressionValue.value - 0.5) * 2.0 * pitchBendRangeExpr;
 					const double normalized = (std::max)(0.0, std::min(1.0, 0.5 + 0.5 * semitones * pitchBendRangeMidiInv));
 
-					_RPTN(0, "makePolyBender %f => %f semitones, %f normal\n", e.noteExpressionValue.value, semitones, normalized);
+//					_RPTN(0, "makePolyBender %f => %f semitones, %f normal\n", e.noteExpressionValue.value, semitones, normalized);
 
 					// Send MIDI HD-Protocol Note Expression message.
 					const auto msg = gmpi::midi_2_0::makePolyBender(
