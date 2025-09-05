@@ -669,9 +669,11 @@ void VST3Controller::saveNativePreset(const char* filename, const std::string& p
 
 bool VST3Controller::onTimer()
 {
-// TODO:	gmpiController.message_que_dsp_to_ui.pollMessage(this);
-	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
+	// parameter updates from the Processor
+	gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 
+	// parameter updates to the Processor
+	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
 	gmpiController.pendingControllerQueueClients.ServiceWaiters(
 		toProcessor,
 		queueToDsp_.freeSpace(),
