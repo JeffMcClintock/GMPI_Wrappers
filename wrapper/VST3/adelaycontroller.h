@@ -12,6 +12,7 @@
 #include "wrapper/common/Controller.h"
 #include "wrapper/common/MpParameter.h"
 #include "wrapper/common/conversion.h"
+#include "Hosting/controller_holder.h"
 
 namespace wrapper {
 	class VST3Controller;
@@ -85,13 +86,14 @@ public:
 // Manages plugin parameters.
 //-----------------------------------------------------------------------------
 class VST3Controller :
-	public MpController,
+//	public MpController,
 	public Steinberg::Vst::EditController,
 	public Steinberg::Vst::IMidiMapping,
 	public Steinberg::Vst::IUnitInfo,
 	public Steinberg::Vst::INoteExpressionController,
 	public Steinberg::Vst::INoteExpressionPhysicalUIMapping
 {
+
 	static const int numMidiControllers = 130; // usual 128 + Bender.
 	bool isInitialised;
 	bool isConnected;
@@ -103,6 +105,9 @@ class VST3Controller :
 	int supportedChannels = 1;
 
 public:
+	gmpi::hosting::gmpi_controller_holder gmpiController;
+
+
 	VST3Controller(gmpi::hosting::pluginInfo& pinfo);
 	~VST3Controller();
 
@@ -122,7 +127,51 @@ public:
 	{
 		return Steinberg::kResultOk;
 	}
+
+	// support for MpController. removed.
+#if 0
 	void ParamGrabbed(MpParameter_native* param) override;
+	void ResetProcessor() override;
+
+	// Presets
+	void setPresetXmlFromSelf(const std::string& xml) override;
+	void setPresetFromSelf(DawPreset const* preset) override;
+
+	std::wstring getNativePresetExtension() override
+	{
+		return L"vstpreset";
+	}
+	std::vector< MpController::presetInfo > scanFactoryPresets() override;
+	std::string getFactoryPresetXml(std::string filename) override;
+
+	void loadFactoryPreset(int index, bool fromDaw) override;
+	void saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml) override;
+	std::string loadNativePreset(std::wstring sourceFilename) override;
+
+	void OnLatencyChanged() override;
+
+	MpParameter_native* makeNativeParameter(int ParameterTag, bool isInverted) override
+	{
+		auto param = new wrapper::MpParameterVst3(
+			this,
+			ParameterTag,
+			isInverted
+		);
+
+		tagToParameter.insert({ ParameterTag, param });
+		vst3Parameters.push_back(param);
+
+		return param;
+	}
+
+	bool onTimer() override;
+
+	gmpi::hosting::IWriteableQue* getQueueToDsp() override
+	{
+		return &queueToDsp_;
+	}
+#endif
+
 	void ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice = 0);
 
 	MpParameterVst3* getDawParameter(int nativeTag)
@@ -185,6 +234,7 @@ public:
 	/** Gets for a given index the Program List Info. */
 	Steinberg::tresult PLUGIN_API getProgramListInfo(Steinberg::int32 listIndex, Steinberg::Vst::ProgramListInfo& info /*out*/) override
 	{
+#if 0
 		if (listIndex == 0)
 		{
 			info.id = Steinberg::Vst::kRootUnitId;
@@ -193,12 +243,14 @@ public:
 			info.programCount = (Steinberg::int32) presets.size();
 			return Steinberg::kResultOk;
 		}
+#endif
 		return Steinberg::kResultFalse;
 	}
 
 	/** Gets for a given program list ID and program index its program name. */
 	Steinberg::tresult PLUGIN_API getProgramName(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex, Steinberg::Vst::String128 name /*out*/) override
 	{
+#if 0
 		const int kVstMaxProgNameLen = 24;
 //		if (programIndex < (int32)factoryPresetNames.size())
 		if (programIndex < (Steinberg::int32)presets.size())
@@ -211,6 +263,7 @@ public:
 			}
 			return Steinberg::kResultOk;
 		}
+#endif
 		return Steinberg::kResultFalse;
 	}
 
@@ -304,30 +357,13 @@ public:
 	parameter - in this case parameter programIndex is < 0). */
 	Steinberg::tresult PLUGIN_API setUnitProgramData(Steinberg::int32 listOrUnitId, Steinberg::int32 programIndex, Steinberg::IBStream* data) override { return Steinberg::kResultOk; }
 
-	void ResetProcessor() override;
-
-	// Presets
-	void setPresetXmlFromSelf(const std::string& xml) override;
-	void setPresetFromSelf(DawPreset const* preset) override;
-
-	std::wstring getNativePresetExtension() override
-	{
-		return L"vstpreset";
-	}
-	std::vector< MpController::presetInfo > scanFactoryPresets() override;
 	platform_string calcFactoryPresetFolder();
-	std::string getFactoryPresetXml(std::string filename) override;
 
-	void loadFactoryPreset(int index, bool fromDaw) override;
-	void saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml) override;
-	std::string loadNativePreset(std::wstring sourceFilename) override;
-
-	void OnLatencyChanged() override;
 	bool sendMessageToProcessor(const void* data, int size);
 
 	MpParameter* nativeGetParameterByIndex(int nativeIndex)
 	{
-		assert(isInitialized);
+//		assert(isInitialized);
 
 		if (nativeIndex >= 0 && nativeIndex < static_cast<int>(vst3Parameters.size()))
 			return vst3Parameters[nativeIndex];
@@ -335,29 +371,10 @@ public:
 		return nullptr;
 	}
 
-	MpParameter_native* makeNativeParameter(int ParameterTag, bool isInverted) override
-	{
-		auto param = new wrapper::MpParameterVst3(
-			this,
-			ParameterTag,
-			isInverted
-		);
 
-		tagToParameter.insert({ ParameterTag, param });
-		vst3Parameters.push_back(param);
 
-		return param;
-	}
-
-	bool onTimer() override;
-
-	gmpi::hosting::IWriteableQue* getQueueToDsp() override
-	{
-		return &queueToDsp_;
-	}
-
-	void setPinFromUi(int32_t pinId, int32_t voice, int32_t size, const void* data);
-	void initUi(gmpi::api::IParameterObserver* gui);
+//	void setPinFromUi(int32_t pinId, int32_t voice, int32_t size, const void* data);
+//	void initUi(gmpi::api::IParameterObserver* gui);
 };
 
 }

@@ -3,16 +3,17 @@
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
 #include "public.sdk/source/vst/vstpresetfile.h"
-#include "public.sdk/source/common/memorystream.h"
+//#include "public.sdk/source/common/memorystream.h"
 #include "adelaycontroller.h"
-#include "MyVstPluginFactory.h"
+//#include "MyVstPluginFactory.h"
 #include "adelayprocessor.h"
 #include "GmpiApiEditor.h"
-#include "wrapper/common/se_datatypes.h" // kill this
+//#include "wrapper/common/se_datatypes.h" // kill this
 #include "wrapper/common/RawConversions.h"
 #include "wrapper/common/BundleInfo.h"
 #include "wrapper/common/unicode_conversion.h"
 #include "wrapper/common/it_enum_list.h"
+#include "Hosting/gmpi_factory.h"
 
 
 #ifdef _WIN32
@@ -79,7 +80,7 @@ void Safe Messagebox(
 #endif
 
 MpParameterVst3::MpParameterVst3(VST3Controller* controller, /*int strictIndex, */int ParameterTag, bool isInverted) :
-	MpParameter_native(controller),
+	MpParameter_native({}),//controller),
 	vst3Controller(controller),
 	isInverted_(isInverted),
 	hostTag(ParameterTag)
@@ -105,19 +106,25 @@ void MpParameterVst3::updateProcessor(gmpi::Field fieldId, int32_t voice)
 
 
 VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
-	MpController(pinfo)
-	, isInitialised(false)
+//	MpController(pinfo)
+	 isInitialised(false)
 	, isConnected(false)
 {
 // using tinxml 1?	TiXmlBase::SetCondenseWhiteSpace(false); // ensure text parameters preserve multiple spaces. e.g. "A     B" (else it collapses to "A B")
 
+#if 0
 	// Scan all presets for preset-browser.
 	ScanPresets();
+#endif
+
+	gmpiController.init(pinfo);
 }
 
 VST3Controller::~VST3Controller()
 {
+#if 0
 	stopTimer();
+#endif
 }
 
 tresult PLUGIN_API VST3Controller::connect(IConnectionPoint* other)
@@ -127,10 +134,13 @@ tresult PLUGIN_API VST3Controller::connect(IConnectionPoint* other)
 
 	isConnected = true;
 
+#if 0
+
 	// Can only init controllers after both VST controller initialised AND controller is connected to processor.
 	// So VST2 wrapper aeffect pointer makes it to Processor.
 	if(isConnected && isInitialised)
 		initSemControllers();
+#endif
 
 	return r;
 }
@@ -147,8 +157,8 @@ tresult PLUGIN_API VST3Controller::notify( IMessage* message )
 		uint32 size;
 		if( message->getAttributes()->getBinary( "MyData", data, size ) == kResultOk )
 		{
-			message_que_dsp_to_ui.pushString(size, (unsigned char*) data);
-			message_que_dsp_to_ui.Send();
+			gmpiController.message_que_dsp_to_ui.pushString(size, (unsigned char*) data);
+			gmpiController.message_que_dsp_to_ui.Send();
 			return kResultOk;
 		}
 	}
@@ -170,6 +180,7 @@ bool VST3Controller::sendMessageToProcessor(const void* data, int size)
 
 	return true;
 }
+#if 0
 
 void VST3Controller::ParamGrabbed(MpParameter_native* param)
 {
@@ -186,6 +197,7 @@ void VST3Controller::ParamGrabbed(MpParameter_native* param)
 		endEdit(paramID);
 	}
 }
+#endif
 
 void VST3Controller::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice)
 {
@@ -201,12 +213,14 @@ void VST3Controller::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voi
 	if (!param->isGrabbed())
 		endEdit(paramID);
 }
+#if 0
 
 void VST3Controller::ResetProcessor()
 {
 	// Currently called when polyphony etc changes, VST2 wrapper ignores this completely, at least in Live.
 //	componentHandler->restartComponent(kLatencyChanged); // or kIoChanged might be less overhead for DAW
 }
+#endif
 
 enum class ElatencyContraintType
 {
@@ -231,6 +245,7 @@ struct pluginInformation
 	std::vector<std::string> outputNames;
 };
 
+#if 0
 void VST3Controller::setPinFromUi(int32_t pinId, int32_t voice, int32_t size, const void* data)
 {
 	for (auto& pin : info.guiPins)
@@ -250,7 +265,9 @@ void VST3Controller::setPinFromUi(int32_t pinId, int32_t voice, int32_t size, co
 		}
 	}
 }
+#endif
 
+#if 0
 // send initial value of all parameters to GUI
 void VST3Controller::initUi(gmpi::api::IParameterObserver* gui)
 {
@@ -259,6 +276,7 @@ void VST3Controller::initUi(gmpi::api::IParameterObserver* gui)
 		initializeGui(gui, it.second->parameterHandle_, gmpi::Field::Value);
 	}
 }
+#endif
 
 //-----------------------------------------------------------------------------
 tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
@@ -275,12 +293,14 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 //?			ModuleFactory()->RegisterExternalPluginsXmlOnce(nullptr);
 		}
 
-		MpController::Initialize();
+//		MpController::Initialize();
 
-		supportedChannels = countPins(info, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) == 0 ? 0 : 16;
+		supportedChannels = 1; // TODO countPins(info, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) == 0 ? 0 : 16;
 
 //		const auto supportedChannels = info.midiInputCount ? 16 : 0;
 		const auto supportAllCC = true; // info.vst3Emulate16ChanCcs;
+
+#if 0
 
 		// MIDI CC SUPPORT
 		char ccName[] = "MIDI CC     ";
@@ -312,9 +332,12 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 				}
 			}
 		}
+#endif
 	}
 
 	isInitialised = true;
+
+#if 0
 
 	// Can only init controllers after both VST controller initialised AND controller is connected to processor.
 	// So VST2 wrapper aeffect pointer makes it to Processor.
@@ -322,6 +345,7 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 		initSemControllers();
 
 	startTimer(timerPeriodMs);
+#endif
 
 	return kResultTrue;
 }
@@ -367,140 +391,32 @@ tresult PLUGIN_API VST3Controller::getMidiControllerAssignment (int32 busIndex, 
 
 IPlugView* PLUGIN_API VST3Controller::createView (FIDString name)
 {
-	if (ConstString (name) == ViewType::kEditor)
-	{
-		auto load_filename = info.pluginPath;
-#if 0
-		gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle = {};
-//		if (!plugin_dllHandle)
-//		{
-			if (load_filename.empty()) // plugin is statically linked.
-			{
-				// no need to load DLL, it's already linked.
-				gmpi_dynamic_linking::MP_GetDllHandle(&plugin_dllHandle);
-			}
-			else
-			{
-#if defined( _WIN32)
-				/* TODO
-				plugin_dllHandle_to_unload = {};
+	if (ConstString (name) != ViewType::kEditor)
+		return {};
+	
+	auto info = gmpi::hosting::factory::getInstance().getPluginInfo();
 
-				// Load the DLL.
-				if (gmpi_dynamic_linking::MP_DllLoad(&plugin_dllHandle, load_filename.c_str()))
-				{
-					plugin_dllHandle_to_unload = plugin_dllHandle;
-					assert(false);
-					// TODO.
-					//// load failed, try it as a bundle.
-					//const auto bundleFilepath = load_filename + L"/Contents/x86_64-win/" + filename;
-					//gmpi_dynamic_linking::MP_DllLoad(&dllHandle, bundleFilepath.c_str());
-				}
-				*/
+	if (!info)
+		return {};
 
-#else
-#if 0
-			// int32_t r = MP_DllLoad( &dllHandle, load_filename.c_str() );
+	auto pluginUnknown = gmpi::hosting::factory::getInstance().createInstance(info->id.c_str(), gmpi::api::PluginSubtype::Editor);
 
-			// Create a path to the bundle
-			CFStringRef pluginPathStringRef = CFStringCreateWithCString(NULL,
-				WStringToUtf8(load_filename).c_str(), kCFStringEncodingASCII);
+	if (!pluginUnknown )
+		return {};
 
-			CFURLRef bundleUrl = CFURLCreateWithFileSystemPath(kCFAllocatorDefault,
-				pluginPathStringRef, kCFURLPOSIXPathStyle, true);
-			if (bundleUrl == NULL) {
-				printf("Couldn't make URL reference for plugin\n");
-				return;
-			}
+	auto editor = pluginUnknown.as<gmpi::api::IEditor>();
 
-			// Open the bundle
-			dllHandle = (DLL_HANDLE)CFBundleCreate(kCFAllocatorDefault, bundleUrl);
-			if (dllHandle == 0) {
-				printf("Couldn't create bundle reference\n");
-				CFRelease(pluginPathStringRef);
-				CFRelease(bundleUrl);
-				return;
-			}
-#endif
-#endif
-            }
+	if (!editor)
+		return {};
 
-			// Factory
-			MP_DllEntry dll_entry_point = {};
-//#ifdef _WIN32
-			const auto fail = gmpi_dynamic_linking::MP_DllSymbol(plugin_dllHandle, "MP_GetFactory", (void**)&dll_entry_point);
-//#else
-//			dll_entry_point = (gmpi::MP_DllEntry)CFBundleGetFunctionPointerForName((CFBundleRef)plugin_dllHandle, CFSTR("MP_GetFactory"));
-//#endif
-
-			if (!dll_entry_point)
-			{
-				return {};
-			}
-#endif
-			gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
-			//auto r = dll_entry_point(factoryBase.asIMpUnknownPtr());
-            auto r = MP_GetFactory(factoryBase.put_void());
-
-			gmpi::shared_ptr<gmpi::api::IPluginFactory> factory;
-			auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.put_void());
-
-			if (!factory || r != gmpi::ReturnCode::Ok)
-			{
-				return {};
-			}
-
-			gmpi::shared_ptr<gmpi::api::IUnknown> pluginUnknown;
-			r2 = factory->createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Editor, pluginUnknown.put_void());
-			if (!pluginUnknown || r != gmpi::ReturnCode::Ok)
-			{
-				return {};
-			}
-
-			if (auto editor = pluginUnknown.as<gmpi::api::IEditor>(); editor)
-			{
-				const int width { 200 };
-				const int height{ 200 };
+	const int width { 200 };
+	const int height{ 200 };
 #ifdef _WIN32
-				return new SEVSTGUIEditorWin(info, editor, this, width, height);
+	return new SEVSTGUIEditorWin(*info, editor, this, width, height);
 #else
-				return new SEVSTGUIEditorMac(info, editor, this, width, height);
+	return new SEVSTGUIEditorMac(*info, editor, this, width, height);
 #endif
-			}
-
 // todo init all params and pins			initializeGui(&helper)
-
-
-#if 0 // TODO
-		// somewhat inefficient to parse entire JSON file just for GUI size
-		// would be nice to pass ownership of document to presenter to save it doing the same all over again.
-		Json::Value document_json;
-		{
-			Json::Reader reader;
-			reader.parse(BundleInfo::instance()->getResource("gui.se.json"), document_json);
-		}
-
-		auto& gui_json = document_json["gui"];
-
-		int width = gui_json["width"].asInt();
-		int height = gui_json["height"].asInt();
-
-#ifdef _WIN32
-		// DPI of system. only a GUESS at this point of DPI we will be using. (until we know DAW window handle).
-		// But we need a rough idea of plugin window size to allow Cubase to arrange menu bar intelligently. Else we get the blank area at top of plugin.
-		HDC hdc = ::GetDC(NULL);
-		width = (width * GetDeviceCaps(hdc, LOGPIXELSX)) / 96;
-		height = (height * GetDeviceCaps(hdc, LOGPIXELSY)) / 96;
-		::ReleaseDC(NULL, hdc);
-#endif
-
-		//ViewRect estimatedViewRect;
-		//estimatedViewRect.top = estimatedViewRect.left = 0;
-		//estimatedViewRect.bottom = height;
-		//estimatedViewRect.right = width;
-#endif
-
-	}
-	return {};
 }
 
 // Preset Loaded.
@@ -513,8 +429,10 @@ tresult PLUGIN_API VST3Controller::setComponentState (IBStream* state)
 	chunk.resize(chunkSize);
 	state->read((void*) chunk.data(), chunkSize, &bytesRead);
 
+#if 0
 	DawPreset preset(parametersInfo, chunk);
 	setPreset(&preset);
+#endif
 
 	return kResultTrue;
 }
@@ -541,12 +459,14 @@ tresult VST3Controller::setParamNormalized( ParamID tag, ParamValue value )
 
 	return kResultTrue;
 }
+#if 0
 
 void VST3Controller::OnLatencyChanged()
 {
 	getComponentHandler()->restartComponent(kLatencyChanged);
 //	_RPT0(_CRT_WARN, "restartComponent(kLatencyChanged)\n");
 }
+#endif
 
 tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& info)
 {
@@ -598,9 +518,9 @@ tresult PLUGIN_API VST3Controller::getParamStringByValue(ParamID tag, ParamValue
 	return kInvalidArgument;
 }
 
+#if 0 // TODO
 std::string VST3Controller::loadNativePreset(std::wstring sourceFilename)
 {
-#if 0 // TODO
 	auto filetype = GetExtension(sourceFilename);
 
 	if (filetype == L"vstpreset")
@@ -627,13 +547,13 @@ std::string VST3Controller::loadNativePreset(std::wstring sourceFilename)
 		// Prior to v1.4.518 - 2020-08-04, Preset Browser saves VST3 format instead of VST2 format. Fallback to VST3.
 		return VstPresetUtil::ReadPreset(sourceFilename);
 	}
-#endif
 	return {};
 }
+#endif
 
+#if 0 // todo
 std::vector< MpController::presetInfo > VST3Controller::scanFactoryPresets()
 {
-#if 0 // todo
 	platform_string factoryPresetsFolder(_T("vst2FactoryPresets/"));
 	auto factoryPresetFolder = ToPlatformString(BundleInfo::instance()->getImbeddedFileFolder());
 	auto fullpath = combinePathAndFile(factoryPresetFolder, factoryPresetsFolder);
@@ -644,13 +564,13 @@ std::vector< MpController::presetInfo > VST3Controller::scanFactoryPresets()
 	}
 
 	return scanPresetFolder(fullpath, _T("xmlpreset"));
-#endif
 	return {};
 }
+#endif
 
+#if 0 // TODO
 void VST3Controller::loadFactoryPreset(int index, bool fromDaw)
 {
-#if 0 // TODO
 	platform_string vst2FactoryPresetsFolder(_T("vst2FactoryPresets/"));
 	auto PresetFolder = ToPlatformString(BundleInfo::instance()->getImbeddedFileFolder());
 	PresetFolder = combinePathAndFile(PresetFolder, vst2FactoryPresetsFolder);
@@ -658,7 +578,6 @@ void VST3Controller::loadFactoryPreset(int index, bool fromDaw)
 	auto fullFilePath = PresetFolder + ToPlatformString(presets[index].filename);
 	auto filenameUtf8 = ToUtf8String(fullFilePath);
 	ImportPresetXml(filenameUtf8.c_str());
-#endif
 }
 
 void VST3Controller::setPresetFromSelf(DawPreset const* preset)
@@ -705,12 +624,14 @@ void VST3Controller::setPresetXmlFromSelf(const std::string& xml)
 	s.Send();
 #endif
 }
+#endif
 
 platform_string VST3Controller::calcFactoryPresetFolder()
 {
 	// TODO
 	return {};
 }
+#if 0
 
 std::string VST3Controller::getFactoryPresetXml(std::string filename)
 {
@@ -718,10 +639,11 @@ std::string VST3Controller::getFactoryPresetXml(std::string filename)
 	auto fullFilePath = PresetFolder + ToPlatformString(filename);
 	return loadNativePreset(toWstring(fullFilePath));
 }
+#endif
 
+#if 0
 void VST3Controller::saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml)
 {
-#if 0
 	const auto filetype = GetExtension(std::string(filename));
 
 	// VST2 preset format.
@@ -741,12 +663,13 @@ void VST3Controller::saveNativePreset(const char* filename, const std::string& p
 		std::string categoryName; // TODO !!!
 		VstPresetUtil::WritePreset(JmUnicodeConversions::Utf8ToWstring(filename), categoryName, factory->getVendorName(), factory->getProductName(), &processorId, xml);
 	}
-#endif
 }
+#endif
 
+#if 0
 bool VST3Controller::onTimer()
 {
-    if (!queueToDsp_.empty())
+	if (!queueToDsp_.empty())
 	{
 		sendMessageToProcessor(queueToDsp_.data(), queueToDsp_.size());
 		queueToDsp_.clear();
@@ -754,6 +677,7 @@ bool VST3Controller::onTimer()
 
 	return MpController::onTimer();
 }
+#endif
 
 int32 VST3Controller::getNoteExpressionCount(int32 busIndex, int16 channel)
 {

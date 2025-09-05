@@ -1,10 +1,7 @@
 #import <AudioUnit/AudioUnit.h>
 #import <AudioUnit/AUCocoaUIView.h>
-//#import <Cocoa/Cocoa.h>
 #include "GmpiSdkCommon.h"
 #include "GmpiApiEditor.h"
-// #import "CocoaGfx.h"
-// #include "DrawingFrameCommon.h"
 #include "backends/DrawingFrameMac.h"
 
 extern "C"
@@ -27,10 +24,6 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
 {
     return @"GMPI AU View";
 }
-
-// todo, make a controller class that inherits from gmpi::api::IEditorHost (paramHost), add it to instrument base, have AudioUnitGetProperty return a pointer to it's IUnknown interface.
-// Then create the GMPI Editor (client) by calling the factory directly and pass these to:
-// NSView* native = [[GMPI_VIEW_CLASS alloc] initWithClient:client parameterHost:paramHost preferredSize:inPreferredSize];
 
 - (NSView *) uiViewForAudioUnit:(AudioUnit)inAudioUnit withSize:(NSSize)inPreferredSize
 {
@@ -126,12 +119,7 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
         view.layer.backgroundColor = NSColor.blueColor.CGColor;
     }
     */
-/*
-    if (pluginParameters_GMPI)
-    {
-        pluginParameters_GMPI->initialize();
-    }
-*/
+
     return view; // ARC: no autorelease needed
 }
 

@@ -13,6 +13,7 @@
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/processor_holder.h"
 #include "Hosting/message_queues.h"
+#include "Hosting/controller_holder.h"
 
 #if 0
 #include "SynthRuntime.h"
@@ -218,30 +219,6 @@ public:
 };
 #endif
 
-class gmpi_controller_holder : public gmpi::api::IEditorHost, public gmpi::api::IParameterObserver
-{
-	// IEditorHost
-	gmpi::ReturnCode setPin(int32_t PinIndex, int32_t voice, int32_t size, const uint8_t* data) override
-	{
-		return gmpi::ReturnCode::Ok;
-	}
-	int32_t getHandle() override {
-		return 0;
-	}
-
-	gmpi::ReturnCode setParameter(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, int32_t size, const uint8_t* data) override
-	{
-		return gmpi::ReturnCode::Ok;
-	}
-
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
-	{
-		GMPI_QUERYINTERFACE(gmpi::api::IEditorHost);
-		GMPI_QUERYINTERFACE(gmpi::api::IParameterObserver);
-		return gmpi::ReturnCode::NoSupport;
-	}
-	GMPI_REFCOUNT_NO_DELETE;
-};
 
 class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 , public gmpi::api::IProcessorHost
@@ -251,7 +228,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
     static const int timerPeriodMs = 35;
 	static std::vector<gmpi::hosting::pluginInfo> plugins;
 	gmpi::hosting::gmpi_processor plugin;
-	gmpi_controller_holder gmpiController;
+	gmpi::hosting::gmpi_controller_holder gmpiController;
 
 	std::vector<parameterChange> parameterChanges[2];
 	int latencyCompensation; // enum.

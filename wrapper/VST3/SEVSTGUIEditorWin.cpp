@@ -36,7 +36,7 @@ SEVSTGUIEditorWin::SEVSTGUIEditorWin(gmpi::hosting::pluginInfo const& info, gmpi
 
 SEVSTGUIEditorWin::~SEVSTGUIEditorWin()
 {
-	controller->UnRegisterGui2(&helper);
+	controller->gmpiController.unRegisterGui(&helper);
 }
 
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinberg::FIDString type)
@@ -51,7 +51,7 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinbe
         const gmpi::drawing::SizeL overrideSize{ width, height };
         drawingframe.open(parent, &overrideSize);
 
-        controller->initUi(&helper);
+        controller->gmpiController.initUi(&helper);
     }
 
     if (pluginParameters_GMPI)

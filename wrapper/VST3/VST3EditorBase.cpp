@@ -19,7 +19,7 @@ gmpi::ReturnCode ParameterHelper::setParameter(int32_t parameterHandle, gmpi::Fi
 // GMPI Editor sending a parameter update back to the wrapper.
 gmpi::ReturnCode ParameterHelper::setPin(int32_t pinId, int32_t voice, int32_t size, const uint8_t* data)
 {
-	editor_->controller->setPinFromUi(pinId, voice, size, data);
+	editor_->controller->gmpiController.setPinFromUi(pinId, voice, { (std::byte*) data, (std::byte*) data + size });
     return gmpi::ReturnCode::Ok;
 }
 
@@ -72,6 +72,9 @@ VST3EditorBase::VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shar
 
 void VST3EditorBase::initPlugin(/*gmpi::api::IUnknown* host*/)
 {
+	controller->gmpiController.registerGui(&helper);
+
+#if 0
 	controller->RegisterGui2(&helper);
 /*move
 	if (pluginParameters_GMPI)
@@ -90,11 +93,14 @@ void VST3EditorBase::initPlugin(/*gmpi::api::IUnknown* host*/)
 			controller->initializeGui(&helper, paramHandle, p.parameterFieldType);
 		}
 	}
+#endif
 }
 
 VST3EditorBase::~VST3EditorBase()
 {
+#if 0
 	controller->UnRegisterGui2(&helper);
+#endif
 }
 
 void VST3EditorBase::onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const uint8_t* data, int32_t size)
