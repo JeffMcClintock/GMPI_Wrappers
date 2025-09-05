@@ -87,6 +87,7 @@ public:
 //-----------------------------------------------------------------------------
 class VST3Controller :
 //	public MpController,
+	public gmpi::TimerClient,
 	public Steinberg::Vst::EditController,
 	public Steinberg::Vst::IMidiMapping,
 	public Steinberg::Vst::IUnitInfo,
@@ -163,14 +164,14 @@ public:
 
 		return param;
 	}
+#endif
 
 	bool onTimer() override;
 
-	gmpi::hosting::IWriteableQue* getQueueToDsp() override
+	gmpi::hosting::IWriteableQue* getQueueToDsp() // override
 	{
 		return &queueToDsp_;
 	}
-#endif
 
 	void ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice = 0);
 

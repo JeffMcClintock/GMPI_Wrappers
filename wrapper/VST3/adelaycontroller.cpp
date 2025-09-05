@@ -122,7 +122,7 @@ VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
 
 VST3Controller::~VST3Controller()
 {
-#if 0
+#if 1
 	stopTimer();
 #endif
 }
@@ -343,9 +343,10 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 	// So VST2 wrapper aeffect pointer makes it to Processor.
 	if (isConnected && isInitialised)
 		initSemControllers();
-
-	startTimer(timerPeriodMs);
 #endif
+
+	const int timerPeriodMs = 35;
+	startTimer(timerPeriodMs);
 
 	return kResultTrue;
 }
@@ -666,18 +667,25 @@ void VST3Controller::saveNativePreset(const char* filename, const std::string& p
 }
 #endif
 
-#if 0
 bool VST3Controller::onTimer()
 {
+// TODO:	gmpiController.message_que_dsp_to_ui.pollMessage(this);
+	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
+
+	gmpiController.pendingControllerQueueClients.ServiceWaiters(
+		toProcessor,
+		queueToDsp_.freeSpace(),
+		queueToDsp_.freeSpace()
+	);
+
 	if (!queueToDsp_.empty())
 	{
 		sendMessageToProcessor(queueToDsp_.data(), queueToDsp_.size());
 		queueToDsp_.clear();
 	}
 
-	return MpController::onTimer();
+	return true; // MpController::onTimer();
 }
-#endif
 
 int32 VST3Controller::getNoteExpressionCount(int32 busIndex, int16 channel)
 {

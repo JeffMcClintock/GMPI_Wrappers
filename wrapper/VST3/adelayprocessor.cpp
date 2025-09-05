@@ -515,12 +515,15 @@ void SeProcessor::setHostControlFromDaw(gmpi::hosting::HostControls hc, double v
 }
 
 //-----------------------------------------------------------------------------
+
 tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 {
 	auto& plugin_ = plugin.processor;
 	auto& events = plugin.events;
 
     assert(!plugin_.isNull());
+
+	m_message_que_ui_to_dsp.pollMessage(&plugin);
 
 	if (data.inputParameterChanges)
 	{

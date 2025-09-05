@@ -69,8 +69,9 @@ public:
 	{
 		return &m_message_que_dsp_to_ui;
 	}
+
 #if 0 // TODO
-	interThreadQue* ControllerToProcessorQue() override
+	gmpi::hosting::interThreadQue* ControllerToProcessorQue()// override
 	{
 		return &m_message_que_ui_to_dsp;
 	}
