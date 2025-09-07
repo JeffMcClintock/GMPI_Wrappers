@@ -9,7 +9,7 @@
 #include "Common.h"
 //#include "wrapper/common/tinyXml2/tinyxml2.h"
 #include "wrapper/common/dynamic_linking.h"
-//#include "wrapper/common/HostControls.h"
+#include "Hosting/gmpi_factory.h"
 
 #if 0
 #include "it_enum_list.h"
@@ -140,9 +140,13 @@ tresult MyVstPluginFactory::getFactoryInfo (PFactoryInfo* info)
 {
 	initialize();
 
-	strncpy8 (info->vendor, plugins[0].vendorName.c_str() , PFactoryInfo::kNameSize);
-	strncpy8 (info->url   , plugins[0].vendorUrl.c_str()  , PFactoryInfo::kURLSize);
-	strncpy8 (info->email , plugins[0].vendorEmail.c_str(), PFactoryInfo::kEmailSize);
+	auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo();
+	if(!plugin)
+		return kResultFalse;
+
+	strncpy8 (info->vendor, plugin->vendorName.c_str() , PFactoryInfo::kNameSize);
+	strncpy8 (info->url   , plugin->vendorUrl.c_str()  , PFactoryInfo::kURLSize);
+	strncpy8 (info->email , plugin->vendorEmail.c_str(), PFactoryInfo::kEmailSize);
 	info->flags = PFactoryInfo::kUnicode;
 	return kResultOk;
 }
@@ -152,7 +156,8 @@ If you are using the CPluginFactory implementation provided by the SDK, it retur
 int32 MyVstPluginFactory::countClasses ()
 {
 	initialize();
-	return static_cast<int32>(plugins.size() * 2);
+
+	return static_cast<int32>(2);
 }
 
 uint32 hashString(const std::string& s)
@@ -188,98 +193,6 @@ void textIdtoUuid(const std::string& id, bool isController, Steinberg::TUID& ret
 //	helper.plain[6] = 0x40; // UUID version 4
 }
 
-/** Fill a PClassInfo structure with information about the class at the specified index. */
-tresult MyVstPluginFactory::getClassInfo (int32 index, PClassInfo* info)
-{
-	initialize();
-	const auto numClasses = plugins.size() * 2;
-
-	if (index < 0 || index >= numClasses)
-	{
-		return kInvalidArgument;
-	}
-
-	const int pluginIndex = index / 2;
-	const int classIndex = index % 2;
-
-	const auto& sem = plugins[pluginIndex];
-
-	Steinberg::TUID procUUid{};
-	Steinberg::TUID ctrlUUid{};
-	textIdtoUuid(sem.id, false, procUUid);
-	textIdtoUuid(sem.id,  true, ctrlUUid);
-
-	switch(classIndex)
-	{
-	case 0:
-		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
-		memcpy(info->cid, &procUUid/*(pluginInfo_.processorId.toTUID()*/, sizeof(TUID));
-		break;
-	case 1:
-		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
-		memcpy(info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID()*/, sizeof(TUID));
-		break;
-	}
-
-	info->cardinality = PClassInfo::kManyInstances;
-
-	strncpy8 (info->name, sem.name.c_str(), PClassInfo::kNameSize );
-
-	return kResultOk;
-}
-
-/** Returns the class info (version 2) for a given index. */
-tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
-{
-	initialize();
-
-	const auto numClasses = plugins.size() * 2;
-
-	if (index < 0 || index >= numClasses)
-	{
-		return kInvalidArgument;
-	}
-
-	std::string version{ "1.0.0" }; // for now
-
-	const int pluginIndex = index / 2;
-	const int classIndex = index % 2;
-
-	const auto& sem = plugins[pluginIndex];
-
-	Steinberg::TUID procUUid{};
-	Steinberg::TUID ctrlUUid{};
-	textIdtoUuid(sem.id, false, procUUid);
-	textIdtoUuid(sem.id, true, ctrlUUid);
-
-	info->cardinality = PClassInfo::kManyInstances;
-
-	strncpy8 (info->name, plugins[pluginIndex].name.c_str(), PClassInfo::kNameSize );
-	strncpy8 (info->sdkVersion, kVstVersionString, PClassInfo2::kVersionSize );
-	strncpy8 (info->vendor, plugins[0].vendorName.c_str(), PClassInfo2::kVendorSize );
-	strncpy8 (info->version, /*pluginInfo_.version_*/version.c_str(), PClassInfo2::kVersionSize );
-
-	const auto subCategories = calcSubCategories(sem);
-
-	switch(classIndex)
-	{
-	case 0:
-		info->classFlags = Vst::kDistributable;
-		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
-		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
-		memcpy (info->cid, &procUUid/*(pluginInfo_.processorId.toTUID())*/, sizeof (TUID));
-		break;
-	case 1:
-		info->classFlags = 0;
-		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
-		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
-		memcpy (info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID())*/, sizeof (TUID));
-		break;
-	}
-
-	return kResultOk;
-}
-
 int32_t MyVstPluginFactory::getVst2Id64(int32_t pluginIndex) // generated from hash of GUID. Not compatible w 32-bit VSTs.
 {
 	initialize();
@@ -310,12 +223,56 @@ int32_t MyVstPluginFactory::getVst2Id64(int32_t pluginIndex) // generated from h
 	return *((int32_t*)vst2ID);
 }
 
-/** Returns the unicode class info for a given index. */
-tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
+
+/** Fill a PClassInfo structure with information about the class at the specified index. */
+tresult MyVstPluginFactory::getClassInfo (int32 index, PClassInfo* info)
 {
 	initialize();
- 
-	const auto numClasses = plugins.size() * 2;
+
+	const auto numClasses = gmpi::hosting::factory::getInstance().getPlugincount() * 2;
+
+	if (index < 0 || index >= numClasses)
+	{
+		return kInvalidArgument;
+	}
+
+	const int pluginIndex = index / 2;
+	const int classIndex = index % 2;
+
+	auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo(pluginIndex);
+	if (!plugin)
+		return kResultFalse;
+
+	Steinberg::TUID procUUid{};
+	Steinberg::TUID ctrlUUid{};
+	textIdtoUuid(plugin->id, false, procUUid);
+	textIdtoUuid(plugin->id,  true, ctrlUUid);
+
+	switch(classIndex)
+	{
+	case 0:
+		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
+		memcpy(info->cid, &procUUid/*(pluginInfo_.processorId.toTUID()*/, sizeof(TUID));
+		break;
+	case 1:
+		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
+		memcpy(info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID()*/, sizeof(TUID));
+		break;
+	}
+
+	info->cardinality = PClassInfo::kManyInstances;
+
+	strncpy8 (info->name, plugin->name.c_str(), PClassInfo::kNameSize );
+
+	return kResultOk;
+}
+
+/** Returns the class info (version 2) for a given index. */
+tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
+{
+	initialize();
+
+	const auto numClasses = gmpi::hosting::factory::getInstance().getPlugincount() * 2;
 
 	if (index < 0 || index >= numClasses)
 	{
@@ -327,13 +284,69 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 	const int pluginIndex = index / 2;
 	const int classIndex = index % 2;
 
-	const auto& sem = plugins[pluginIndex];
+	auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo(pluginIndex);
+	if (!plugin)
+		return kResultFalse;
 
 	Steinberg::TUID procUUid{};
 	Steinberg::TUID ctrlUUid{};
-	textIdtoUuid(sem.id, false, procUUid);
-	textIdtoUuid(sem.id, true, ctrlUUid);
-	const auto subCategories = calcSubCategories(sem);
+	textIdtoUuid(plugin->id, false, procUUid);
+	textIdtoUuid(plugin->id, true, ctrlUUid);
+
+	info->cardinality = PClassInfo::kManyInstances;
+
+	strncpy8 (info->name, plugin->name.c_str(), PClassInfo::kNameSize );
+	strncpy8 (info->sdkVersion, kVstVersionString, PClassInfo2::kVersionSize );
+	strncpy8 (info->vendor, plugin->vendorName.c_str(), PClassInfo2::kVendorSize );
+	strncpy8 (info->version, /*pluginInfo_.version_*/version.c_str(), PClassInfo2::kVersionSize );
+
+	const auto subCategories = calcSubCategories(*plugin);
+
+	switch(classIndex)
+	{
+	case 0:
+		info->classFlags = Vst::kDistributable;
+		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
+		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
+		memcpy (info->cid, &procUUid/*(pluginInfo_.processorId.toTUID())*/, sizeof (TUID));
+		break;
+	case 1:
+		info->classFlags = 0;
+		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
+		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
+		memcpy (info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID())*/, sizeof (TUID));
+		break;
+	}
+
+	return kResultOk;
+}
+
+/** Returns the unicode class info for a given index. */
+tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
+{
+	initialize();
+ 
+	const auto numClasses = gmpi::hosting::factory::getInstance().getPlugincount() * 2;
+
+	if (index < 0 || index >= numClasses)
+	{
+		return kInvalidArgument;
+	}
+
+	std::string version{ "1.0.0" }; // for now
+
+	const int pluginIndex = index / 2;
+	const int classIndex = index % 2;
+
+	auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo(pluginIndex);
+	if (!plugin)
+		return kResultFalse;
+
+	Steinberg::TUID procUUid{};
+	Steinberg::TUID ctrlUUid{};
+	textIdtoUuid(plugin->id, false, procUUid);
+	textIdtoUuid(plugin->id, true, ctrlUUid);
+	const auto subCategories = calcSubCategories(*plugin);
 
 	switch(classIndex)
 	{
@@ -355,8 +368,8 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 
 	str8ToStr16 (info->sdkVersion, kVstVersionString, PClassInfo2::kVersionSize );
 	str8ToStr16 (info->version, /*pluginInfo_.version_*/version.c_str(), PClassInfo2::kVersionSize );
-	str8ToStr16 (info->vendor, plugins[0].vendorName.c_str(), PClassInfo2::kVendorSize );
-	str8ToStr16 (info->name, plugins[pluginIndex].name.c_str(), PClassInfo::kNameSize );
+	str8ToStr16 (info->vendor, plugin->vendorName.c_str(), PClassInfo2::kVendorSize );
+	str8ToStr16 (info->name, plugin->name.c_str(), PClassInfo::kNameSize );
 
 	return kResultOk;
 }
@@ -377,23 +390,27 @@ tresult MyVstPluginFactory::createInstance (FIDString cid, FIDString iid, void**
 
 	FUnknown* instance{};
 
-	for (auto& sem : plugins)
+	const auto numPlugins = gmpi::hosting::factory::getInstance().getPlugincount();
+
+	for (int pluginIndex = 0 ; pluginIndex < numPlugins ; ++pluginIndex)
 	{
+		auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo(pluginIndex);
+
 		Steinberg::TUID procUUid{};
 		Steinberg::TUID ctrlUUid{};
-		textIdtoUuid(sem.id, false, procUUid);
-		textIdtoUuid(sem.id, true, ctrlUUid);
+		textIdtoUuid(plugin->id, false, procUUid);
+		textIdtoUuid(plugin->id, true, ctrlUUid);
 
 		if (/*interfaceId == IComponent::iid ||*/ classId == Steinberg::FUID(procUUid))
 		{
-			auto i = new wrapper::SeProcessor(sem);
+			auto i = new wrapper::SeProcessor(*plugin);
 			i->setControllerClass(ctrlUUid); // associate with controller.
 			instance = (IAudioProcessor*)i;
 			break;
 		}
 		else if(classId == Steinberg::FUID(ctrlUUid))
 		{
-			instance = static_cast<Steinberg::Vst::IEditController*>(new wrapper::VST3Controller(sem));
+			instance = static_cast<Steinberg::Vst::IEditController*>(new wrapper::VST3Controller(*plugin));
 			break;
 		}
 	}
@@ -420,12 +437,12 @@ void MyVstPluginFactory::initialize()
 
 void MyVstPluginFactory::RegisterXml(const std::string& pluginPath, const char* xml)
 {
-	gmpi::hosting::readpluginXml(xml, plugins);
+	//gmpi::hosting::readpluginXml(xml, plugins);
 
-	for(auto& p : plugins)
-	{
-		p.pluginPath = pluginPath;
-	}
+	//for(auto& p : plugins)
+	//{
+	//	p.pluginPath = pluginPath;
+	//}
 }
 
 typedef gmpi::ReturnCode (*MP_DllEntry)(void**);
@@ -471,42 +488,6 @@ bool MyVstPluginFactory::initializeFactory()
   // not needed for built-in XML  #error implement this for mac
 #endif
 
-	{ // restrict scope of 'vst_factory' and 'gmpi_factory' so smart pointers RIAA before dll is unloaded
-
-		// Instantiate factory and query sub-plugins.
-		gmpi::shared_ptr<gmpi::api::IPluginFactory> gmpi_factory;
-		{
-			gmpi::shared_ptr<gmpi::api::IUnknown> com_object;
-            auto r = MP_GetFactory(com_object.put_void());
-
-			r = com_object->queryInterface(&gmpi::api::IPluginFactory::guid, gmpi_factory.put_void());
-		}
-
-		if (!gmpi_factory)
-		{
-			//std::wostringstream oss;
-			//oss << L"Module missing XML resource, and has no factory\n" << full_path;
-			//SafeMessagebox(0, oss.str().c_str(), L"", MB_OK | MB_ICONSTOP);
-
-//			wrapper::gmpi_dynamic_linking::MP_DllUnload(hinstLib);
-			return false;
-		}
-
-		int index = 0;
-		while (gmpi_factory)
-		{
-			gmpi::ReturnString xml;
-			const auto r = gmpi_factory->getPluginInformation(index++, &xml); // FULL XML
-
-			if (r != gmpi::ReturnCode::Ok)
-				break;
-
-			// RegisterXml(pluginPath, s.c_str());
-			
-			gmpi::hosting::readpluginXml(xml.c_str(), plugins);
-		}
-	}
-
 	return true;
 }
 
@@ -528,6 +509,6 @@ bool MyVstPluginFactory::GetOutputsAsStereoPairs()
 
 std::string MyVstPluginFactory::getVendorName()
 {
-	return plugins[0].vendorName;
+	return gmpi::hosting::factory::getInstance().getPluginInfo(0)->vendorName;
 }
 

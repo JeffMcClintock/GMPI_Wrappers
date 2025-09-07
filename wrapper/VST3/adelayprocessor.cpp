@@ -265,12 +265,7 @@ tresult PLUGIN_API SeProcessor::initialize (FUnknown* context)
 	if (result != kResultTrue)
 		return result;
 
-	auto factory = MyVstPluginFactory::GetInstance();
-
-	if (factory->plugins.empty())
-		return kResultFalse;
-
-	outputsAsStereoPairs = factory->GetOutputsAsStereoPairs();
+	outputsAsStereoPairs = true; // TODO .factory->GetOutputsAsStereoPairs();
 
 	//const auto& info = BundleInfo::instance()->getPluginInfo();
 	//supportedChannels = info.support16MidiChannels ? 16 : 1;
@@ -346,7 +341,6 @@ tresult PLUGIN_API SeProcessor::initialize (FUnknown* context)
 			);
 	}
 
-	factory->release();
 	return result;
 }
 

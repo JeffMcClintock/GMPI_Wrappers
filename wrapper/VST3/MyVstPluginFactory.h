@@ -53,8 +53,6 @@ public:
 	std::string getVendorName();
 	bool GetOutputsAsStereoPairs();
 
-	std::vector<gmpi::hosting::pluginInfo> plugins;
-
 private:
 	void initialize();
 	void RegisterXml(const /*platform_*/ std::string& pluginPath, const char* xml);
