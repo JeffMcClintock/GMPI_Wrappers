@@ -28,10 +28,14 @@ AudioUnitView.mm
 
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
+${gmpi_sdk_folder}/Hosting/controller_holder.h
+${gmpi_sdk_folder}/Hosting/controller_holder.cpp
 ${gmpi_sdk_folder}/Hosting/processor_holder.h
 ${gmpi_sdk_folder}/Hosting/processor_holder.cpp
 ${gmpi_sdk_folder}/Hosting/message_queues.h
 ${gmpi_sdk_folder}/Hosting/message_queues.cpp
+${gmpi_sdk_folder}/Hosting/gmpi_factory.h
+${gmpi_sdk_folder}/Hosting/gmpi_factory.cpp
 
 ${ADAPTORS_COMMON_FOLDER}/HostControls.h
 ${ADAPTORS_COMMON_FOLDER}/HostControls.cpp

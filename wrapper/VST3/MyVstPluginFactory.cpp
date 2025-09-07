@@ -509,6 +509,6 @@ bool MyVstPluginFactory::GetOutputsAsStereoPairs()
 
 std::string MyVstPluginFactory::getVendorName()
 {
-	return gmpi::hosting::factory::getInstance().getPluginInfo(0)->vendorName;
+	return gmpi::hosting::factory::getInstance().getPluginInfo()->vendorName;
 }
 

@@ -226,7 +226,6 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 {
 	friend class MpParameterAU;
     static const int timerPeriodMs = 35;
-	static std::vector<gmpi::hosting::pluginInfo> plugins;
 	gmpi::hosting::gmpi_processor plugin;
 	gmpi::hosting::gmpi_controller_holder gmpiController;
 

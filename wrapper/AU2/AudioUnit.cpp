@@ -89,8 +89,6 @@ void MpParameterAU::updateProcessor(gmpi::Field fieldId, int32_t voice)
     }
 }
 
-std::vector<gmpi::hosting::pluginInfo> SEInstrumentBase::plugins;
-
 SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 	: AUBase(inInstance, 0, 0, 1),
     AUMIDIBase(*static_cast<AUBase*>(this)),
@@ -131,35 +129,6 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 	)
 #endif
 {
-//	TiXmlBase::SetCondenseWhiteSpace(false); // ensure text parameters preserve multiple spaces. e.g. "A     B" (else it collapses to "A B")
-
-	if (plugins.empty())
-	{
-		gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
-		auto r = MP_GetFactory(factoryBase.put_void());
-
-		gmpi::shared_ptr<gmpi::api::IPluginFactory> factory;
-		auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.put_void());
-
-		if (!factory || r != gmpi::ReturnCode::Ok)
-		{
-			return;
-		}
-
-		int index = 0;
-		while (factory)
-		{
-			gmpi::ReturnString xml;
-			const auto r = factory->getPluginInformation(index++, &xml); // FULL XML
-
-			if (r != gmpi::ReturnCode::Ok)
-				break;
-
-			// RegisterXml("", s.c_str());
-            gmpi::hosting::readpluginXml(xml.c_str(), plugins);
-		}
-	}
-
 	parameterChanges[0].reserve(200);
 	parameterChanges[1].reserve(200);
 
@@ -193,97 +162,7 @@ void SEInstrumentBase::PostConstructor()
 
 	// Determine number of inputs and outputs here.
 	{
-#if 0
-		// Load factory xml
-        auto factoryXml = wrapper::BundleInfo::instance()->getResource("factory.se.xml");
-
-		TiXmlDocument doc;
-		doc.Parse(factoryXml.c_str());
-
-		if (doc.Error())
-		{
-			TiXmlNode* e = doc.FirstChildElement();
-			while (e)
-			{
-				//				_RPT1(_CRT_WARN, "%s\n", e->Value());
-				TiXmlElement* pElem = e->FirstChildElement("From");
-				if (pElem)
-				{
-					[[maybe_unused]] const char* from = pElem->Value();
-				}
-				e = e->LastChild();
-			}
-			assert(false);
-		}
-		else
-		{
-
-			TiXmlHandle hDoc(&doc);
-			TiXmlElement* pElem;
-
-			// block: Vendor
-			pElem = hDoc.FirstChildElement().Element();
-
-			// should always have a valid root but handle gracefully if it does
-			if (pElem)
-			{
-				assert(strcmp(pElem->Value(), "Factory") == 0);
-
-				const auto vendorE = pElem->FirstChild("Vendor")->ToElement();
-				const auto vendorName = vendorE->Attribute("Name");
-
-				TiXmlNode* plugins = pElem->FirstChild("Plugins");
-				assert(plugins); // Got to have one.
-				TiXmlNode* pluginNode = plugins->FirstChild("Plugin");
-				assert(pluginNode); // Got to have one.
-
-				TiXmlElement* plugin = pluginNode->ToElement();
-
-				/*
-								std::string subCategories;
-								plugin->QueryStringAttribute("subCategories", &subCategories);
-								if( subCategories == "Fx" )
-								{
-									pluginType = "au fx";
-								}
-								else
-								{
-									pluginType = "au mu";
-								}
-					*/
-				plugin->QueryStringAttribute("macCategory", &pluginType); // { aufx, aumu, aumf }
-
-				plugin->QueryStringAttribute("ManufacturerId", &manufacturerId);
-				/* already done?
-
-								std::string tempId;
-								plugin->QueryStringAttribute("PluginID", &tempId);
-								const auto pluginId = std::stoul(tempId, nullptr, 10);
-								BundleInfo::instance()->setPluginId(pluginId);
-								BundleInfo::instance()->setVendorName(vendorName);
-				*/
-				plugin->QueryBoolAttribute("outputsAsStereoPairs", &outputsAsStereoPairs);
-				plugin->QueryBoolAttribute("monoUseOk", &monoUseOk);
-				plugin->QueryIntAttribute("latencyCompensation", &latencyCompensation);
-
-				plugin->QueryIntAttribute("inputCount", &inputCount);
-				plugin->QueryIntAttribute("outputCount", &outputCount);
-
-				inputPtr.assign(inputCount, nullptr);
-				outputPtr.assign(outputCount, nullptr);
-
-				{
-					const auto outputNameList = plugin->Attribute("outputNames");
-					it_enum_list it(Utf8ToWstring(outputNameList));
-					for (it.First(); !it.IsDone(); it.Next())
-					{
-						auto e = it.CurrentItem();
-						outputNames.push_back(WStringToUtf8(e->text));
-					}
-				}
-			}
-#endif
-        auto& info = plugins[0];
+        auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
 
 		plugin.patchManager.init(info);
 
@@ -575,8 +454,8 @@ OSStatus SEInstrumentBase::Initialize()
 	initSemControllers();
 #endif
 
-    auto& info = plugins[0];
-    
+	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
+
 	plugin.start_processor(this, info);
 
 	if (!plugin.processor)
@@ -604,13 +483,12 @@ void SEInstrumentBase::reInitialize()
 	wantsMidi = processor.wantsMidi();
 #endif
 
-    auto& info = plugins[0];
-    
+	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
+
 	plugin.start_processor(this, info);
 
 	if (!plugin.processor)
 		return;
-
 }
 
 // receive notifications of parameter updates from DAW only (not my own GUI)
@@ -914,8 +792,8 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 		, allSilenceFlagsOut
 		);
 */
-    auto& info = plugins[0];
-    
+	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
+
     // pass buffer pointer to plugin
     {
         int inIdx = 0;
@@ -1632,8 +1510,8 @@ std::string SEInstrumentBase::loadNativePreset(std::wstring sourceFilename)
 // IAudioPluginHost
 gmpi::ReturnCode SEInstrumentBase::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
 {
-    auto& info = plugins[0];
-    
+	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
+
     for (auto& pin : info.dspPins)
     {
         // only output parameter pins.
