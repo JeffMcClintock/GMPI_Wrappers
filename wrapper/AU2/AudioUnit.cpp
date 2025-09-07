@@ -2,6 +2,7 @@
 #include "wrapper/common/BundleInfo.h"
 #include "wrapper/common/it_enum_list.h"
 #include "Hosting/xml_spec_reader.h"
+#include "Hosting/factory.h"
 #include "GmpiSdkCommon.h"
 #include "conversion.h"
 //#include "backends/DrawingFrameMac.h"
@@ -20,10 +21,6 @@ using namespace ausdk;
 #define DEBUG_PRINT_NOTE 0
 #define DEBUG_PRINT_RENDER 0
 #endif
-
-//AUSDK_COMPONENT_ENTRY(ausdk::AUMusicDeviceFactory, SEInstrumentBase);
-extern "C"
-gmpi::ReturnCode MP_GetFactory(void** returnInterface);
 
 // provide extensibility to add extra modules on a per-project basis.
 // SE2JUCE Controller must implement this function
@@ -131,6 +128,9 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 {
 	parameterChanges[0].reserve(200);
 	parameterChanges[1].reserve(200);
+
+	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
+	gmpiController.init(info);
 
 //	memset(&timeInfo, 0, sizeof(timeInfo));
 
@@ -382,7 +382,8 @@ void SEInstrumentBase::PostConstructor()
     }
 #endif
         
-//	StartTimer(timerPeriodMs); // Service DSP Queue.
+	const int timerPeriodMs = 35;
+	StartTimer(timerPeriodMs); // Service DSP Queue.
 }
 
 SEInstrumentBase::~SEInstrumentBase()
@@ -523,7 +524,19 @@ bool SEInstrumentBase::OnTimer()
  
 	return MpController::OnTimer();
 #endif
-    return false;
+
+	// parameter updates from the Processor
+	gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
+
+	// parameter updates to the Processor
+	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
+	gmpiController.pendingControllerQueueClients.ServiceWaiters(
+		toProcessor,
+		queueToDsp_.freeSpace(),
+		queueToDsp_.freeSpace()
+	);
+
+    return true;
 }
 
 #if 0
