@@ -16,7 +16,7 @@ SEVSTGUIEditorWin::SEVSTGUIEditorWin(gmpi::hosting::pluginInfo const& info, gmpi
 
     // 'helper' provides hosting for parameters, 'drawingframe' for graphics hosting.
     // so when plugin queries the drawing from for 'IParameterObserver' it gets redirected to 'helper'.
-    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&helper));
+    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&pcontroller->gmpiController));//   helper));
 
     if (pluginParameters_GMPI)
     {
@@ -36,7 +36,11 @@ SEVSTGUIEditorWin::SEVSTGUIEditorWin(gmpi::hosting::pluginInfo const& info, gmpi
 
 SEVSTGUIEditorWin::~SEVSTGUIEditorWin()
 {
-	controller->gmpiController.unRegisterGui(&helper);
+//    controller->gmpiController.unRegisterGui(&helper);
+    if (pluginParameters_GMPI)
+    {
+        controller->gmpiController.unRegisterGui(pluginParameters_GMPI.get());
+    }
 }
 
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinberg::FIDString type)
@@ -51,12 +55,14 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinbe
         const gmpi::drawing::SizeL overrideSize{ width, height };
         drawingframe.open(parent, &overrideSize);
 
-        controller->gmpiController.initUi(&helper);
+//        controller->gmpiController.initUi(&helper);
     }
 
     if (pluginParameters_GMPI)
     {
         pluginParameters_GMPI->initialize();
+
+        controller->gmpiController.initUi(pluginParameters_GMPI.get());
     }
 
     initPlugin();

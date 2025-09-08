@@ -11,6 +11,7 @@ namespace wrapper
 {
 class VST3Controller;
 
+#if 0
 class ParameterHelper :
 	public gmpi::api::IParameterObserver,
 	// AH!!!!!, already in gmpi::hosting::DrawingFrame !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -49,6 +50,7 @@ public:
 	}
 	GMPI_REFCOUNT;
 };
+#endif
 
 class VST3EditorBase : public Steinberg::FObject, public Steinberg::IPlugView
 {
@@ -61,7 +63,7 @@ protected:
     
 	gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
 	gmpi::shared_ptr<gmpi::api::IDrawingClient> pluginGraphics_GMPI;
-	ParameterHelper helper;
+//	ParameterHelper helper;
 
 public:
 	VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight);

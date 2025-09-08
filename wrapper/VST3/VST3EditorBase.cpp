@@ -5,6 +5,7 @@
 namespace wrapper
 {
 
+#if 0
 ParameterHelper::ParameterHelper(VST3EditorBase* editor)
 {
 	editor_ = editor;
@@ -27,7 +28,6 @@ int32_t ParameterHelper::getHandle()
 {
     return 0;
 }
-#if 0
 
 gmpi::ReturnCode ParameterHelper::setCapture()
 {
@@ -64,7 +64,7 @@ VST3EditorBase::VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shar
 	, width(pwidth)
 	, height(pheight)
 	, pluginParameters_GMPI(peditor)
-	, helper(this)
+//	, helper(this)
 	, info(info)
 {
 	pluginGraphics_GMPI = pluginParameters_GMPI.as<gmpi::api::IDrawingClient>();
@@ -72,7 +72,7 @@ VST3EditorBase::VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shar
 
 void VST3EditorBase::initPlugin(/*gmpi::api::IUnknown* host*/)
 {
-	controller->gmpiController.registerGui(&helper);
+//	controller->gmpiController.registerGui(&helper);
 
 #if 0
 	controller->RegisterGui2(&helper);
@@ -90,7 +90,7 @@ void VST3EditorBase::initPlugin(/*gmpi::api::IUnknown* host*/)
 		{
 			int32_t paramHandle{ -1 };
 			controller->getParameterHandle(p.parameterId, paramHandle);
-			controller->initializeGui(&helper, paramHandle, p.parameterFieldType);
+			controller->initializeGui(&hel per, paramHandle, p.parameterFieldType);
 		}
 	}
 #endif
