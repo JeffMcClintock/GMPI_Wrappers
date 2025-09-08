@@ -250,7 +250,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 //    int userNotHoldingAControlCounter = 0;
     
 //	ProcessorStateMgr stateMgr;
-	gmpi::hosting::interThreadQue message_que_dsp_to_ui;
+//	gmpi::hosting::interThreadQue message_que_dsp_to_ui;
 
 #ifdef _DEBUG
     std::thread::id mainThreadID;
@@ -429,10 +429,10 @@ public:
 	}
 
 	// IProcessorMessageQues
-    gmpi::hosting::IWriteableQue* MessageQueToGui() //override
-	{
-		return &message_que_dsp_to_ui;
-	}
+  //  gmpi::hosting::IWriteableQue* MessageQueToGui() //override
+	//{
+	//	return &message_que_dsp_to_ui;
+	//}
     void Service()  {} // VST3 only.
     gmpi::hosting::interThreadQue* ControllerToProcessorQue() //override
 	{
@@ -443,7 +443,7 @@ public:
 
     float sampleRate{44100.f};
     
-    // IAudioPluginHost
+    // IProcessorHost
     gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override;
     gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override;
     gmpi::ReturnCode setLatency(int32_t latency) override;

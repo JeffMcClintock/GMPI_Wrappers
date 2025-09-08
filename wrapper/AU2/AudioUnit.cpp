@@ -94,8 +94,8 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 	curMidiEvents(0),
 	mInitNumPartEls(1),
 	latencyCompensation(0),
-	queueToDsp_(0x500000),//SeAudioMaster::AUDIO_MESSAGE_QUE_SIZE),
-    message_que_dsp_to_ui(0x500000)
+	queueToDsp_(0x500000)//SeAudioMaster::AUDIO_MESSAGE_QUE_SIZE),
+//    message_que_dsp_to_ui(0x500000)
 
 	,midiConverter(
 		// provide a lambda to accept converted MIDI 2.0 messages
@@ -526,7 +526,7 @@ bool SEInstrumentBase::onTimer()
 #endif
 
 	// parameter updates from the Processor
-	gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
+    gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 
 	// parameter updates to the Processor
 	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
@@ -665,6 +665,35 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 	}
 #endif
 
+    {
+        Float64    currentBeat = 0;
+        Float64 currentTempo = 120;
+        
+        if (CallHostBeatAndTempo(&currentBeat, &currentTempo) == noErr)
+        {
+            if (!isfinite(currentBeat))
+            {
+                currentBeat= 0.0;
+            }
+        }
+        
+        UInt32 outDeltaSampleOffsetToNextBeat{};
+        double outCurrentMeasureDownBeat{};
+        float num{4.f};
+        UInt32 den{4};
+
+        if (CallHostMusicalTimeLocation(&outDeltaSampleOffsetToNextBeat, &num, &den,
+            &outCurrentMeasureDownBeat) == noErr)
+        {
+//            timeInfo.barStartPos = outCurrentMeasureDownBeat;
+        }
+        
+        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm,                 currentTempo);
+        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator,           num);
+        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator,         den);
+        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, currentBeat);       
+    }
+    
 #if 0
 	if (processor.NeedsTempo())
 	{
@@ -839,6 +868,14 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 	plugin_->process(inNumberFrames, events.head());
 
 	events.clear();
+    
+    if(plugin.pendingControllerQueueClients.ServiceWaitersIncremental(
+          &gmpiController.message_que_dsp_to_ui
+        , inNumberFrames
+    ))
+    {
+        gmpiController.message_que_dsp_to_ui.Send();
+    }
 
 	mAbsoluteSampleFrame += inNumberFrames;
 

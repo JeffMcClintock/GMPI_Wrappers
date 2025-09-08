@@ -498,16 +498,6 @@ void SeProcessor::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
 	plugin.events.push(ge);
 }
 
-void SeProcessor::setHostControlFromDaw(gmpi::hosting::HostControls hc, double value)
-{
-	const auto id = -2 - (int)hc;
-
-	if (auto param = plugin.patchManager.setParameterReal(id, value); param)
-	{
-		plugin.pendingControllerQueueClients.AddWaiter(param);
-	}
-}
-
 //-----------------------------------------------------------------------------
 
 tresult PLUGIN_API SeProcessor::process (ProcessData& data)
@@ -828,10 +818,10 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 		{
 			auto& vst3Time = *data.processContext;
 
-			setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm,                 vst3Time.tempo);
-			setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator,           vst3Time.timeSigNumerator);
-			setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator,         vst3Time.timeSigDenominator);
-			setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, vst3Time.projectTimeMusic);
+            plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm,                 vst3Time.tempo);
+            plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator,           vst3Time.timeSigNumerator);
+            plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator,         vst3Time.timeSigDenominator);
+            plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, vst3Time.projectTimeMusic);
 
 //			timeInfo = vst3Time; // needed??
 #if 0
