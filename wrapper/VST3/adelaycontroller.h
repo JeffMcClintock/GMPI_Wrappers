@@ -19,7 +19,13 @@ namespace wrapper {
 }
 
 namespace wrapper
-{ 
+{
+struct nativeParamInfo
+{
+	int hostTag{ -1 }; // DAW index.
+	int gmpi_id{};
+};
+
 class MpParameterVst3 : public MpParameter_native
 {
 	wrapper::VST3Controller* vst3Controller = {};
@@ -98,8 +104,8 @@ class VST3Controller :
 	static const int numMidiControllers = 130; // usual 128 + Bender.
 	bool isInitialised;
 	bool isConnected;
-	std::map<int, MpParameterVst3* > tagToParameter;	// DAW parameter Index to parameter
-	std::vector<MpParameterVst3* > vst3Parameters;      // flat list.
+//	std::map<int, MpParameterVst3* > tagToParameter;	// DAW parameter Index to parameter
+//	std::vector<MpParameterVst3* > vst3Parameters;      // flat list.
 
 	// Hold data until timer can put it in VST3 queue mechanism.
 	StagingMemoryBuffer queueToDsp_;
@@ -107,7 +113,8 @@ class VST3Controller :
 
 public:
 	gmpi::hosting::gmpi_controller_holder gmpiController;
-
+	//   DAW tag, GMPI ID
+	std::vector<int> nativeParams;
 
 	VST3Controller(gmpi::hosting::pluginInfo& pinfo);
 	~VST3Controller();
@@ -175,16 +182,16 @@ public:
 
 	void ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice = 0);
 
-	MpParameterVst3* getDawParameter(int nativeTag)
-	{
-		auto it = tagToParameter.find(nativeTag);
-		if (it != tagToParameter.end())
-		{
-			return (*it).second;
-		}
+	//MpParameterVst3* getDawParameter(int nativeTag)
+	//{
+	//	auto it = tagToParameter.find(nativeTag);
+	//	if (it != tagToParameter.end())
+	//	{
+	//		return (*it).second;
+	//	}
 
-		return {};
-	}
+	//	return {};
+	//}
 
 	virtual Steinberg::tresult PLUGIN_API setParamNormalized(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue value ) override;
 
@@ -291,48 +298,52 @@ public:
 	// Parameter overrides.
 	Steinberg::int32 PLUGIN_API getParameterCount() override
 	{
-		return static_cast<int>(vst3Parameters.size());
+		return static_cast<Steinberg::int32>(nativeParams.size());
 	}
 	Steinberg::tresult PLUGIN_API getParameterInfo(Steinberg::int32 paramIndex, Steinberg::Vst::ParameterInfo& info) override;
 	Steinberg::tresult PLUGIN_API getParamStringByValue(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized, Steinberg::Vst::String128 string) override;
 	Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized) override
 	{
-		if (auto p = getDawParameter(tag); p)
-		{
-			valueNormalized = p->convertNormalized(p->stringToNormalised(ToWstring(string)));
-			return Steinberg::kResultOk;
-		}
+		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+			return Steinberg::kInvalidArgument;
 
-		return Steinberg::kInvalidArgument;
+		const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+
+		auto valueString = ToWstring(string);
+
+		wchar_t* endPtr{};
+		const auto real = wcstof(valueString.c_str(), &endPtr);
+
+		valueNormalized = p.real2Normalized(real);
+
+		return Steinberg::kResultOk;
 	}
 	Steinberg::Vst::ParamValue PLUGIN_API normalizedParamToPlain(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override
 	{
-		if (auto p = getDawParameter(tag); p)
-		{
-			return p->normalisedToReal(p->convertNormalized(valueNormalized));
-		}
+		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+			return 0.0;
 
-		return 0.0;
+		const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+
+		return p.normalized2Real(valueNormalized);
 	}
 	Steinberg::Vst::ParamValue PLUGIN_API plainParamToNormalized(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue plainValue) override
 	{
-		if (auto p = getDawParameter(tag); p)
-		{
-			return p->convertNormalized(p->RealToNormalized(plainValue));
-		}
+		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+			return 0.0;
 
-		return 0.0;
+		const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+
+		return p.real2Normalized(plainValue);
 	}
 	Steinberg::Vst::ParamValue PLUGIN_API getParamNormalized(Steinberg::Vst::ParamID tag) override
 	{
-		if (auto p = getDawParameter(tag); p)
-		{
-//            _RPT2(_CRT_WARN, "getParamNormalized() => DAW %d %f\n", tag, p->getNormalized());
-      
-			return p->convertNormalized(p->getNormalized());
-		}
+		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+			return Steinberg::kInvalidArgument;
 
-		return 0.0;
+		const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+
+		return p.normalisedValue();
 	}
 
 	// units selection --------------------
@@ -362,15 +373,15 @@ public:
 
 	bool sendMessageToProcessor(const void* data, int size);
 
-	MpParameter* nativeGetParameterByIndex(int nativeIndex)
-	{
-//		assert(isInitialized);
-
-		if (nativeIndex >= 0 && nativeIndex < static_cast<int>(vst3Parameters.size()))
-			return vst3Parameters[nativeIndex];
-
-		return nullptr;
-	}
+//	MpParameter* nativeGetParameterByIndex(int nativeIndex)
+//	{
+////		assert(isInitialized);
+//
+//		if (nativeIndex >= 0 && nativeIndex < static_cast<int>(vst3Parameters.size()))
+//			return vst3Parameters[nativeIndex];
+//
+//		return nullptr;
+//	}
 
 
 
