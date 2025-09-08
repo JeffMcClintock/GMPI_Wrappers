@@ -1289,58 +1289,7 @@ void SeProcessor::MidiToHost(MidiBuffer3* mb, timestamp_t SeStartClock, int numS
 // IAudioPluginHost
 gmpi::ReturnCode SeProcessor::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
 {
-	for (auto& pin : info.dspPins)
-	{
-		// only output parameter pins.
-		if (pinId != pin.id || pin.direction != gmpi::PinDirection::Out || pin.parameterId == -1)
-			continue;
-
-		auto param = plugin.patchManager.getParameter(pin.parameterId);
-		if (!param)
-			continue;
-
-		switch (pin.parameterFieldType)
-		{
-		case gmpi::Field::Normalized:
-		{
-			assert(size == sizeof(float));
-
-			if (param->setNormalised(static_cast<double>(*reinterpret_cast<const float*>(data))))
-				plugin.pendingControllerQueueClients.AddWaiter(param);
-		}
-		break;
-
-		case gmpi::Field::Value:
-		{
-			switch (pin.datatype)
-			{
-			case gmpi::PinDatatype::Float32:
-			{
-				if (param->setReal(static_cast<double>(*reinterpret_cast<const float*>(data))))
-					plugin.pendingControllerQueueClients.AddWaiter(param);
-			}
-			break;
-			case gmpi::PinDatatype::Int32:
-			{
-				if (param->setReal(static_cast<double>(*reinterpret_cast<const int32_t*>(data))))
-					plugin.pendingControllerQueueClients.AddWaiter(param);
-			}
-			break;
-			case gmpi::PinDatatype::Bool:
-			{
-				if (param->setReal(static_cast<double>(*reinterpret_cast<const bool*>(data))))
-					plugin.pendingControllerQueueClients.AddWaiter(param);
-			}
-			break;
-			default:
-				assert(false); // unsupported type.
-			}
-		}
-		break;
-		}
-	}
-
-	return gmpi::ReturnCode::Ok;
+	return plugin.setPin(timestamp, pinId, size, data);
 }
 
 gmpi::ReturnCode SeProcessor::setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming)
