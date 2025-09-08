@@ -221,7 +221,7 @@ public:
 
 
 class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
-, public gmpi::api::IProcessorHost
+, public gmpi::api::IProcessorHost, public gmpi::TimerClient
 // public MpController, public IShellServices, public IProcessorMessageQues //, public IAuGui
 {
 	friend class MpParameterAU;
@@ -277,7 +277,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 	void reInitialize();
 protected:
 	AUEventListenerRef mParameterListener;
-	bool OnTimer();
+	bool onTimer() override;
 
 public:
 	SEInstrumentBase(AudioComponentInstance	inInstance);

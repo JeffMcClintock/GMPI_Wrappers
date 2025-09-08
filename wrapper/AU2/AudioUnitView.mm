@@ -3,6 +3,8 @@
 #include "GmpiSdkCommon.h"
 #include "GmpiApiEditor.h"
 #include "backends/DrawingFrameMac.h"
+#include "Hosting/gmpi_factory.h"
+#include "Hosting/controller_holder.h"
 
 extern "C"
 gmpi::ReturnCode MP_GetFactory( void** returnInterface );
@@ -36,52 +38,18 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
     // create the gmpi editor
     gmpi::shared_ptr<gmpi::api::IEditor> editor;
     {
-        gmpi::shared_ptr<gmpi::api::IUnknown> factoryBase;
-	    auto r = MP_GetFactory(factoryBase.put_void());
-
-	    gmpi::shared_ptr<gmpi::api::IPluginFactory> factory;
-	    auto r2 = factoryBase->queryInterface(&gmpi::api::IPluginFactory::guid, factory.put_void());
-
-	    if (!factory || r != gmpi::ReturnCode::Ok)
-	    {
-		    return {};
-	    }
+        auto& factory = gmpi::hosting::factory::getInstance();
         
-        // get the id of the first plugin.
-        std::string uniqueId;
-        {
-            gmpi::ReturnString xml;
-            factory->getPluginInformation(0, &xml);
-            
-            const auto& xmlstr = xml.str();
-            
-            size_t p{};
-            for (auto s : { "<Plugin", " id", "\"" })
-            {
-                p = xmlstr.find(s, p) + strlen(s);
-            }
-            
-            const auto p2 = xmlstr.find("\"", p);
-            
-            if( p == std::string::npos || p2 == std::string::npos)
-                return {};
-            
-            uniqueId = xmlstr.substr(p, p2 - p);
-        }
+        auto pluginInfo = factory.getPluginInfo();
         
-        gmpi::shared_ptr<gmpi::api::IUnknown> pluginUnknown;
-        r2 = factory->createInstance(uniqueId.c_str(), gmpi::api::PluginSubtype::Editor, pluginUnknown.put_void());
-        if (!pluginUnknown || r != gmpi::ReturnCode::Ok)
-        {
+        auto pluginUnknown = factory.createInstance(pluginInfo->id.c_str(), gmpi::api::PluginSubtype::Editor);
+        if (!pluginUnknown)
             return {};
-        }
 
         editor = pluginUnknown.as<gmpi::api::IEditor>();
 
         if(!editor)
-        {
             return {};
-        }
     }
     
     auto pluginGraphics_GMPI = editor.as<gmpi::api::IDrawingClient>();
@@ -119,6 +87,13 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
         view.layer.backgroundColor = NSColor.blueColor.CGColor;
     }
     */
+    auto editorParams = editor.as<gmpi::api::IParameterObserver>();
+    if(editorParams)
+    {
+        auto controller = dynamic_cast<gmpi::hosting::gmpi_controller_holder*>(editController); //.as<gmpi::api::IDrawingClient>();
+        
+        controller->registerGui(editorParams.get());
+    }
 
     return view; // ARC: no autorelease needed
 }

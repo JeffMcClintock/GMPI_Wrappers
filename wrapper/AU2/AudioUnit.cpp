@@ -2,7 +2,7 @@
 #include "wrapper/common/BundleInfo.h"
 #include "wrapper/common/it_enum_list.h"
 #include "Hosting/xml_spec_reader.h"
-#include "Hosting/factory.h"
+#include "Hosting/gmpi_factory.h"
 #include "GmpiSdkCommon.h"
 #include "conversion.h"
 //#include "backends/DrawingFrameMac.h"
@@ -383,7 +383,7 @@ void SEInstrumentBase::PostConstructor()
 #endif
         
 	const int timerPeriodMs = 35;
-	StartTimer(timerPeriodMs); // Service DSP Queue.
+	startTimer(timerPeriodMs); // Service DSP Queue.
 }
 
 SEInstrumentBase::~SEInstrumentBase()
@@ -509,7 +509,7 @@ void SEInstrumentBase::ParameterListener(void* inCallbackRefCon, void* inObject,
 	}
 }
 
-bool SEInstrumentBase::OnTimer()
+bool SEInstrumentBase::onTimer()
 {
 #if 0
     // avoid jitter when the user is moving a control
