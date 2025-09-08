@@ -530,11 +530,15 @@ bool SEInstrumentBase::onTimer()
 
 	// parameter updates to the Processor
 	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
-	gmpiController.pendingControllerQueueClients.ServiceWaiters(
+	
+    if(gmpiController.pendingControllerQueueClients.ServiceWaiters(
 		toProcessor,
 		queueToDsp_.freeSpace(),
 		queueToDsp_.freeSpace()
-	);
+	))
+    {
+        queueToDsp_.Send();
+    }
 
     return true;
 }
@@ -651,6 +655,8 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 {
 	auto& plugin_ = plugin.processor;
 	auto& events = plugin.events;
+
+    queueToDsp_.pollMessage(&plugin);
 
 #if 0
 	if (processor.reinitializeFlag)

@@ -87,12 +87,12 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
         view.layer.backgroundColor = NSColor.blueColor.CGColor;
     }
     */
-    auto editorParams = editor.as<gmpi::api::IParameterObserver>();
-    if(editorParams)
+    //auto editorParams = editor.as<gmpi::api::IParameterObserver>();
+    if(editor)
     {
         auto controller = dynamic_cast<gmpi::hosting::gmpi_controller_holder*>(editController); //.as<gmpi::api::IDrawingClient>();
         
-        controller->registerGui(editorParams.get());
+        controller->initUi(editor.get());
     }
 
     return view; // ARC: no autorelease needed
