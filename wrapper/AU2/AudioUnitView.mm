@@ -39,7 +39,6 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
     gmpi::shared_ptr<gmpi::api::IEditor> editor;
     {
         auto& factory = gmpi::hosting::factory::getInstance();
-        
         auto pluginInfo = factory.getPluginInfo();
         
         auto pluginUnknown = factory.createInstance(pluginInfo->id.c_str(), gmpi::api::PluginSubtype::Editor);

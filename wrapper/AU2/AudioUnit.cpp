@@ -1566,62 +1566,7 @@ std::string SEInstrumentBase::loadNativePreset(std::wstring sourceFilename)
 // IAudioPluginHost
 gmpi::ReturnCode SEInstrumentBase::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
 {
-	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
-
-    for (auto& pin : info.dspPins)
-    {
-        // only output parameter pins.
-        if (pinId != pin.id || pin.direction != gmpi::PinDirection::Out || pin.parameterId == -1)
-            continue;
-#if 0 // TODO!!!
-        auto param = patchManager.getParameter(pin.parameterId);
-        if (!param)
-            continue;
-
-        switch (pin.parameterFieldType)
-        {
-        case gmpi::Field::Normalized:
-        {
-            assert(size == sizeof(float));
-
-            if (param->setNormalised(static_cast<double>(*reinterpret_cast<const float*>(data))))
-                pendingControllerQueueClients.AddWaiter(param);
-        }
-        break;
-
-        case gmpi::Field::Value:
-        {
-            switch (pin.datatype)
-            {
-            case gmpi::PinDatatype::Float32:
-            {
-                if (param->setReal(static_cast<double>(*reinterpret_cast<const float*>(data))))
-                    pendingControllerQueueClients.AddWaiter(param);
-            }
-            break;
-            case gmpi::PinDatatype::Int32:
-            {
-                if (param->setReal(static_cast<double>(*reinterpret_cast<const int32_t*>(data))))
-                    pendingControllerQueueClients.AddWaiter(param);
-            }
-            break;
-            case gmpi::PinDatatype::Bool:
-            {
-                if (param->setReal(static_cast<double>(*reinterpret_cast<const bool*>(data))))
-                    pendingControllerQueueClients.AddWaiter(param);
-            }
-            break;
-            default:
-                assert(false); // unsupported type.
-            }
-        }
-        break;
-        }
-        
-#endif
-    }
-
-    return gmpi::ReturnCode::Ok;
+    return plugin.setPin(timestamp, pinId, size, data);
 }
 
 gmpi::ReturnCode SEInstrumentBase::setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming)

@@ -24,14 +24,13 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::attached (void* parent, Steinbe
     width = static_cast<int>(desiredSize.width);
     height = static_cast<int>(desiredSize.height);
     
-    nsView = createNativeView(parent, (class IUnknown*) static_cast<gmpi::api::IEditorHost*>(&helper), (class IUnknown*) pluginGraphics_GMPI.get(), width, height);
-
-// moved    if (pluginParameters_GMPI)
-//    {
- //       pluginParameters_GMPI->initialize();
-//    }
+    nsView = createNativeView(parent, (class IUnknown*) static_cast<gmpi::api::IEditorHost*>(&controller->gmpiController), (class IUnknown*) pluginGraphics_GMPI.get(), width, height);
     
     initPlugin();
+    if(pluginParameters_GMPI)
+    {
+        controller->gmpiController.initUi(pluginParameters_GMPI.get());
+    }
     
 	return Steinberg::kResultTrue;
 }
