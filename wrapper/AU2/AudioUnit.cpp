@@ -1,6 +1,6 @@
 #include "AudioUnit.h"
 #include "wrapper/common/BundleInfo.h"
-#include "wrapper/common/it_enum_list.h"
+//#include "wrapper/common/it_enum_list.h"
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/gmpi_factory.h"
 #include "GmpiSdkCommon.h"
@@ -1233,10 +1233,6 @@ OSStatus SEInstrumentBase::GetProperty(
                 
                 auto p = gmpiController.nativeParams[vfs->inParamID];
 
-//				auto p = getDawParameter(inID);
-//				if (!p)
-//					return kAudioUnitErr_InvalidParameter;
-
 				const CFIndex bufferSize = CFStringGetLength(vfs->inString) + 1; // The +1 is for NUL terminated
 				char buffer[bufferSize];
 				if (!CFStringGetCString(vfs->inString, buffer, bufferSize, kCFStringEncodingUTF8))
@@ -1244,10 +1240,20 @@ OSStatus SEInstrumentBase::GetProperty(
 					return kAudioUnitErr_InvalidParameter;
 				}
 
-                const auto text = wrapper::Utf8ToWstring(buffer);
+                const std::string text(buffer);
+                
+                for(auto&[id, name] : p->info->enum_entries)
+                {
+                    if (name == text)
+                    {
+                        vfs->outValue = id;
+                        return noErr;
+                    }
+                }
+ /*
                 const auto enum_list = wrapper::Utf8ToWstring(p->info->enum_list);
 
-				it_enum_list it(enum_list);
+				it_enum _list it(enum_list);
 				for (it.First(); !it.IsDone(); ++it)
 				{
 					if (it.CurrentItem()->text == text)
@@ -1256,6 +1262,7 @@ OSStatus SEInstrumentBase::GetProperty(
 						return noErr;
 					}
 				}
+  */
 				return kAudioUnitErr_InvalidParameter;
 			}
 
@@ -1275,9 +1282,23 @@ OSStatus SEInstrumentBase::GetProperty(
                 
                 auto p = gmpiController.nativeParams[pv->inParamID];
 
+                const auto nearest = static_cast<int>(std::round(*pv->inValue));
+                for(auto&[id, name] : p->info->enum_entries)
+                {
+                    if (id == nearest)
+                    {
+                        pv->outString = CFStringCreateWithCString(
+                            kCFAllocatorDefault,
+                            name.c_str(),
+                            CFStringGetSystemEncoding()
+                        );
+                        return noErr;
+                    }
+                }
+/*
                 const auto enum_list = wrapper::Utf8ToWstring(p->info->enum_list);
 
-				it_enum_list it(enum_list);
+				it_ enum_list it(enum_list);
 				it.FindIndex(static_cast<int>(0.5f + *pv->inValue));
 				if (!it.IsDone())
 				{
@@ -1290,6 +1311,7 @@ OSStatus SEInstrumentBase::GetProperty(
 					);
 					return noErr;
 				}
+ */
 				return kAudioUnitErr_InvalidParameter;
 			}
 
@@ -1412,15 +1434,14 @@ OSStatus SEInstrumentBase::GetParameterInfo(
 
     const auto enumList = wrapper::Utf8ToWstring(p.info->enum_list);
 
-	if (!enumList.empty())
+	if (!p.info->enum_entries.empty())
 	{
 		outParameterInfo.flags |= kAudioUnitParameterFlag_ValuesHaveStrings;
 		outParameterInfo.unit = kAudioUnitParameterUnit_Indexed;
 
 		// Mac enum params have to have consecutive values.
-		it_enum_list it(enumList);
 		outParameterInfo.minValue = 0;
-		outParameterInfo.maxValue = std::max(0, it.size() - 1);
+		outParameterInfo.maxValue = (std::max)(0, static_cast<int>(p.info->enum_entries.size()) - 1);
 	}
 	else
 	{
@@ -1456,15 +1477,15 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(
 
 	const auto& p = *gmpiController.nativeParams[inParameterID];
 
-	const auto enumList = wrapper::Utf8ToWstring(p.info->enum_list);
-
-	if (enumList.empty())
+	if (p.info->enum_entries.empty())
 		return kAudioUnitErr_InvalidParameter;
 
 	if (!outStrings)
 	{
 		return noErr;
 	}
+
+    const auto& enumList = p.info->enum_list;
 
 	std::vector<CFStringRef>* strings = {};
 	auto it = enumStrings.find(enumList);
@@ -1476,6 +1497,17 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(
 	{
 		strings = &(enumStrings[enumList]);
 
+        for(auto&[id, name] : p.info->enum_entries)
+        {
+            strings->push_back(
+                CFStringCreateWithCString(
+                    kCFAllocatorDefault,
+                    name.c_str(),
+                    CFStringGetSystemEncoding()
+                )
+            );
+        }
+        /*
 		it_enum_list it(enumList);
 		for (it.First(); !it.IsDone(); ++it)
 		{
@@ -1489,6 +1521,7 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(
 				)
 			);
 		}
+         */
 	}
 
 	*outStrings = CFArrayCreate(

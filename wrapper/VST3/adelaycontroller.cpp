@@ -512,7 +512,7 @@ tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& return
 	if ((p.info->datatype == gmpi::PinDatatype::Int32 || p.info->datatype == gmpi::PinDatatype::Int64) && !p.info->enum_entries.empty())
 	{
 		returnInfo.flags |= Steinberg::Vst::ParameterInfo::kIsList;
-		returnInfo.stepCount = p.info->enum_entries.size() - 1;
+		returnInfo.stepCount = (std::max)(0, static_cast<int>(p.info->enum_entries.size()) - 1);
 	}
 
 	// Support for VSTs special bypass parameter. Make a bool param called "BYPASS" 

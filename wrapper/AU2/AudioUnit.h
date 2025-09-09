@@ -241,7 +241,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 	std::vector<AUChannelInfo> supportedChannels;
 
 	AudioUnitCocoaViewInfo cocoaInfo; // custom GUI class information.
-	std::map<std::wstring, std::vector<CFStringRef> > enumStrings; // cache of native enum lists
+	std::map<std::string, std::vector<CFStringRef> > enumStrings; // cache of native enum lists
 //	std::map<int, MpParameterAU*> tagToParameter;
 	UInt32 offLineRenderMode = 0;
 	gmpi::hosting::interThreadQue queueToDsp_;
