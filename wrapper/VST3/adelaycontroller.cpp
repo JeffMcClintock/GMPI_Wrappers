@@ -454,6 +454,7 @@ tresult PLUGIN_API VST3Controller::setComponentState (IBStream* state)
 	DawPreset preset(parametersInfo, chunk);
 	setPreset(&preset);
 #endif
+	gmpiController.setPresetXmlFromDaw(chunk);
 
 	return kResultTrue;
 }

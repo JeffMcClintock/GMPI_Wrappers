@@ -1054,18 +1054,15 @@ void SeProcessor::DoNoteOff(int channel, int32_t noteId, float velocity, int sam
 
 tresult SeProcessor::setState (IBStream* state)
 {
-//	_RPT1(_CRT_WARN, "SeProcessor::setState (T%x)\n", GetCurrentThreadId());
-
-	int32 bytesRead;
-	int32 chunkSize = 0;
+	int32 bytesRead{};
+	int32 chunkSize{};
 	state->read( &chunkSize, sizeof(chunkSize), &bytesRead );
 
-	char* s = new char[chunkSize];
-	state->read( s, chunkSize, &bytesRead );
-	std::string chunk(s, bytesRead);
-	delete [] s;
+	std::string chunk;
+	chunk.resize(chunkSize);
+	state->read(chunk.data(), chunkSize, &bytesRead);
 
-//	synthEditProject.setPresetStateFromUiThread( chunk, active_ );
+	plugin.setPresetUnsafe(chunk);//, active_);
 
 	return kResultTrue;
 }
@@ -1073,11 +1070,10 @@ tresult SeProcessor::setState (IBStream* state)
 // Seems to be called before audio starts to set GUI up correctly.
 tresult SeProcessor::getState (IBStream* state)
 {
-	std::string chunk;
-//	synthEditProject.getPresetState( chunk, active_ );
+	const auto chunk = plugin.getPresetUnsafe();// active_);
 
 	int32 chunkSize = (int32) chunk.size();
-	int32 bytesWritten;
+	int32 bytesWritten{};
 
 	state->write( &chunkSize, sizeof(chunkSize), &bytesWritten );
 	state->write( (void*) chunk.data(), chunkSize, &bytesWritten );

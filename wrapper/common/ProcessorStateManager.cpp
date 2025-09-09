@@ -348,7 +348,6 @@ std::string DawPreset::toString(int32_t pluginId, std::string presetNameOverride
 	// TiXmlDeclaration* decl = new TiXmlDeclaration("1.0", "", "");
 	doc.LinkEndChild(doc.NewDeclaration());
 
-	//auto element = new TiXmlElement("Preset");
 	auto element = doc.NewElement("Presets");
 	doc.LinkEndChild(element);
 
@@ -376,7 +375,6 @@ std::string DawPreset::toString(int32_t pluginId, std::string presetNameOverride
 
 	for (auto& [handle, parameter] : params)
 	{
-		//auto paramElement = new TiXmlElement("Param");
 		auto paramElement = doc.NewElement("Param");
 		element->LinkEndChild(paramElement);
 		paramElement->SetAttribute("id", handle);

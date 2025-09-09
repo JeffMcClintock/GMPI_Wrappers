@@ -114,7 +114,6 @@ protected:
 
 	SeProcessor::vstNoteInfo& allocateKey(const Steinberg::Vst::NoteOnEvent& note);
 
-//	gmpi::shared_ptr<gmpi::api::IProcessor> plugin_;
 	gmpi::hosting::gmpi_processor plugin;
 
 	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle = {};
