@@ -37,6 +37,11 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::attached (void* parent, Steinbe
 
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::removed ()
 {
+    if(pluginParameters_GMPI)
+    {
+        controller->gmpiController.unRegisterGui(pluginParameters_GMPI.get());
+    }
+    
     gmpi_onCloseNativeView(nsView);
     
 	return Steinberg::kResultTrue;
