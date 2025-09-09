@@ -29,7 +29,7 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
 
 - (NSView *) uiViewForAudioUnit:(AudioUnit)inAudioUnit withSize:(NSSize)inPreferredSize
 {
-    // get the IEditorHost from teh Audiounit
+    // get the IEditorHost from the Audiounit
     gmpi::api::IUnknown* editController{};
     UInt32 size = sizeof (editController);
     if (AudioUnitGetProperty (inAudioUnit, 64000, kAudioUnitScope_Global, 0, &editController, &size) != noErr)
@@ -58,17 +58,6 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
     if(pluginGraphics_GMPI)
         pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
 
-//    width = static_cast<int>(desiredSize.width);
-//    height = static_cast<int>(desiredSize.height);
-
-
- //   const CGFloat defaultW = (inPreferredSize.width  > 0.0 ? inPreferredSize.width  : 480.0);
- //   const CGFloat defaultH = (inPreferredSize.height > 0.0 ? inPreferredSize.height : 320.0);
- //   NSRect frame = NSMakeRect(0, 0, defaultW, defaultH);
-
-    //NSView* view = [[NSView alloc] initWithFrame:frame];
-    //NSView* view = [[GMPI_VIEW_CLASS alloc] initWithClient:editor.get() parameterHost:editController.get() preferredSize:inPreferredSize];
-
     NSView* view = (NSView*) createNativeView(
           nullptr
         , (class IUnknown*) editController
@@ -78,22 +67,12 @@ gmpi::ReturnCode MP_GetFactory( void** returnInterface );
 
 //    view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 
-    /*
-    // Optional: give a neutral background so hosts don’t show black
-    view.wantsLayer = YES;
-    if (view.layer)
-    {
-        view.layer.backgroundColor = NSColor.blueColor.CGColor;
-    }
-    */
-    //auto editorParams = editor.as<gmpi::api::IParameterObserver>();
     if(editor)
     {
-        auto controller = dynamic_cast<gmpi::hosting::gmpi_controller_holder*>(editController); //.as<gmpi::api::IDrawingClient>();
-        
+        auto controller = dynamic_cast<gmpi::hosting::gmpi_controller_holder*>(editController);
         controller->initUi(editor.get());
     }
-
+    
     return view; // ARC: no autorelease needed
 }
 

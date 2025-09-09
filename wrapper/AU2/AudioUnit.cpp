@@ -334,10 +334,10 @@ void SEInstrumentBase::PostConstructor()
 	ScanPresets();
 #endif
     // Create Native Parameters.
-    for (auto& it : tagToParameter)
+    for (auto p : gmpiController.nativeParams)
     {
-        auto p = it.second;
-        Globals()->SetParameter(p->getNativeTag(), p->getValueReal());
+ //       auto p = it.second;
+        Globals()->SetParameter(p->info->dawTag, p->valueReal);
     }
 
     auto result = AUEventListenerCreate(ParameterListener,
@@ -357,11 +357,9 @@ void SEInstrumentBase::PostConstructor()
         myEvent.mArgument.mParameter.mElement = 0;
         myEvent.mArgument.mParameter.mScope = kAudioUnitScope_Global;
 
-        for (const auto& it : tagToParameter)
+        for (const auto p : gmpiController.nativeParams)
         {
-            auto p = it.second;
-            
-            myEvent.mArgument.mParameter.mParameterID = p->getNativeTag();
+            myEvent.mArgument.mParameter.mParameterID = p->info->dawTag;
             
             myEvent.mEventType = kAudioUnitEvent_BeginParameterChangeGesture;
             auto result = AUEventListenerAddEventType(mParameterListener, this, &myEvent);
@@ -497,15 +495,28 @@ void SEInstrumentBase::ParameterListener(void* inCallbackRefCon, void* inObject,
 {
 	if (inEvent->mEventType == kAudioUnitEvent_ParameterValueChange)
 	{
-		auto au = (SEInstrumentBase*)inObject;
+        auto au = (SEInstrumentBase*)inObject;
 
-		if (auto p = au->getDawParameter(inEvent->mArgument.mParameter.mParameterID); p)
+        const auto dawTag = inEvent->mArgument.mParameter.mParameterID;
+        
+        if(dawTag < 0 || dawTag >= au->gmpiController.nativeParams.size())
+            return;
+        
+        auto p = au->gmpiController.nativeParams[dawTag];
+        
+        if (auto p2 = au->gmpiController.patchManager.setParameterNormalised(p->info->id, inParameterValue); p2) // todo avoid lookup when we already have pointer to parameter
+        {
+            au->gmpiController.notifyGui(p2);
+        }
+#if 0
+//		if (auto p = au->getDawParameter(inEvent->mArgument.mParameter.mParameterID); p)
 		{
 #ifdef _DEBUG
         std::cerr << "DAW => ParameterListener(" << inEvent->mArgument.mParameter.mParameterID << ", " << inParameterValue << ")" << std::endl;
 #endif
 // TODO			p->setRealFromDaw(inParameterValue);
 		}
+#endif
 	}
 }
 
@@ -606,7 +617,17 @@ OSStatus SEInstrumentBase::SetParameter(
 	AudioUnitParameterValue		inValue,
 	UInt32						inBufferOffsetInFrames)
 {
-	if (auto p = getDawParameter(inID); p)
+    if(inID < 0 || inID >= gmpiController.nativeParams.size())
+        return kAudioUnitErr_InvalidParameter;
+    
+    auto p = gmpiController.nativeParams[inID];
+    
+    if (auto p2 = gmpiController.patchManager.setParameterNormalised(p->info->id, inValue); p2) // todo avoid lookup when we already have pointer to parameter
+    {
+        gmpiController.notifyGui(p2);
+    }
+    
+//	if (auto p = getDawParameter(inID); p)
 	{
 #if 0
 		// communicate change to UI (GarageBand and Logic Pro don't seem to do this via the parameter listener (Ableton Live does))
@@ -627,16 +648,24 @@ OSStatus SEInstrumentBase::SetParameter(
 	return noErr;
 }
 
-OSStatus SEInstrumentBase::GetParameter(AudioUnitParameterID	inID,
-	AudioUnitScope 				inScope,
-	AudioUnitElement 				inElement,
+OSStatus SEInstrumentBase::GetParameter(
+    AudioUnitParameterID	inID,
+	AudioUnitScope 			inScope,
+	AudioUnitElement 		inElement,
 	AudioUnitParameterValue& outValue)
 {
 	// !!! Ableton Live queries this right after SetParameter (which is not applied yet, due to queing)
 	// need to set normalised value on parameter (that does not affect actual value).
 	if (inScope == kAudioUnitScope_Global)
 	{
-		if (auto p = getDawParameter(inID); p)
+        if(inID < 0 || inID >= gmpiController.nativeParams.size())
+            return kAudioUnitErr_InvalidParameter;
+        
+        auto p = gmpiController.nativeParams[inID];
+
+        outValue = p->normalisedValue();
+        
+//		if (auto p = getDawParameter(inID); p)
 		{
 //			outValue = p->getValueImmediate();
 #if 0 //def _DEBUG
@@ -1184,9 +1213,14 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 
 			if (auto vfs = (AudioUnitParameterValueFromString*)outData)
 			{
-				auto p = getDawParameter(inID);
-				if (!p)
-					return kAudioUnitErr_InvalidParameter;
+                if(inID < 0 || inID >= gmpiController.nativeParams.size())
+                    return kAudioUnitErr_InvalidParameter;
+                
+                auto p = gmpiController.nativeParams[inID];
+
+//				auto p = getDawParameter(inID);
+//				if (!p)
+//					return kAudioUnitErr_InvalidParameter;
 
 				const CFIndex bufferSize = CFStringGetLength(vfs->inString) + 1; // The +1 is for NUL terminated
 				char buffer[bufferSize];
@@ -1196,8 +1230,9 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 				}
 
                 const auto text = wrapper::Utf8ToWstring(buffer);
+                const auto enum_list = wrapper::Utf8ToWstring(p->info->enum_list);
 
-				it_enum_list it(p->enumList_);
+				it_enum_list it(enum_list);
 				for (it.First(); !it.IsDone(); ++it)
 				{
 					if (it.CurrentItem()->text == text)
@@ -1219,11 +1254,14 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 
 			if (auto pv = (AudioUnitParameterStringFromValue*)outData)
 			{
-				auto p = getDawParameter(pv->inParamID);
-				if (!p)
-					return kAudioUnitErr_InvalidParameter;
+                if(inID < 0 || inID >= gmpiController.nativeParams.size())
+                    return kAudioUnitErr_InvalidParameter;
+                
+                auto p = gmpiController.nativeParams[inID];
 
-				it_enum_list it(p->enumList_);
+                const auto enum_list = wrapper::Utf8ToWstring(p->info->enum_list);
+
+				it_enum_list it(enum_list);
 				it.FindIndex(static_cast<int>(0.5f + *pv->inValue));
 				if (!it.IsDone())
 				{
@@ -1345,7 +1383,7 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 		return kAudioUnitErr_InvalidParameter;
 
 //	auto p = getDawParameter(inParameterID);
-	const auto& p = *gmpiController.nativeParams[paramIndex];
+	const auto& p = *gmpiController.nativeParams[inParameterID];
 
 	outParameterInfo.name[0] = 0;
 	outParameterInfo.flags =
@@ -1355,7 +1393,7 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 		| kAudioUnitParameterFlag_HasCFNameString
 		| kAudioUnitParameterFlag_CFNameRelease;
 
-	const auto enumList = p.enumList;
+    const auto enumList = wrapper::Utf8ToWstring(p.info->enum_list);
 
 	if (!enumList.empty())
 	{
@@ -1369,10 +1407,9 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 	}
 	else
 	{
-        /*
-		outParameterInfo.minValue = p->normalisedToReal(p->convertNormalized(0));
-		outParameterInfo.maxValue = p->normalisedToReal(p->convertNormalized(1));
-*/
+        outParameterInfo.minValue = p.info->minimum;
+        outParameterInfo.maxValue = p.info->maximum;
+
 		outParameterInfo.flags |= kAudioUnitParameterFlag_CanRamp;
 		outParameterInfo.unit = kAudioUnitParameterUnit_Generic;
 	}
@@ -1381,7 +1418,7 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 
 	outParameterInfo.clumpID = 0;
 
-    auto name_utf8 = p->name;
+    const auto& name_utf8 = p.info->name;
 	strlcpy(outParameterInfo.name, name_utf8.c_str(), sizeof(outParameterInfo.name));
 
 	outParameterInfo.cfNameString = CFStringCreateWithCString(NULL, name_utf8.c_str(), kCFStringEncodingUTF8);
@@ -1404,9 +1441,9 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(AudioUnitScope          inSc
 	//auto p = getDawParameter(inParameterID);
 	//if (!p)
 	//	return kAudioUnitErr_InvalidParameter;
-	const auto& p = *gmpiController.nativeParams[paramIndex];
+	const auto& p = *gmpiController.nativeParams[inParameterID];
 
-	const auto enumList = p.enumList;
+	const auto enumList = wrapper::Utf8ToWstring(p.info->enum_list);
 
 	if (enumList.empty())
 		return kAudioUnitErr_InvalidParameter;

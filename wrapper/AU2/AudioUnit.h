@@ -242,7 +242,7 @@ class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
 
 	AudioUnitCocoaViewInfo cocoaInfo; // custom GUI class information.
 	std::map<std::wstring, std::vector<CFStringRef> > enumStrings; // cache of native enum lists
-	std::map<int, MpParameterAU*> tagToParameter;
+//	std::map<int, MpParameterAU*> tagToParameter;
 	UInt32 offLineRenderMode = 0;
 	gmpi::hosting::interThreadQue queueToDsp_;
 	gmpi::midi_2_0::MidiConverter2 midiConverter;
@@ -402,7 +402,8 @@ public:
 //	// IAuGui interface
 //	void OnParameterUpdateFromDaw(int32_t tag, float normalised) override;
 
-    wrapper::MpParameter_native* makeNativeParameter(int ParameterIndex, bool isInverted) 
+#if 0
+    wrapper::MpParameter_native* makeNativeParameter(int ParameterIndex, bool isInverted)
 	{
 		AudioUnitParameter sPar = { GetComponentInstance(), static_cast<AudioUnitParameterID>(ParameterIndex), kAudioUnitScope_Global, 0 };
 
@@ -422,7 +423,8 @@ public:
 		}
 		return {};
 	}
-
+#endif
+    
     gmpi::hosting::IWriteableQue* getQueueToDsp() //override
 	{
 		return &queueToDsp_;
