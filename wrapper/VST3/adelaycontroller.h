@@ -114,7 +114,7 @@ class VST3Controller :
 public:
 	gmpi::hosting::gmpi_controller_holder gmpiController;
 	//   DAW tag, GMPI ID
-	std::vector<int> nativeParams;
+	std::vector<gmpi::hosting::GmpiParameter*> nativeParams;
 
 	VST3Controller(gmpi::hosting::pluginInfo& pinfo);
 	~VST3Controller();
@@ -307,7 +307,7 @@ public:
 		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
 			return Steinberg::kInvalidArgument;
 
-		const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+		const auto& p = *nativeParams[tag];
 
 		auto valueString = ToWstring(string);
 
@@ -323,7 +323,7 @@ public:
 		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
 			return 0.0;
 
-		const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+		const auto& p = *nativeParams[tag];
 
 		return p.normalized2Real(valueNormalized);
 	}
@@ -332,7 +332,7 @@ public:
 		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
 			return 0.0;
 
-		const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+		const auto& p = *nativeParams[tag];
 
 		return p.real2Normalized(plainValue);
 	}
@@ -341,7 +341,7 @@ public:
 		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
 			return Steinberg::kInvalidArgument;
 
-		const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+		const auto& p = *nativeParams[tag];
 
 		return p.normalisedValue();
 	}

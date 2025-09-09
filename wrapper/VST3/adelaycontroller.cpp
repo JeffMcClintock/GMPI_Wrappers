@@ -117,16 +117,34 @@ VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
 	ScanPresets();
 #endif
 
+	gmpiController.notifyDaw = [this](gmpi::hosting::GmpiParameter const* param)
+		{
+			assert(param->info->dawTag != -1); // should never be called for non-native param.
+
+			const auto paramID = param->info->dawTag;
+
+			// Usually parameter will have sent beginEdit() already (if it has mouse-down connected properly, else fake it.
+			if (!param->isGrabbed)
+				beginEdit(paramID);
+
+			//   _RPT2(0, "param[%d] %f => DAW\n", paramID, param->getNormalized());
+			performEdit(paramID, param->normalisedValue()); // Send the value to DSP.
+
+			if (!param->isGrabbed)
+				endEdit(paramID);
+		};
+
 	gmpiController.init(pinfo);
 
 	// create a list of native params.
 	{
 		int nativeTag{};
-		for (auto& p : pinfo.parameters)
+		for (auto& [id, param] : gmpiController.patchManager.parameters)
 		{
-			if (!p.is_private)
+			if (param.info->dawTag > -1)
 			{
-				nativeParams.push_back(p.id);
+				assert(param.info->dawTag == nativeParams.size());
+				nativeParams.push_back(&param);
 			}
 		}
 	}
@@ -467,10 +485,9 @@ tresult VST3Controller::setParamNormalized( ParamID tag, ParamValue value )
 {
 //	_RPT2(_CRT_WARN, "setParamNormalized(%d, %f)\n", tag, value);
 
-	if (auto p = gmpiController.patchManager.setParameterNormalised(nativeParams[tag], value); p)
+	if (auto p = gmpiController.patchManager.setParameterNormalised(nativeParams[tag]->info->id, value); p) // todo avoid lookup when we already have pointer to parameter
 	{
-//		const auto n = p->convertNormalized(value);
-//		p->MpParameter_base::setParameterRaw(gmpi::Field::Normalized, sizeof(n), &n);
+		gmpiController.notifyGui(p);
 	}
 
 	return kResultTrue;
@@ -489,43 +506,35 @@ tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& return
 	if( paramIndex < 0 || paramIndex >= static_cast<int>(nativeParams.size()))
 		return kInvalidArgument;
 
-	const auto gmpiId = nativeParams[paramIndex];
-	for(auto& p : gmpiController.info->parameters) // todo: more efficient lookup
+	const auto& p = *nativeParams[paramIndex];
+
+	returnInfo.flags = Steinberg::Vst::ParameterInfo::kCanAutomate;
+	returnInfo.defaultNormalizedValue = 0.0;
+
+	auto temp = JmUnicodeConversions::ToUtf16(p.info->name);
+
+	_tstrncpy(returnInfo.shortTitle, (const TChar*)temp.c_str(), static_cast<Steinberg::uint32>(std::size(returnInfo.shortTitle)));
+	_tstrncpy(returnInfo.title     , (const TChar*)temp.c_str(), static_cast<Steinberg::uint32>(std::size(returnInfo.title)));
+
+	returnInfo.id = paramIndex;// p.getNativeTag();
+	returnInfo.unitId = kRootUnitId;
+	returnInfo.stepCount = 0;
+	returnInfo.units[0] = 0;
+
+	if ((p.info->datatype == gmpi::PinDatatype::Int32 || p.info->datatype == gmpi::PinDatatype::Int64) && !p.info->enum_list.empty())
 	{
-		if(p.id == gmpiId)
-		{
-			returnInfo.flags = Steinberg::Vst::ParameterInfo::kCanAutomate;
-			returnInfo.defaultNormalizedValue = 0.0;
-
-			auto temp = JmUnicodeConversions::ToUtf16(p.name);
-
-			_tstrncpy(returnInfo.shortTitle, (const TChar*)temp.c_str(), static_cast<Steinberg::uint32>(std::size(returnInfo.shortTitle)));
-			_tstrncpy(returnInfo.title     , (const TChar*)temp.c_str(), static_cast<Steinberg::uint32>(std::size(returnInfo.title)));
-
-			returnInfo.id = paramIndex;// p.getNativeTag();
-			returnInfo.unitId = kRootUnitId;
-			returnInfo.stepCount = 0;
-			returnInfo.units[0] = 0;
-
-			if ((p.datatype == gmpi::PinDatatype::Int32 || p.datatype == gmpi::PinDatatype::Int64) && !p.enum_list.empty())
-			{
-				returnInfo.flags |= Steinberg::Vst::ParameterInfo::kIsList;
-				it_enum_list it( Utf8ToWstring(p.enum_list) );
-				returnInfo.stepCount = (std::max)(0, it.size() - 1);
-			}
-
-			// Support for VSTs special bypass parameter. Make a bool param called "BYPASS" 
-			if (/*p.datatype_ == gmpi::PinDatatype::Bool &&*/ p.hostConnect == gmpi::hosting::HostControls::ProcessBypass) // >name_ == "BYPASS")
-			{
-				returnInfo.flags |= Steinberg::Vst::ParameterInfo::kIsBypass;
-			}
-
-			return kResultOk;
-			break;
-		}
+		returnInfo.flags |= Steinberg::Vst::ParameterInfo::kIsList;
+		it_enum_list it( Utf8ToWstring(p.info->enum_list) );
+		returnInfo.stepCount = (std::max)(0, it.size() - 1);
 	}
 
-	return kInvalidArgument;
+	// Support for VSTs special bypass parameter. Make a bool param called "BYPASS" 
+	if (/*p.datatype_ == gmpi::PinDatatype::Bool &&*/ p.info->hostConnect == gmpi::hosting::HostControls::ProcessBypass) // >name_ == "BYPASS")
+	{
+		returnInfo.flags |= Steinberg::Vst::ParameterInfo::kIsBypass;
+	}
+
+	return kResultOk;
 }
 
 tresult PLUGIN_API VST3Controller::getParamStringByValue(ParamID tag, ParamValue valueNormalized, String128 string)
@@ -533,7 +542,7 @@ tresult PLUGIN_API VST3Controller::getParamStringByValue(ParamID tag, ParamValue
 	if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
 		return 0.0;
 
-	const auto& p = gmpiController.patchManager.parameters[nativeParams[tag]];
+	const auto& p = *nativeParams[tag];
 
 	const auto valueString = std::to_wstring(p.normalized2Real(valueNormalized));
 	const auto s_UTF16 = JmUnicodeConversions::ToUtf16(valueString);
