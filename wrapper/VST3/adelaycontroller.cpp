@@ -509,11 +509,10 @@ tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& return
 	returnInfo.stepCount = 0;
 	returnInfo.units[0] = 0;
 
-	if ((p.info->datatype == gmpi::PinDatatype::Int32 || p.info->datatype == gmpi::PinDatatype::Int64) && !p.info->enum_list.empty())
+	if ((p.info->datatype == gmpi::PinDatatype::Int32 || p.info->datatype == gmpi::PinDatatype::Int64) && !p.info->enum_entries.empty())
 	{
 		returnInfo.flags |= Steinberg::Vst::ParameterInfo::kIsList;
-		it_enum_list it( Utf8ToWstring(p.info->enum_list) );
-		returnInfo.stepCount = (std::max)(0, it.size() - 1);
+		returnInfo.stepCount = p.info->enum_entries.size() - 1;
 	}
 
 	// Support for VSTs special bypass parameter. Make a bool param called "BYPASS" 
@@ -531,6 +530,15 @@ tresult PLUGIN_API VST3Controller::getParamStringByValue(ParamID tag, ParamValue
 		return 0.0;
 
 	const auto& p = *gmpiController.nativeParams[tag];
+
+	// enums
+	if ((p.info->datatype == gmpi::PinDatatype::Int32 || p.info->datatype == gmpi::PinDatatype::Int64) && !p.info->enum_entries.empty())
+	{
+		const int index = std::clamp(static_cast<int>(std::round(p.normalized2Real(valueNormalized))), 0, static_cast<int>(p.info->enum_entries.size()) - 1);
+		auto s = JmUnicodeConversions::ToUtf16(p.info->enum_entries[index].name);
+		strncpy16(string, (const TChar*)s.c_str(), 128);
+		return kResultOk;
+	}
 
 	const auto valueString = std::to_wstring(p.normalized2Real(valueNormalized));
 	const auto s_UTF16 = JmUnicodeConversions::ToUtf16(valueString);

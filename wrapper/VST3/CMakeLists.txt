@@ -21,6 +21,7 @@ endif()
 # ${ADAPTORS_COMMON_FOLDER}/Controller.cpp
 
 set(srcs
+${gmpi_sdk_folder}/Hosting/parse_enum.h
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
 ${gmpi_sdk_folder}/Hosting/controller_holder.h
