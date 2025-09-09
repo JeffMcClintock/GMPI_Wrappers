@@ -1490,7 +1490,7 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(
 OSStatus SEInstrumentBase::SaveState(CFPropertyListRef* outData)
 {
 	auto result = AUBase::SaveState(outData);
-/*
+
 	if (result == noErr)
 	{
 		auto dict = (CFMutableDictionaryRef)*outData;
@@ -1500,13 +1500,14 @@ OSStatus SEInstrumentBase::SaveState(CFPropertyListRef* outData)
         
 //		std::string chunk;
 //		processor.getPresetState(chunk, true);
+		const auto chunk = gmpiController.getPreset();
 
 		CFStringRef s = CFStringCreateWithCString(NULL, chunk.c_str(), kCFStringEncodingUTF8);
 		CFDictionaryAddValue(dict, CFSTR("SEPRESET"), s);
 
 		CFRelease(s);
 	}
-*/
+
 	return result;
 }
 
@@ -1558,6 +1559,8 @@ OSStatus SEInstrumentBase::RestoreState(CFPropertyListRef plist)
 
 // moved		setPresetFromDaw(chunk, false);
 //        stateMgr.setPresetFromXml(chunk);
+
+		gmpiController.setPresetXmlFromDaw(chunk);
 	}
 	//    std::cout << "SEInstrumentBase::RestoreState() - END" << std::endl;
 
