@@ -77,7 +77,6 @@ void Safe Messagebox(
 {
 	_RPTW1(0, L"%s\n", lpText);
 }
-#endif
 
 MpParameterVst3::MpParameterVst3(VST3Controller* controller, /*int strictIndex, */int ParameterTag, bool isInverted) :
 	MpParameter_native({}),//controller),
@@ -103,6 +102,7 @@ void MpParameterVst3::updateProcessor(gmpi::Field fieldId, int32_t voice)
 		break;
 	}
 }
+#endif
 
 
 VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
@@ -216,6 +216,7 @@ void VST3Controller::ParamGrabbed(MpParameter_native* param)
 }
 #endif
 
+#if 0
 void VST3Controller::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice)
 {
 	const auto paramID = param->getNativeTag();
@@ -230,7 +231,6 @@ void VST3Controller::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voi
 	if (!param->isGrabbed())
 		endEdit(paramID);
 }
-#if 0
 
 void VST3Controller::ResetProcessor()
 {
