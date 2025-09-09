@@ -1129,7 +1129,8 @@ int heyLinkerDontDiscardAudioUnitView_mm();
 //	Filter::GetProperty
 //
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
+OSStatus SEInstrumentBase::GetProperty(
+    AudioUnitPropertyID 		inID,
 	AudioUnitScope 				inScope,
 	AudioUnitElement			inElement,
 	void* outData)
@@ -1213,10 +1214,10 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 
 			if (auto vfs = (AudioUnitParameterValueFromString*)outData)
 			{
-                if(inID < 0 || inID >= gmpiController.nativeParams.size())
+                if(vfs->inParamID < 0 || vfs->inParamID >= gmpiController.nativeParams.size())
                     return kAudioUnitErr_InvalidParameter;
                 
-                auto p = gmpiController.nativeParams[inID];
+                auto p = gmpiController.nativeParams[vfs->inParamID];
 
 //				auto p = getDawParameter(inID);
 //				if (!p)
@@ -1246,7 +1247,8 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 
 			return AUBase::GetProperty(inID, inScope, inElement, outData);
 		}
-
+        break;
+                
 		case kAudioUnitProperty_ParameterStringFromValue:
 		{
 			if (inScope != kAudioUnitScope_Global)
@@ -1254,10 +1256,10 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 
 			if (auto pv = (AudioUnitParameterStringFromValue*)outData)
 			{
-                if(inID < 0 || inID >= gmpiController.nativeParams.size())
+                if(pv->inParamID < 0 || pv->inParamID >= gmpiController.nativeParams.size())
                     return kAudioUnitErr_InvalidParameter;
                 
-                auto p = gmpiController.nativeParams[inID];
+                auto p = gmpiController.nativeParams[pv->inParamID];
 
                 const auto enum_list = wrapper::Utf8ToWstring(p->info->enum_list);
 
@@ -1279,7 +1281,8 @@ OSStatus SEInstrumentBase::GetProperty(AudioUnitPropertyID 		inID,
 
 			return noErr;
 		}
-
+        break;
+                
 		case kAudioUnitProperty_OfflineRender:
 			*(UInt32*)outData = offLineRenderMode;
 			return noErr;
@@ -1372,7 +1375,8 @@ OSStatus SEInstrumentBase::SetProperty(AudioUnitPropertyID             inID,
 	return AUBase::SetProperty(inID, inScope, inElement, inData, inDataSize);
 }
 
-OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
+OSStatus SEInstrumentBase::GetParameterInfo(
+    AudioUnitScope					inScope,
 	AudioUnitParameterID			inParameterID,
 	AudioUnitParameterInfo& outParameterInfo)
 {
@@ -1382,7 +1386,6 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 	if (inParameterID < 0 || inParameterID >= static_cast<int>(gmpiController.nativeParams.size()))
 		return kAudioUnitErr_InvalidParameter;
 
-//	auto p = getDawParameter(inParameterID);
 	const auto& p = *gmpiController.nativeParams[inParameterID];
 
 	outParameterInfo.name[0] = 0;
@@ -1414,7 +1417,7 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 		outParameterInfo.unit = kAudioUnitParameterUnit_Generic;
 	}
 
-//	outParameterInfo.defaultValue = p->normalisedToReal(p->convertNormalized(p->getNormalized()));
+    outParameterInfo.defaultValue = p.info->default_value;
 
 	outParameterInfo.clumpID = 0;
 
@@ -1423,12 +1426,11 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 
 	outParameterInfo.cfNameString = CFStringCreateWithCString(NULL, name_utf8.c_str(), kCFStringEncodingUTF8);
 
-	//    std::cout << "GetParameterInfo() " << outParameterInfo.minValue << " - " << outParameterInfo.maxValue;
-
 	return noErr;
 }
 
-OSStatus SEInstrumentBase::GetParameterValueStrings(AudioUnitScope          inScope,
+OSStatus SEInstrumentBase::GetParameterValueStrings(
+    AudioUnitScope          inScope,
 	AudioUnitParameterID    inParameterID,
 	CFArrayRef* outStrings)
 {
@@ -1438,9 +1440,6 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(AudioUnitScope          inSc
 	if (inParameterID < 0 || inParameterID >= static_cast<int>(gmpiController.nativeParams.size()))
 		return kAudioUnitErr_InvalidParameter;
 
-	//auto p = getDawParameter(inParameterID);
-	//if (!p)
-	//	return kAudioUnitErr_InvalidParameter;
 	const auto& p = *gmpiController.nativeParams[inParameterID];
 
 	const auto enumList = wrapper::Utf8ToWstring(p.info->enum_list);
