@@ -136,8 +136,17 @@ VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
 
 	gmpiController.init(pinfo);
 
-	// create a list of native params.
+	// create a list of native params. the idex must line up strictly with the parameter DAW tag
 	{
+        for(auto& paramInfo : pinfo.parameters)
+        {
+            if (paramInfo.dawTag > -1)
+            {
+               assert(paramInfo.dawTag == nativeParams.size());
+               nativeParams.push_back(&gmpiController.patchManager.parameters[paramInfo.id]);
+            }
+        }
+ /*
 		int nativeTag{};
 		for (auto& [id, param] : gmpiController.patchManager.parameters)
 		{
@@ -147,6 +156,7 @@ VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
 				nativeParams.push_back(&param);
 			}
 		}
+  */
 	}
 }
 
