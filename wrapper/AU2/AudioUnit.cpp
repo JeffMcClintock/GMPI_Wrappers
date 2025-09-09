@@ -680,6 +680,8 @@ OSStatus SEInstrumentBase::GetParameter(
 	// need to set normalised value on parameter (that does not affect actual value).
 	if (inScope == kAudioUnitScope_Global)
 	{
+        assert(inID >= 0 && inID < gmpiController.nativeParams.size());
+        
         if(inID < 0 || inID >= gmpiController.nativeParams.size())
             return kAudioUnitErr_InvalidParameter;
         
@@ -696,6 +698,8 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 	const AudioTimeStamp& inTimeStamp,
 	UInt32 inNumberFrames)
 {
+    return noErr;
+    
 	auto& plugin_ = plugin.processor;
 	auto& events = plugin.events;
 
