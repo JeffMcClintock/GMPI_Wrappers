@@ -9,10 +9,11 @@
 #include <pluginterfaces/vst/ivstunits.h>
 #include <pluginterfaces/vst/ivstnoteexpression.h>
 #include <pluginterfaces/vst/ivstphysicalui.h>
-#include "wrapper/common/Controller.h"
-#include "wrapper/common/MpParameter.h"
+//#include "wrapper/common/Controller.h"
+//#include "wrapper/common/MpParameter.h"
 #include "wrapper/common/conversion.h"
 #include "Hosting/controller_holder.h"
+#include "helpers/Timer.h"
 
 namespace wrapper {
 	class VST3Controller;
@@ -26,6 +27,7 @@ struct nativeParamInfo
 	int gmpi_id{};
 };
 
+#if 0
 class MpParameterVst3 : public MpParameter_native
 {
 	wrapper::VST3Controller* vst3Controller = {};
@@ -50,6 +52,7 @@ public:
 
 	bool isInverted_ = false;
 };
+#endif
 
 class StagingMemoryBuffer : public gmpi::hosting::IWriteableQue
 {
@@ -178,7 +181,7 @@ public:
 		return &queueToDsp_;
 	}
 
-	void ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice = 0);
+//	void ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice = 0);
 
 	//MpParameterVst3* getDawParameter(int nativeTag)
 	//{

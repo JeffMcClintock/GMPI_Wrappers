@@ -274,7 +274,7 @@ void MpController::Initialize()
 			}
 
 			// add one patch value
-			seParameter->rawValues_.push_back(ParseToRaw(seParameter->datatype_, param.default_value));
+// TODO			seParameter->rawValues_.push_back(ParseToRaw(seParameter->datatype_, param.default_value));
 
 			parameters_.push_back(std::unique_ptr<MpParameter>(seParameter));
 			ParameterHandleIndex.insert(std::make_pair(ParameterHandle, seParameter));

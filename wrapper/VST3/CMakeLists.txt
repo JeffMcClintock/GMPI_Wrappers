@@ -17,7 +17,8 @@ endif()
 
 # ${ADAPTORS_COMMON_FOLDER}/HostControls.h
 # ${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
-
+# ${ADAPTORS_COMMON_FOLDER}/Controller.h
+# ${ADAPTORS_COMMON_FOLDER}/Controller.cpp
 
 set(srcs
 ${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
@@ -51,8 +52,6 @@ ${ADAPTORS_COMMON_FOLDER}/MpParameter.cpp
 ${ADAPTORS_COMMON_FOLDER}/GmpiResourceManager.h
 ${ADAPTORS_COMMON_FOLDER}/GmpiResourceManager.cpp
 ${ADAPTORS_COMMON_FOLDER}/platform_plugin.cpp
-${ADAPTORS_COMMON_FOLDER}/Controller.h
-${ADAPTORS_COMMON_FOLDER}/Controller.cpp
 ${ADAPTORS_COMMON_FOLDER}/MyTypeTraits.h
 ${ADAPTORS_COMMON_FOLDER}/MyTypeTraits.cpp
 ${ADAPTORS_COMMON_FOLDER}/RawConversions.h
