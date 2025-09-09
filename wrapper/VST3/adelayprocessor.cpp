@@ -225,11 +225,8 @@ SeProcessor::SeProcessor (gmpi::hosting::pluginInfo& pinfo)
 		q.quantized = 255;
 		q.unquantized = -1.f;
 	}
-
-	// init PatchManager parameters
-	plugin.patchManager.init(info);
-
-	//TODO	synthEditProject.connectPeer(this);
+    
+    plugin.init(info);
 }
 
 SeProcessor::~SeProcessor ()

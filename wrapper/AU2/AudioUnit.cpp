@@ -128,8 +128,41 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 {
 	parameterChanges[0].reserve(200);
 	parameterChanges[1].reserve(200);
+    
+    gmpiController.notifyDaw = [this](gmpi::hosting::GmpiParameter const* param)
+        {
+            assert(param->info->dawTag != -1); // should never be called for non-native param.
+
+            const auto paramID = param->info->dawTag;
+
+            // Usually parameter will have sent beginEdit() already (if it has mouse-down connected properly, else fake it.
+//            if (!param->isGrabbed)
+ //               beginEdit(paramID);
+
+            //   _RPT2(0, "param[%d] %f => DAW\n", paramID, param->getNormalized());
+            //performEdit(paramID, param->normalisedValue()); // Send the value to DSP.
+            
+            // we pass the parameter listener to *prevent* notifying the GUI via SEInstrumentBase::ParameterListener(). otherwise we get jittery controls.
+            AudioUnitParameter nativeParameter;
+            nativeParameter.mAudioUnit = GetComponentInstance();
+            nativeParameter.mParameterID = paramID;
+            nativeParameter.mScope = kAudioUnitScope_Global;
+            nativeParameter.mElement = 0;
+            
+            AUParameterSet(
+                mParameterListener,
+                NULL, //AUcontroller->GetComponentInstance(), //this, //NULL,
+                &nativeParameter,
+                param->valueReal,
+                0
+            );
+
+ //           if (!param->isGrabbed)
+  //              endEdit(paramID);
+        };
 
 	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
+    plugin.init(info);
 	gmpiController.init(info);
 
 //	memset(&timeInfo, 0, sizeof(timeInfo));
@@ -163,8 +196,6 @@ void SEInstrumentBase::PostConstructor()
 	// Determine number of inputs and outputs here.
 	{
         auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
-
-		plugin.patchManager.init(info);
 
         inputCount  = countPins(info, gmpi::PinDirection::In , gmpi::PinDatatype::Audio);
         outputCount = countPins(info, gmpi::PinDirection::Out, gmpi::PinDatatype::Audio);
@@ -471,17 +502,6 @@ void SEInstrumentBase::reInitialize()
 	if (!processorIsInitialized)
 		return;
 
-#if 0
-	processor.prepareToPlay(
-		this,
-		timeInfo.sampleRate,
-		kAUDefaultMaxFramesPerSlice,
-		0 == offLineRenderMode
-	);
-
-	wantsMidi = processor.wantsMidi();
-#endif
-
 	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
 
 	plugin.start_processor(this, info);
@@ -504,11 +524,11 @@ void SEInstrumentBase::ParameterListener(void* inCallbackRefCon, void* inObject,
         
         auto p = au->gmpiController.nativeParams[dawTag];
         
-        if (auto p2 = au->gmpiController.patchManager.setParameterNormalised(p->info->id, inParameterValue); p2) // todo avoid lookup when we already have pointer to parameter
+        if (auto p2 = au->gmpiController.patchManager.setParameterReal(p->info->id, inParameterValue); p2) // todo avoid lookup when we already have pointer to parameter
         {
             au->gmpiController.notifyGui(p2);
         }
-#if 0
+#if 1
 //		if (auto p = au->getDawParameter(inEvent->mArgument.mParameter.mParameterID); p)
 		{
 #ifdef _DEBUG
@@ -622,10 +642,12 @@ OSStatus SEInstrumentBase::SetParameter(
     
     auto p = gmpiController.nativeParams[inID];
     
-    if (auto p2 = gmpiController.patchManager.setParameterNormalised(p->info->id, inValue); p2) // todo avoid lookup when we already have pointer to parameter
-    {
-        gmpiController.notifyGui(p2);
-    }
+    plugin.setParameterNormalizedFromDaw(
+         *plugin.info
+        , inBufferOffsetInFrames
+        , p->info->id
+        , gmpiController.nativeParams[inID]->real2Normalized(inValue)
+        );
     
 //	if (auto p = getDawParameter(inID); p)
 	{
@@ -661,18 +683,10 @@ OSStatus SEInstrumentBase::GetParameter(
         if(inID < 0 || inID >= gmpiController.nativeParams.size())
             return kAudioUnitErr_InvalidParameter;
         
-        auto p = gmpiController.nativeParams[inID];
+        auto p = plugin.nativeParams[inID];
 
-        outValue = p->normalisedValue();
-        
-//		if (auto p = getDawParameter(inID); p)
-		{
-//			outValue = p->getValueImmediate();
-#if 0 //def _DEBUG
-			std::cerr << "GetParameter(" << inID << ", " << outValue << ")" << std::endl;
-#endif
-			return noErr;
-		}
+        outValue = p->valueReal;
+        return noErr;
 	}
 
 	return kAudioUnitErr_InvalidScope;
@@ -1495,15 +1509,15 @@ OSStatus SEInstrumentBase::SaveState(CFPropertyListRef* outData)
 	{
 		auto dict = (CFMutableDictionaryRef)*outData;
 
-        assert(std::this_thread::get_id() == mainThreadID );
-        const auto chunk = getPreset()->toString(wrapper::BundleInfo::instance()->getPluginId());
-        
+// seems not (sawdemo)        assert(std::this_thread::get_id() == mainThreadID );
+//        const auto chunk = getPreset()->toString(wrapper::BundleInfo::instance()->getPluginId());
+
 //		std::string chunk;
 //		processor.getPresetState(chunk, true);
 		const auto chunk = gmpiController.getPreset();
 
 		CFStringRef s = CFStringCreateWithCString(NULL, chunk.c_str(), kCFStringEncodingUTF8);
-		CFDictionaryAddValue(dict, CFSTR("SEPRESET"), s);
+		CFDictionaryAddValue(dict, CFSTR("GMPIPRESET"), s);
 
 		CFRelease(s);
 	}
@@ -1537,7 +1551,7 @@ OSStatus SEInstrumentBase::RestoreState(CFPropertyListRef plist)
 	{
 		auto dict = (CFMutableDictionaryRef)plist;
 
-		auto s = reinterpret_cast<CFStringRef>(CFDictionaryGetValue(dict, CFSTR("SEPRESET")));
+		auto s = reinterpret_cast<CFStringRef>(CFDictionaryGetValue(dict, CFSTR("GMPIPRESET")));
 		if (s == NULL)
 			return kAudioUnitErr_InvalidPropertyValue;
 
