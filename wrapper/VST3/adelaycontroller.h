@@ -113,8 +113,6 @@ class VST3Controller :
 
 public:
 	gmpi::hosting::gmpi_controller_holder gmpiController;
-	//   DAW tag, GMPI ID
-	std::vector<gmpi::hosting::GmpiParameter*> nativeParams;
 
 	VST3Controller(gmpi::hosting::pluginInfo& pinfo);
 	~VST3Controller();
@@ -298,16 +296,16 @@ public:
 	// Parameter overrides.
 	Steinberg::int32 PLUGIN_API getParameterCount() override
 	{
-		return static_cast<Steinberg::int32>(nativeParams.size());
+		return static_cast<Steinberg::int32>(gmpiController.nativeParams.size());
 	}
 	Steinberg::tresult PLUGIN_API getParameterInfo(Steinberg::int32 paramIndex, Steinberg::Vst::ParameterInfo& info) override;
 	Steinberg::tresult PLUGIN_API getParamStringByValue(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized, Steinberg::Vst::String128 string) override;
 	Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized) override
 	{
-		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
 			return Steinberg::kInvalidArgument;
 
-		const auto& p = *nativeParams[tag];
+		const auto& p = *gmpiController.nativeParams[tag];
 
 		auto valueString = ToWstring(string);
 
@@ -320,28 +318,28 @@ public:
 	}
 	Steinberg::Vst::ParamValue PLUGIN_API normalizedParamToPlain(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override
 	{
-		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
 			return 0.0;
 
-		const auto& p = *nativeParams[tag];
+		const auto& p = *gmpiController.nativeParams[tag];
 
 		return p.normalized2Real(valueNormalized);
 	}
 	Steinberg::Vst::ParamValue PLUGIN_API plainParamToNormalized(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue plainValue) override
 	{
-		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
 			return 0.0;
 
-		const auto& p = *nativeParams[tag];
+		const auto& p = *gmpiController.nativeParams[tag];
 
 		return p.real2Normalized(plainValue);
 	}
 	Steinberg::Vst::ParamValue PLUGIN_API getParamNormalized(Steinberg::Vst::ParamID tag) override
 	{
-		if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
 			return Steinberg::kInvalidArgument;
 
-		const auto& p = *nativeParams[tag];
+		const auto& p = *gmpiController.nativeParams[tag];
 
 		return p.normalisedValue();
 	}

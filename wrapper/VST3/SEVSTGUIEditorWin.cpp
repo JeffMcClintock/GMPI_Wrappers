@@ -73,7 +73,11 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::attached (void* parent, Steinbe
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::removed ()
 {
 //    onCloseNativeView(nsView);
-    
+    if (pluginParameters_GMPI)
+    {
+        controller->gmpiController.unRegisterGui(pluginParameters_GMPI.get());
+    }
+
 	return Steinberg::kResultTrue;
 }
 

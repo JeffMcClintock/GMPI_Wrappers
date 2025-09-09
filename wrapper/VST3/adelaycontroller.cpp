@@ -135,29 +135,6 @@ VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
 		};
 
 	gmpiController.init(pinfo);
-
-	// create a list of native params. the idex must line up strictly with the parameter DAW tag
-	{
-        for(auto& paramInfo : pinfo.parameters)
-        {
-            if (paramInfo.dawTag > -1)
-            {
-               assert(paramInfo.dawTag == nativeParams.size());
-               nativeParams.push_back(&gmpiController.patchManager.parameters[paramInfo.id]);
-            }
-        }
- /*
-		int nativeTag{};
-		for (auto& [id, param] : gmpiController.patchManager.parameters)
-		{
-			if (param.info->dawTag > -1)
-			{
-				assert(param.info->dawTag == nativeParams.size());
-				nativeParams.push_back(&param);
-			}
-		}
-  */
-	}
 }
 
 VST3Controller::~VST3Controller()
@@ -495,7 +472,7 @@ tresult VST3Controller::setParamNormalized( ParamID tag, ParamValue value )
 {
 //	_RPT2(_CRT_WARN, "setParamNormalized(%d, %f)\n", tag, value);
 
-	if (auto p = gmpiController.patchManager.setParameterNormalised(nativeParams[tag]->info->id, value); p) // todo avoid lookup when we already have pointer to parameter
+	if (auto p = gmpiController.patchManager.setParameterNormalised(gmpiController.nativeParams[tag]->info->id, value); p) // todo avoid lookup when we already have pointer to parameter
 	{
 		gmpiController.notifyGui(p);
 	}
@@ -513,10 +490,10 @@ void VST3Controller::OnLatencyChanged()
 
 tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& returnInfo)
 {
-	if( paramIndex < 0 || paramIndex >= static_cast<int>(nativeParams.size()))
+	if( paramIndex < 0 || paramIndex >= static_cast<int>(gmpiController.nativeParams.size()))
 		return kInvalidArgument;
 
-	const auto& p = *nativeParams[paramIndex];
+	const auto& p = *gmpiController.nativeParams[paramIndex];
 
 	returnInfo.flags = Steinberg::Vst::ParameterInfo::kCanAutomate;
 	returnInfo.defaultNormalizedValue = 0.0;
@@ -549,10 +526,10 @@ tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& return
 
 tresult PLUGIN_API VST3Controller::getParamStringByValue(ParamID tag, ParamValue valueNormalized, String128 string)
 {
-	if (tag < 0 || tag >= static_cast<int>(nativeParams.size()))
+	if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
 		return 0.0;
 
-	const auto& p = *nativeParams[tag];
+	const auto& p = *gmpiController.nativeParams[tag];
 
 	const auto valueString = std::to_wstring(p.normalized2Real(valueNormalized));
 	const auto s_UTF16 = JmUnicodeConversions::ToUtf16(valueString);

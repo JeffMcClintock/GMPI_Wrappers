@@ -1341,9 +1341,11 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 	if (inScope != kAudioUnitScope_Global)
 		return kAudioUnitErr_InvalidScope;
 
-	auto p = getDawParameter(inParameterID);
-	if (!p)
+	if (inParameterID < 0 || inParameterID >= static_cast<int>(gmpiController.nativeParams.size()))
 		return kAudioUnitErr_InvalidParameter;
+
+//	auto p = getDawParameter(inParameterID);
+	const auto& p = *gmpiController.nativeParams[paramIndex];
 
 	outParameterInfo.name[0] = 0;
 	outParameterInfo.flags =
@@ -1353,7 +1355,7 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 		| kAudioUnitParameterFlag_HasCFNameString
 		| kAudioUnitParameterFlag_CFNameRelease;
 
-	const auto enumList = p->enumList_;
+	const auto enumList = p.enumList;
 
 	if (!enumList.empty())
 	{
@@ -1379,7 +1381,7 @@ OSStatus SEInstrumentBase::GetParameterInfo(AudioUnitScope					inScope,
 
 	outParameterInfo.clumpID = 0;
 
-    auto name_utf8 = p->name_;
+    auto name_utf8 = p->name;
 	strlcpy(outParameterInfo.name, name_utf8.c_str(), sizeof(outParameterInfo.name));
 
 	outParameterInfo.cfNameString = CFStringCreateWithCString(NULL, name_utf8.c_str(), kCFStringEncodingUTF8);
@@ -1396,11 +1398,15 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(AudioUnitScope          inSc
 	if (inScope != kAudioUnitScope_Global)
 		return kAudioUnitErr_InvalidScope;
 
-	auto p = getDawParameter(inParameterID);
-	if (!p)
+	if (inParameterID < 0 || inParameterID >= static_cast<int>(gmpiController.nativeParams.size()))
 		return kAudioUnitErr_InvalidParameter;
 
-	const auto enumList = p->enumList_;
+	//auto p = getDawParameter(inParameterID);
+	//if (!p)
+	//	return kAudioUnitErr_InvalidParameter;
+	const auto& p = *gmpiController.nativeParams[paramIndex];
+
+	const auto enumList = p.enumList;
 
 	if (enumList.empty())
 		return kAudioUnitErr_InvalidParameter;
