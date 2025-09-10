@@ -1,3 +1,4 @@
+#include <iostream>
 #include "AU2_Wrapper.h"
 #include "wrapper/common/BundleInfo.h"
 #include "Hosting/xml_spec_reader.h"
@@ -28,6 +29,7 @@ extern void initialise_synthedit_extra_modules(bool passFalse)
 	// here to satisfy linker
 }
 
+#if 0
 MpParameterAU::MpParameterAU(AU2_Wrapper* controller, AudioUnitParameter nativeParameter, bool isinverted) :
 MpParameter_native({})//controller)
 	, AUcontroller(controller)
@@ -84,6 +86,7 @@ void MpParameterAU::updateProcessor(gmpi::Field fieldId, int32_t voice)
             break;
     }
 }
+#endif
 
 AU2_Wrapper::AU2_Wrapper(AudioComponentInstance inInstance)
 	: AUBase(inInstance, 0, 0, 1),

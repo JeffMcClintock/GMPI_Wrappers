@@ -9,8 +9,6 @@
 #include <pluginterfaces/vst/ivstunits.h>
 #include <pluginterfaces/vst/ivstnoteexpression.h>
 #include <pluginterfaces/vst/ivstphysicalui.h>
-//#include "wrapper/common/Controller.h"
-//#include "wrapper/common/MpParameter.h"
 #include "wrapper/common/conversion.h"
 #include "Hosting/controller_holder.h"
 #include "helpers/Timer.h"
@@ -30,11 +28,11 @@ struct nativeParamInfo
 #if 0
 class MpParameterVst3 : public MpParameter_native
 {
-	wrapper::VST3Controller* vst3Controller = {};
+	wrapper::Controller_VST3* vst3Controller = {};
 	int hostTag = -1;	// index as set in SE, not nesc sequential.
 
 public:
-	MpParameterVst3(wrapper::VST3Controller* controller, int ParameterTag, bool isInverted);
+	MpParameterVst3(wrapper::Controller_VST3* controller, int ParameterTag, bool isInverted);
 	
 	int getNativeTag() override { return hostTag; }
 

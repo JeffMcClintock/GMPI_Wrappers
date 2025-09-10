@@ -8,12 +8,12 @@
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioUnitUtilities.h>
 #include "AudioUnitSDK/AUMIDIBase.h"
-#include "wrapper/common/MpParameter.h"
 #include "GmpiMidi.h"
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/processor_holder.h"
 #include "Hosting/message_queues.h"
 #include "Hosting/controller_holder.h"
+#include "helpers/Timer.h"
 
 #if 0
 #include "SynthRuntime.h"
@@ -164,7 +164,7 @@ struct parameterChange
 	AudioUnitParameterValue	Value;
 };
 
-#if 1
+#if 0
 class MpParameterAU : public wrapper::MpParameter_native
 {
 	bool isInverted = {};
@@ -336,7 +336,8 @@ public:
 		UInt32 /*inOffsetSampleFrame*/, const struct MIDIEventList* /*eventList*/) override;
 #endif
 
-    void ParamGrabbed(wrapper::MpParameter_native* param) 
+#if 0
+    void ParamGrabbed(wrapper::MpParameter_native* param)
 	{
  //       _RPT2(0,"ParamGrabbed(%d) %d\n", (int) param->isGrabbed(), param->getNativeTag());
 
@@ -359,6 +360,7 @@ public:
 
 		AUEventListenerNotify(mParameterListener, NULL, &e);
 	}
+#endif
     
 #if 0 // test, no improvement in Logic Pro touch automation, issues in Ableton with param not getting to DSP
     // notify DAW that parameter changed from the UI
@@ -496,7 +498,7 @@ protected:
     std::string loadNativePreset(std::wstring sourceFilename) ;
 //    std::vector< wrapper::MpController::presetInfo > scanFactoryPresets() override { return {}; }
 //	void loadFactoryPreset(int index, bool fromDaw) override {};
-    void onSetParameter(int32_t handle, int32_t field, RawView rawValue, int voiceId)  {}; // VST3 Only
+//    void onSetParameter(int32_t handle, int32_t field, RawView rawValue, int voiceId)  {}; // VST3 Only
     
     std::string getFactoryPresetXml(std::string filename)  {return {};} // JUCE-only?
     

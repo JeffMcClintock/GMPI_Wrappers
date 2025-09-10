@@ -61,10 +61,6 @@ ${ADAPTORS_COMMON_FOLDER}/FileFinder.h
 ${ADAPTORS_COMMON_FOLDER}/FileFinder.cpp
 ${ADAPTORS_COMMON_FOLDER}/FileWatcher.h
 ${ADAPTORS_COMMON_FOLDER}/FileWatcher.cpp
-${ADAPTORS_COMMON_FOLDER}/MpParameter.h
-${ADAPTORS_COMMON_FOLDER}/MpParameter.cpp
-${ADAPTORS_COMMON_FOLDER}/Controller.h
-${ADAPTORS_COMMON_FOLDER}/Controller.cpp
 
 ${gmpi_ui_folder}/backends/DrawingFrameCommon.h
 ${gmpi_ui_folder}/backends/DrawingFrameCommon.cpp

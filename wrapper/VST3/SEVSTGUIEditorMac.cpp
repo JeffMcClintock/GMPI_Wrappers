@@ -1,5 +1,5 @@
 #include "SEVSTGUIEditorMac.h"
-#include "adelaycontroller.h"
+#include "Controller_VST3.h"
 
 // without including objective-C headers, we need to create an CocoaView (NSView).
 // forward declare function here to return the view, using void* as return type.
@@ -10,7 +10,7 @@ void resizeNativeView(void* view, int width, int height);
 namespace wrapper
 {
 
-SEVSTGUIEditorMac::SEVSTGUIEditorMac(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, VST3Controller* pcontroller, int pwidth, int pheight) :
+SEVSTGUIEditorMac::SEVSTGUIEditorMac(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, Controller_VST3* pcontroller, int pwidth, int pheight) :
     VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
 }
