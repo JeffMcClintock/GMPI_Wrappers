@@ -722,7 +722,7 @@ int32 VST3Controller::getNoteExpressionCount(int32 busIndex, int16 channel)
     if (busIndex != 0 || channel != 0)
         return 0;
 
-	return 4;
+	return 1;
 }
 
 tresult VST3Controller::getNoteExpressionInfo (int32 busIndex, int16 channel, int32 noteExpressionIndex, NoteExpressionTypeInfo& info)
@@ -736,9 +736,10 @@ tresult VST3Controller::getNoteExpressionInfo (int32 busIndex, int16 channel, in
 	// might be better to support two generic types than volume and pan.
 	NoteExpressionTypeID typeIds[] =
 	{
-		kVolumeTypeID,
-		kPanTypeID,
+		//kVolumeTypeID,
+		//kPanTypeID,
 		kTuningTypeID,
+		kExpressionTypeID,
 		kBrightnessTypeID,
 	};
 
@@ -748,6 +749,7 @@ tresult VST3Controller::getNoteExpressionInfo (int32 busIndex, int16 channel, in
 	info.valueDesc.defaultValue = 0.5;
 	info.valueDesc.stepCount = 0; // we want continuous (no step)
 	info.unitId = -1;
+	info.associatedParameterId = -1;
 
 	switch (info.typeId)
 	{
@@ -791,7 +793,7 @@ tresult VST3Controller::getNoteExpressionInfo (int32 busIndex, int16 channel, in
 
 		// for Tuning the convert functions are : plain = 240 * (norm - 0.5); norm = plain / 240 + 0.5;
 		// we want to support only +/- one octave
-		constexpr double kNormTuningOneOctave = 0.5 * 24.0 / 120.0;
+		constexpr double kNormTuningOneOctave = 12.0 / 240.0;
 
 		info.valueDesc.minimum = 0.5 - kNormTuningOneOctave;
 		info.valueDesc.maximum = 0.5 + kNormTuningOneOctave;
@@ -802,6 +804,12 @@ tresult VST3Controller::getNoteExpressionInfo (int32 busIndex, int16 channel, in
 	case kBrightnessTypeID:
 		USTRING("Brightness").copyTo(info.title, 128);
 		USTRING("Brt").copyTo(info.shortTitle, 128);
+		info.flags = NoteExpressionTypeInfo::kIsAbsolute;
+		break;
+
+	case kExpressionTypeID:
+		USTRING("Expression").copyTo(info.title, 128);
+		USTRING("Exp").copyTo(info.shortTitle, 128);
 		info.flags = NoteExpressionTypeInfo::kIsAbsolute;
 		break;
 
@@ -921,9 +929,9 @@ tresult PLUGIN_API VST3Controller::getPhysicalUIMapping(int32 busIndex, int16 ch
 				list.map[i].noteExpressionTypeID = kBrightnessTypeID;
 				break;
 
-			//case kPUIPressure:
-			//	list.map[i].noteExpressionTypeID = ?;
-			//	break;
+			case kPUIPressure:
+				list.map[i].noteExpressionTypeID = kExpressionTypeID;
+				break;
 
 			default:
 				list.map[i].noteExpressionTypeID = kInvalidTypeID;
