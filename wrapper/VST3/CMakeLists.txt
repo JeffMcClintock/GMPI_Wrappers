@@ -105,7 +105,6 @@ set(vst_gui_minimal_srcs
 
 include_directories(
 ${VST3_SDK}
-${DSP_CORE}
 ${gmpi_sdk_folder}
 ${gmpi_sdk_folder}/Core
 ${gmpi_ui_folder}
