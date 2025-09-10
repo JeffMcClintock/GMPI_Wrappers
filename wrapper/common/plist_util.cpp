@@ -331,7 +331,7 @@ int main(int argc, char** argv)
     pluginPathStringRef, kCFURLPOSIXPathStyle, true);
     if(bundleUrl == NULL) {
         printf("Couldn't make URL reference for plugin\n");
-        return;
+        return 1;
     }
 
     // Open the bundle
@@ -341,7 +341,7 @@ int main(int argc, char** argv)
 
     if(dllHandle == 0) {
         printf("Couldn't create bundle reference\n");
-        return;
+        return 1;
     }
 #endif
 
