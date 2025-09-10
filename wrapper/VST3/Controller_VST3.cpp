@@ -146,7 +146,6 @@ Controller_VST3::~Controller_VST3()
 
 tresult PLUGIN_API Controller_VST3::connect(IConnectionPoint* other)
 {
-//	_RPT0(_CRT_WARN, "ADelayController::connect\n");
 	auto r = EditController::connect(other);
 
 	isConnected = true;
@@ -298,8 +297,6 @@ void Controller_VST3::initUi(gmpi::api::IParameterObserver* gui)
 //-----------------------------------------------------------------------------
 tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 {
-//	_RPT0(_CRT_WARN, "ADelayController::initialize\n");
-
 	UpdateHandler::instance();
 
 	tresult result = EditController::initialize (context);

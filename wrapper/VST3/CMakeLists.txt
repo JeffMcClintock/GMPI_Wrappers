@@ -78,8 +78,6 @@ ${gmpi_ui_folder}/helpers/Timer.h
 ${gmpi_ui_folder}/helpers/Timer.cpp
 )
 
-# adelay.def
-
 IF(WIN32)
 set(srcs ${srcs}
 SEVSTGUIEditorWin.h

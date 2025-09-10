@@ -1,5 +1,4 @@
-#ifndef __adelayprocessor__
-#define __adelayprocessor__
+#pragma once
 
 #include "public.sdk/source/vst/vstaudioeffect.h"
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
@@ -170,4 +169,3 @@ protected:
 
 }
 
-#endif
