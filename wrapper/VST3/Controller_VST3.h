@@ -1,5 +1,4 @@
-#ifndef __adelaycontroller__
-#define __adelaycontroller__
+#pragma once
 
 #include <map>
 #include <locale>
@@ -389,4 +388,4 @@ public:
 };
 
 }
-#endif
+
