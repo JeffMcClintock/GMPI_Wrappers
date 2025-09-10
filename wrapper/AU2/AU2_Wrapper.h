@@ -168,13 +168,13 @@ struct parameterChange
 class MpParameterAU : public wrapper::MpParameter_native
 {
 	bool isInverted = {};
-	class SEInstrumentBase* AUcontroller = {};
+	class AU2_Wrapper* AUcontroller = {};
 	AudioUnitParameter nativeParameter_;
 	std::atomic<float> dawFacingValueReal = {}; // cache latest update from Ableton, least Ableton queries it while it's queued.
 
 public:
 
-	MpParameterAU(class SEInstrumentBase* controller, AudioUnitParameter nativeParameter, bool isInverted);
+	MpParameterAU(class AU2_Wrapper* controller, AudioUnitParameter nativeParameter, bool isInverted);
 
     int getNativeTag() override
     {
@@ -220,9 +220,8 @@ public:
 #endif
 
 
-class SEInstrumentBase : public ausdk::AUBase, public ausdk::AUMIDIBase
+class AU2_Wrapper : public ausdk::AUBase, public ausdk::AUMIDIBase
 , public gmpi::api::IProcessorHost, public gmpi::TimerClient
-// public MpController, public IShellServices, public IProcessorMessageQues //, public IAuGui
 {
 	friend class MpParameterAU;
     static const int timerPeriodMs = 35;
@@ -280,8 +279,8 @@ protected:
 	bool onTimer() override;
 
 public:
-	SEInstrumentBase(AudioComponentInstance	inInstance);
-	virtual ~SEInstrumentBase();
+	AU2_Wrapper(AudioComponentInstance	inInstance);
+	virtual ~AU2_Wrapper();
 
 	// IShellServices
 	void onQueDataAvailable() {}

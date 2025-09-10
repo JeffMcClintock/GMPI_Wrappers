@@ -21,8 +21,8 @@ add_definitions(-DGMPI_VST3_WRAPPER)
 # ${ADAPTORS_COMMON_FOLDER}/SynthEditCocoaView.mm
 
 set(srcs
-AudioUnit.cpp
-AudioUnit.h
+AU2_Wrapper.cpp
+AU2_Wrapper.h
 
 AudioUnitView.mm
 

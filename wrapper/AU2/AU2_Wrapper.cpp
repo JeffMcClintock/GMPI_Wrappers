@@ -1,6 +1,5 @@
-#include "AudioUnit.h"
+#include "AU2_Wrapper.h"
 #include "wrapper/common/BundleInfo.h"
-//#include "wrapper/common/it_enum_list.h"
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/gmpi_factory.h"
 #include "GmpiSdkCommon.h"
@@ -29,7 +28,7 @@ extern void initialise_synthedit_extra_modules(bool passFalse)
 	// here to satisfy linker
 }
 
-MpParameterAU::MpParameterAU(SEInstrumentBase* controller, AudioUnitParameter nativeParameter, bool isinverted) :
+MpParameterAU::MpParameterAU(AU2_Wrapper* controller, AudioUnitParameter nativeParameter, bool isinverted) :
 MpParameter_native({})//controller)
 	, AUcontroller(controller)
 	, nativeParameter_(nativeParameter)
@@ -57,7 +56,7 @@ void MpParameterAU::updateProcessor(gmpi::Field fieldId, int32_t voice)
 #if 0
             AUcontroller->ParamChanged(this); // flaky in Ableton, SE UI wasn't updating DSP
 #else
-            // we pass the parameter listener to *prevent* notifying the GUI via SEInstrumentBase::ParameterListener(). otherwise we get jittery controls.
+            // we pass the parameter listener to *prevent* notifying the GUI via AU2_Wrapper::ParameterListener(). otherwise we get jittery controls.
             AUParameterSet(
                 AUcontroller->mParameterListener,
                 NULL, //AUcontroller->GetComponentInstance(), //this, //NULL,
@@ -86,7 +85,7 @@ void MpParameterAU::updateProcessor(gmpi::Field fieldId, int32_t voice)
     }
 }
 
-SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
+AU2_Wrapper::AU2_Wrapper(AudioComponentInstance inInstance)
 	: AUBase(inInstance, 0, 0, 1),
     AUMIDIBase(*static_cast<AUBase*>(this)),
 	mParameterListener(nullptr),
@@ -142,7 +141,7 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
             //   _RPT2(0, "param[%d] %f => DAW\n", paramID, param->getNormalized());
             //performEdit(paramID, param->normalisedValue()); // Send the value to DSP.
             
-            // we pass the parameter listener to *prevent* notifying the GUI via SEInstrumentBase::ParameterListener(). otherwise we get jittery controls.
+            // we pass the parameter listener to *prevent* notifying the GUI via AU2_Wrapper::ParameterListener(). otherwise we get jittery controls.
             AudioUnitParameter nativeParameter;
             nativeParameter.mAudioUnit = GetComponentInstance();
             nativeParameter.mParameterID = paramID;
@@ -170,14 +169,14 @@ SEInstrumentBase::SEInstrumentBase(AudioComponentInstance inInstance)
 //	processor.connectPeer(this);
 
 #if DEBUG_PRINT
-	printf("new SEInstrumentBase\n");
+	printf("new AU2_Wrapper\n");
 #endif
     
 //    fprintf(stderr, "AU WRAPPER CONSTRUCTOR!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 	SetWantsRenderThreadID(true);
 }
 
-void SEInstrumentBase::PostConstructor()
+void AU2_Wrapper::PostConstructor()
 {
 #ifdef _DEBUG
     mainThreadID = std::this_thread::get_id();
@@ -415,7 +414,7 @@ void SEInstrumentBase::PostConstructor()
 	startTimer(timerPeriodMs); // Service DSP Queue.
 }
 
-SEInstrumentBase::~SEInstrumentBase()
+AU2_Wrapper::~AU2_Wrapper()
 {
 	if (callbackOnUnloadPlugin)
 	{
@@ -432,16 +431,16 @@ SEInstrumentBase::~SEInstrumentBase()
 		}
 	}
 #if DEBUG_PRINT
-	printf("delete SEInstrumentBase\n");
+	printf("delete AU2_Wrapper\n");
 #endif
 }
 
-void SEInstrumentBase::CreateExtendedElements()
+void AU2_Wrapper::CreateExtendedElements()
 {
 	Parts().Initialize(this, kAudioUnitScope_Part, mInitNumPartEls);
 }
 
-AUScope* SEInstrumentBase::GetScopeExtended(AudioUnitScope inScope)
+AUScope* AU2_Wrapper::GetScopeExtended(AudioUnitScope inScope)
 {
 	if (inScope == kAudioUnitScope_Part)
 		return &mPartScope;
@@ -449,7 +448,7 @@ AUScope* SEInstrumentBase::GetScopeExtended(AudioUnitScope inScope)
 }
 
 // called on a background thread in Logic Pro
-OSStatus SEInstrumentBase::Initialize()
+OSStatus AU2_Wrapper::Initialize()
 {
 	/*
 	TO DO:
@@ -496,7 +495,7 @@ OSStatus SEInstrumentBase::Initialize()
 	return noErr;
 }
 
-void SEInstrumentBase::reInitialize()
+void AU2_Wrapper::reInitialize()
 {
 	// Reaper may trigger this too early. In which case no need to reinit (since we didn't init yet)
 	if (!processorIsInitialized)
@@ -511,11 +510,11 @@ void SEInstrumentBase::reInitialize()
 }
 
 // receive notifications of parameter updates from DAW only (not my own GUI)
-void SEInstrumentBase::ParameterListener(void* inCallbackRefCon, void* inObject, const AudioUnitEvent* inEvent, UInt64 inEventHostTime, Float32 inParameterValue)
+void AU2_Wrapper::ParameterListener(void* inCallbackRefCon, void* inObject, const AudioUnitEvent* inEvent, UInt64 inEventHostTime, Float32 inParameterValue)
 {
 	if (inEvent->mEventType == kAudioUnitEvent_ParameterValueChange)
 	{
-        auto au = (SEInstrumentBase*)inObject;
+        auto au = (AU2_Wrapper*)inObject;
 
         const auto dawTag = inEvent->mArgument.mParameter.mParameterID;
         
@@ -540,7 +539,7 @@ void SEInstrumentBase::ParameterListener(void* inCallbackRefCon, void* inObject,
 	}
 }
 
-bool SEInstrumentBase::onTimer()
+bool AU2_Wrapper::onTimer()
 {
 #if 0
     // avoid jitter when the user is moving a control
@@ -576,7 +575,7 @@ bool SEInstrumentBase::onTimer()
 
 #if 0
 // also provides updates on paramters that the GUi is changing
-void SEInstrumentBase::OnParameterUpdateFromDaw(int32_t tag, float value)
+void AU2_Wrapper::OnParameterUpdateFromDaw(int32_t tag, float value)
 {
 	if (auto p = getDawParameter(tag); p)
 	{
@@ -586,10 +585,10 @@ void SEInstrumentBase::OnParameterUpdateFromDaw(int32_t tag, float value)
 }
 #endif
 
-OSStatus SEInstrumentBase::Reset(AudioUnitScope inScope, AudioUnitElement inElement)
+OSStatus AU2_Wrapper::Reset(AudioUnitScope inScope, AudioUnitElement inElement)
 {
 #if DEBUG_PRINT
-	printf("SEInstrumentBase::Reset\n");
+	printf("AU2_Wrapper::Reset\n");
 #endif
 	if (inScope == kAudioUnitScope_Global)
 	{
@@ -601,7 +600,7 @@ OSStatus SEInstrumentBase::Reset(AudioUnitScope inScope, AudioUnitElement inElem
 	return AUBase::Reset(inScope, inElement);
 }
 
-void SEInstrumentBase::PerformEvents(const AudioTimeStamp& inTimeStamp)
+void AU2_Wrapper::PerformEvents(const AudioTimeStamp& inTimeStamp)
 {
 	std::lock_guard<std::mutex> guard(hostMidiLock);
 
@@ -634,7 +633,7 @@ void SEInstrumentBase::PerformEvents(const AudioTimeStamp& inTimeStamp)
 	parameterChanges[readingMidiEvents].clear();
 }
 
-OSStatus SEInstrumentBase::SetParameter(
+OSStatus AU2_Wrapper::SetParameter(
 	AudioUnitParameterID		inID,
 	AudioUnitScope 				inScope,
 	AudioUnitElement 			inElement,
@@ -674,7 +673,7 @@ OSStatus SEInstrumentBase::SetParameter(
 	return noErr;
 }
 
-OSStatus SEInstrumentBase::GetParameter(
+OSStatus AU2_Wrapper::GetParameter(
     AudioUnitParameterID	inID,
 	AudioUnitScope 			inScope,
 	AudioUnitElement 		inElement,
@@ -698,7 +697,7 @@ OSStatus SEInstrumentBase::GetParameter(
 	return kAudioUnitErr_InvalidScope;
 }
 
-OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
+OSStatus AU2_Wrapper::Render(AudioUnitRenderActionFlags& ioActionFlags,
 	const AudioTimeStamp& inTimeStamp,
 	UInt32 inNumberFrames)
 {
@@ -932,10 +931,10 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//	SEInstrumentBase::ValidFormat
+//	AU2_Wrapper::ValidFormat
 //
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-bool SEInstrumentBase::ValidFormat(AudioUnitScope					inScope,
+bool AU2_Wrapper::ValidFormat(AudioUnitScope					inScope,
 	AudioUnitElement				inElement,
 	const AudioStreamBasicDescription& inNewFormat)
 {
@@ -962,12 +961,12 @@ bool SEInstrumentBase::ValidFormat(AudioUnitScope					inScope,
     return isValid;
 }
 
-UInt32 SEInstrumentBase::SupportedNumChannels(const AUChannelInfo** outInfo)
+UInt32 AU2_Wrapper::SupportedNumChannels(const AUChannelInfo** outInfo)
 {
 	/* seems fine, returns e.g. [0, 18] note AuSampler returns [0, -18] to indicate any number of outputs upto 18
 
 	#ifdef _DEBUG
-		std::cerr << "SEInstrumentBase::SupportedNumChannels() -> ";
+		std::cerr << "AU2_Wrapper::SupportedNumChannels() -> ";
 		for(const auto& config : supportedChannels)
 		{
 			std::cerr << "[" << config.inChannels << ", " << config.outChannels << "] ";
@@ -981,14 +980,14 @@ UInt32 SEInstrumentBase::SupportedNumChannels(const AUChannelInfo** outInfo)
 	return static_cast<UInt32>(supportedChannels.size());
 }
 
-bool SEInstrumentBase::StreamFormatWritable(AudioUnitScope					scope,
+bool AU2_Wrapper::StreamFormatWritable(AudioUnitScope					scope,
 	AudioUnitElement				element)
 {
 	return IsInitialized() ? false : true;
 }
 
 #if 0
-OSStatus SEInstrumentBase::HandleMidiEvent(UInt8 status, UInt8 channel, UInt8 data1, UInt8 data2, UInt32 inStartFrame)
+OSStatus AU2_Wrapper::HandleMidiEvent(UInt8 status, UInt8 channel, UInt8 data1, UInt8 data2, UInt32 inStartFrame)
 {
 	if (!wantsMidi)
 	{
@@ -1007,7 +1006,7 @@ OSStatus SEInstrumentBase::HandleMidiEvent(UInt8 status, UInt8 channel, UInt8 da
 #endif
 
 #if 0
-OSStatus SEInstrumentBase::MIDIEvent(
+OSStatus AU2_Wrapper::MIDIEvent(
     UInt32 inStatus, UInt32 inData1, UInt32 inData2, UInt32 inOffsetSampleFrame)
 {
     const UInt32 strippedStatus = inStatus & 0xf0U; // NOLINT
@@ -1032,7 +1031,7 @@ OSStatus SEInstrumentBase::MIDIEvent(
 #endif
 
 #if AUSDK_HAVE_MIDI2
-OSStatus SEInstrumentBase::MIDIEventList(
+OSStatus AU2_Wrapper::MIDIEventList(
     UInt32 inOffsetSampleFrame, const struct MIDIEventList* eventList)
 {
     if (!wantsMidi)
@@ -1140,7 +1139,7 @@ OSStatus SEInstrumentBase::MIDIEventList(
 //	Filter::GetPropertyInfo
 //
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-OSStatus	SEInstrumentBase::GetPropertyInfo(AudioUnitPropertyID		inID,
+OSStatus	AU2_Wrapper::GetPropertyInfo(AudioUnitPropertyID		inID,
 	AudioUnitScope					inScope,
 	AudioUnitElement				inElement,
 	UInt32& outDataSize,
@@ -1216,7 +1215,7 @@ int heyLinkerDontDiscardAudioUnitView_mm();
 //	Filter::GetProperty
 //
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-OSStatus SEInstrumentBase::GetProperty(
+OSStatus AU2_Wrapper::GetProperty(
     AudioUnitPropertyID 		inID,
 	AudioUnitScope 				inScope,
 	AudioUnitElement			inElement,
@@ -1464,7 +1463,7 @@ OSStatus SEInstrumentBase::GetProperty(
 	return AUBase::GetProperty(inID, inScope, inElement, outData);
 }
 
-OSStatus SEInstrumentBase::SetProperty(AudioUnitPropertyID             inID,
+OSStatus AU2_Wrapper::SetProperty(AudioUnitPropertyID             inID,
 	AudioUnitScope                  inScope,
 	AudioUnitElement                inElement,
 	const void* inData,
@@ -1484,7 +1483,7 @@ OSStatus SEInstrumentBase::SetProperty(AudioUnitPropertyID             inID,
 	return AUBase::SetProperty(inID, inScope, inElement, inData, inDataSize);
 }
 
-OSStatus SEInstrumentBase::GetParameterInfo(
+OSStatus AU2_Wrapper::GetParameterInfo(
     AudioUnitScope					inScope,
 	AudioUnitParameterID			inParameterID,
 	AudioUnitParameterInfo& outParameterInfo)
@@ -1537,7 +1536,7 @@ OSStatus SEInstrumentBase::GetParameterInfo(
 	return noErr;
 }
 
-OSStatus SEInstrumentBase::GetParameterValueStrings(
+OSStatus AU2_Wrapper::GetParameterValueStrings(
     AudioUnitScope          inScope,
 	AudioUnitParameterID    inParameterID,
 	CFArrayRef* outStrings)
@@ -1607,7 +1606,7 @@ OSStatus SEInstrumentBase::GetParameterValueStrings(
 	return noErr;
 }
 
-OSStatus SEInstrumentBase::SaveState(CFPropertyListRef* outData)
+OSStatus AU2_Wrapper::SaveState(CFPropertyListRef* outData)
 {
 	auto result = AUBase::SaveState(outData);
 
@@ -1631,7 +1630,7 @@ OSStatus SEInstrumentBase::SaveState(CFPropertyListRef* outData)
 	return result;
 }
 
-void SEInstrumentBase::flushPendingParameterUpdates()
+void AU2_Wrapper::flushPendingParameterUpdates()
 {
 	std::lock_guard<std::mutex> guard(hostMidiLock);
 
@@ -1648,9 +1647,9 @@ void SEInstrumentBase::flushPendingParameterUpdates()
 	parameterChanges[current].clear();
 }
 
-OSStatus SEInstrumentBase::RestoreState(CFPropertyListRef plist)
+OSStatus AU2_Wrapper::RestoreState(CFPropertyListRef plist)
 {
-	//   std::cout << "SEInstrumentBase::RestoreState() - START" << std::endl;
+	//   std::cout << "AU2_Wrapper::RestoreState() - START" << std::endl;
 	auto result = AUBase::RestoreState(plist);
 
 	if (result == noErr)
@@ -1682,24 +1681,24 @@ OSStatus SEInstrumentBase::RestoreState(CFPropertyListRef plist)
 
 		gmpiController.setPresetXmlFromDaw(chunk);
 	}
-	//    std::cout << "SEInstrumentBase::RestoreState() - END" << std::endl;
+	//    std::cout << "AU2_Wrapper::RestoreState() - END" << std::endl;
 
 	return result;
 }
 
-void SEInstrumentBase::setPresetXmlFromSelf(const std::string& xml)
+void AU2_Wrapper::setPresetXmlFromSelf(const std::string& xml)
 {
 //	stateMgr.setPresetFromXml(xml);
 }
 
     /*
-void SEInstrumentBase::setPresetFromSelf(DawPreset const* preset)
+void AU2_Wrapper::setPresetFromSelf(DawPreset const* preset)
 {
 //    stateMgr.setPresetFromUnownedPtr(preset);
 }
 */
     
-void SEInstrumentBase::saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml)
+void AU2_Wrapper::saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml)
 {
     const auto p_id = wrapper::BundleInfo::instance()->getPluginId();
 
@@ -1723,43 +1722,43 @@ void SEInstrumentBase::saveNativePreset(const char* filename, const std::string&
  */
 }
 
-std::string SEInstrumentBase::loadNativePreset(std::wstring sourceFilename)
+std::string AU2_Wrapper::loadNativePreset(std::wstring sourceFilename)
 {
     return {};//AuPresetUtil::ReadPreset(sourceFilename);
 }
 
 // IAudioPluginHost
-gmpi::ReturnCode SEInstrumentBase::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
+gmpi::ReturnCode AU2_Wrapper::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
 {
     return plugin.setPin(timestamp, pinId, size, data);
 }
 
-gmpi::ReturnCode SEInstrumentBase::setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming)
+gmpi::ReturnCode AU2_Wrapper::setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming)
 {
     return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode SEInstrumentBase::setLatency(int32_t latency)
+gmpi::ReturnCode AU2_Wrapper::setLatency(int32_t latency)
 {
     return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode SEInstrumentBase::sleep()
+gmpi::ReturnCode AU2_Wrapper::sleep()
 {
     return gmpi::ReturnCode::Ok;
 }
 
-int32_t SEInstrumentBase::getBlockSize()
+int32_t AU2_Wrapper::getBlockSize()
 {
     return GetMaxFramesPerSlice();
 }
 
-float SEInstrumentBase::getSampleRate()
+float AU2_Wrapper::getSampleRate()
 {
     return sampleRate;
 }
 
-int32_t SEInstrumentBase::getHandle()
+int32_t AU2_Wrapper::getHandle()
 {
     return 0; // only one plugin, can have handle zero.
 }
