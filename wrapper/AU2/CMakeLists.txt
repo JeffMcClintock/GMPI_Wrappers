@@ -8,17 +8,6 @@ project(AU_Wrapper)
 set(CMAKE_CXX_STANDARD 20)
 
 add_definitions(-D_UNICODE)
-add_definitions(-DSE_TARGET_PLUGIN)
-add_definitions(-DSE_TARGET_AU)
-add_definitions(-DGMPI_VST3_WRAPPER)
-
-# CocoaNamespaceMacros.h
-# SeAuVersion.h
-# SeAuEditor.mm
-# SEVSTGUIEditorMac.h
-# SEVSTGUIEditorMac.cpp
-# ${ADAPTORS_COMMON_FOLDER}/SynthEditCocoaView.h
-# ${ADAPTORS_COMMON_FOLDER}/SynthEditCocoaView.mm
 
 set(srcs
 AU2_Wrapper.cpp
@@ -38,8 +27,6 @@ ${gmpi_sdk_folder}/Hosting/message_queues.cpp
 ${gmpi_sdk_folder}/Hosting/gmpi_factory.h
 ${gmpi_sdk_folder}/Hosting/gmpi_factory.cpp
 
-${ADAPTORS_COMMON_FOLDER}/HostControls.h
-${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp
 ${ADAPTORS_COMMON_FOLDER}/it_enum_list.h
@@ -47,12 +34,6 @@ ${ADAPTORS_COMMON_FOLDER}/it_enum_list.cpp
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 
-${ADAPTORS_COMMON_FOLDER}/GmpiResourceManager.h
-${ADAPTORS_COMMON_FOLDER}/GmpiResourceManager.cpp
-${ADAPTORS_COMMON_FOLDER}/MyTypeTraits.h
-${ADAPTORS_COMMON_FOLDER}/MyTypeTraits.cpp
-${ADAPTORS_COMMON_FOLDER}/RawConversions.h
-${ADAPTORS_COMMON_FOLDER}/RawConversions.cpp
 ${ADAPTORS_COMMON_FOLDER}/BundleInfo.h
 ${ADAPTORS_COMMON_FOLDER}/BundleInfo.cpp
 ${ADAPTORS_COMMON_FOLDER}/conversion.h
@@ -68,8 +49,7 @@ ${gmpi_ui_folder}/helpers/Timer.h
 ${gmpi_ui_folder}/helpers/Timer.cpp
 )
 
-IF(WIN32)
-ELSE()
+IF(APPLE)
 set(srcs ${srcs}
 ${gmpi_ui_folder}/backends/DrawingFrameMac.h
 ${gmpi_ui_folder}/backends/DrawingFrameMac.mm
@@ -107,14 +87,6 @@ ${AU_SDK_SRC}/AudioUnitSDK/MusicDeviceBase.cpp
 ${AU_SDK_H}/AudioUnitSDK/MusicDeviceBase.h
 )
 
-# include_directories(
-# ${DSP_CORE}
-# ${AU_SDK_H}
-# ${gmpi_sdk_folder}/Core
-# ${gmpi_ui_folder}
-# ${gmpi_ui_folder}/helpers
-# )
-
 source_group(se_sdk FILES ${sdk_srcs})
 
 if(APPLE)
@@ -146,7 +118,6 @@ add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${au_sdk_srcs})
 
 # Include paths ONLY for the AU wrapper library
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${DSP_CORE}
     ${AU_SDK_H}
     ${gmpi_sdk_folder}
     ${gmpi_sdk_folder}/Core
@@ -165,8 +136,6 @@ TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${ACCELERATE_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${QUARTZCORE_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${AUDIOUNIT_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${AUDIOTOOLBOX_LIBRARY} )
-
-# TARGET_LINK_LIBRARIES( ${PROJECT_NAME} SynthEditLib )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE 
   $<$<CONFIG:Debug>:_DEBUG>
