@@ -4,9 +4,9 @@
 #include "pluginterfaces/base/ustring.h"
 #include "public.sdk/source/vst/vstpresetfile.h"
 //#include "public.sdk/source/common/memorystream.h"
-#include "adelaycontroller.h"
+#include "Controller_VST3.h"
 //#include "MyVstPluginFactory.h"
-#include "adelayprocessor.h"
+#include "Processor_VST3.h"
 #include "GmpiApiEditor.h"
 //#include "wrapper/common/se_datatypes.h" // kill this
 #include "wrapper/common/RawConversions.h"
@@ -25,8 +25,8 @@
 #include "SEVSTGUIEditorMac.h"
 #endif
 
-extern "C"
-gmpi::ReturnCode MP_GetFactory( void** returnInterface );
+//extern "C"
+//gmpi::ReturnCode MP_GetFactory( void** returnInterface );
 
 /*
 #include "midi_defs.h"
@@ -78,7 +78,7 @@ void Safe Messagebox(
 	_RPTW1(0, L"%s\n", lpText);
 }
 
-MpParameterVst3::MpParameterVst3(VST3Controller* controller, /*int strictIndex, */int ParameterTag, bool isInverted) :
+MpParameterVst3::MpParameterVst3(Controller_VST3* controller, /*int strictIndex, */int ParameterTag, bool isInverted) :
 	MpParameter_native({}),//controller),
 	vst3Controller(controller),
 	isInverted_(isInverted),
@@ -105,7 +105,7 @@ void MpParameterVst3::updateProcessor(gmpi::Field fieldId, int32_t voice)
 #endif
 
 
-VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
+Controller_VST3::Controller_VST3(gmpi::hosting::pluginInfo& pinfo) :
 //	MpController(pinfo)
 	 isInitialised(false)
 	, isConnected(false)
@@ -137,14 +137,14 @@ VST3Controller::VST3Controller(gmpi::hosting::pluginInfo& pinfo) :
 	gmpiController.init(pinfo);
 }
 
-VST3Controller::~VST3Controller()
+Controller_VST3::~Controller_VST3()
 {
 #if 1
 	stopTimer();
 #endif
 }
 
-tresult PLUGIN_API VST3Controller::connect(IConnectionPoint* other)
+tresult PLUGIN_API Controller_VST3::connect(IConnectionPoint* other)
 {
 //	_RPT0(_CRT_WARN, "ADelayController::connect\n");
 	auto r = EditController::connect(other);
@@ -162,7 +162,7 @@ tresult PLUGIN_API VST3Controller::connect(IConnectionPoint* other)
 	return r;
 }
 
-tresult PLUGIN_API VST3Controller::notify( IMessage* message )
+tresult PLUGIN_API Controller_VST3::notify( IMessage* message )
 {
 	// WARNING: CALLED FROM PROCESS THREAD (In Ableton Live).
 	if( !message )
@@ -183,7 +183,7 @@ tresult PLUGIN_API VST3Controller::notify( IMessage* message )
 	return EditController::notify( message );
 }
 
-bool VST3Controller::sendMessageToProcessor(const void* data, int size)
+bool Controller_VST3::sendMessageToProcessor(const void* data, int size)
 {
 	auto message = allocateMessage();
 	if (message)
@@ -199,7 +199,7 @@ bool VST3Controller::sendMessageToProcessor(const void* data, int size)
 }
 #if 0
 
-void VST3Controller::ParamGrabbed(MpParameter_native* param)
+void Controller_VST3::ParamGrabbed(MpParameter_native* param)
 {
 	auto paramID = param->getNativeTag();
 
@@ -217,7 +217,7 @@ void VST3Controller::ParamGrabbed(MpParameter_native* param)
 #endif
 
 #if 0
-void VST3Controller::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice)
+void Controller_VST3::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice)
 {
 	const auto paramID = param->getNativeTag();
 
@@ -232,7 +232,7 @@ void VST3Controller::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voi
 		endEdit(paramID);
 }
 
-void VST3Controller::ResetProcessor()
+void Controller_VST3::ResetProcessor()
 {
 	// Currently called when polyphony etc changes, VST2 wrapper ignores this completely, at least in Live.
 //	componentHandler->restartComponent(kLatencyChanged); // or kIoChanged might be less overhead for DAW
@@ -263,7 +263,7 @@ struct pluginInformation
 };
 
 #if 0
-void VST3Controller::setPinFromUi(int32_t pinId, int32_t voice, int32_t size, const void* data)
+void Controller_VST3::setPinFromUi(int32_t pinId, int32_t voice, int32_t size, const void* data)
 {
 	for (auto& pin : info.guiPins)
 	{
@@ -286,7 +286,7 @@ void VST3Controller::setPinFromUi(int32_t pinId, int32_t voice, int32_t size, co
 
 #if 0
 // send initial value of all parameters to GUI
-void VST3Controller::initUi(gmpi::api::IParameterObserver* gui)
+void Controller_VST3::initUi(gmpi::api::IParameterObserver* gui)
 {
 	for (auto& it : tagToParameter)
 	{
@@ -296,7 +296,7 @@ void VST3Controller::initUi(gmpi::api::IParameterObserver* gui)
 #endif
 
 //-----------------------------------------------------------------------------
-tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
+tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 {
 //	_RPT0(_CRT_WARN, "ADelayController::initialize\n");
 
@@ -369,7 +369,7 @@ tresult PLUGIN_API VST3Controller::initialize (FUnknown* context)
 }
 
 // Parameter updated from DAW.
-void VST3Controller::update( FUnknown* changedUnknown, int32 message )
+void Controller_VST3::update( FUnknown* changedUnknown, int32 message )
 {
 	EditController::update( changedUnknown, message );
 
@@ -392,7 +392,7 @@ void VST3Controller::update( FUnknown* changedUnknown, int32 message )
 }
 
 //------------------------------------------------------------------------
-tresult PLUGIN_API VST3Controller::getMidiControllerAssignment (int32 busIndex, int16 channel, CtrlNumber midiControllerNumber, ParamID& tag/*out*/)
+tresult PLUGIN_API Controller_VST3::getMidiControllerAssignment (int32 busIndex, int16 channel, CtrlNumber midiControllerNumber, ParamID& tag/*out*/)
 {
 #if 0 // TODO
 
@@ -410,7 +410,7 @@ tresult PLUGIN_API VST3Controller::getMidiControllerAssignment (int32 busIndex, 
 	return kResultFalse;
 }
 
-IPlugView* PLUGIN_API VST3Controller::createView (FIDString name)
+IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 {
 	if (ConstString (name) != ViewType::kEditor)
 		return {};
@@ -441,7 +441,7 @@ IPlugView* PLUGIN_API VST3Controller::createView (FIDString name)
 }
 
 // Preset Loaded.
-tresult PLUGIN_API VST3Controller::setComponentState (IBStream* state)
+tresult PLUGIN_API Controller_VST3::setComponentState (IBStream* state)
 {
 	int32 bytesRead;
 	int32 chunkSize = 0;
@@ -460,7 +460,7 @@ tresult PLUGIN_API VST3Controller::setComponentState (IBStream* state)
 }
 
 //------------------------------------------------------------------------
-tresult PLUGIN_API VST3Controller::queryInterface (const char* iid, void** obj)
+tresult PLUGIN_API Controller_VST3::queryInterface (const char* iid, void** obj)
 {
 	QUERY_INTERFACE(iid, obj, IMidiMapping::iid, IMidiMapping)
 	QUERY_INTERFACE(iid, obj, INoteExpressionController::iid, INoteExpressionController)
@@ -469,7 +469,7 @@ tresult PLUGIN_API VST3Controller::queryInterface (const char* iid, void** obj)
 	return EditController::queryInterface (iid, obj);
 }
 
-tresult VST3Controller::setParamNormalized( ParamID tag, ParamValue value )
+tresult Controller_VST3::setParamNormalized( ParamID tag, ParamValue value )
 {
 //	_RPT2(_CRT_WARN, "setParamNormalized(%d, %f)\n", tag, value);
 
@@ -482,14 +482,14 @@ tresult VST3Controller::setParamNormalized( ParamID tag, ParamValue value )
 }
 #if 0
 
-void VST3Controller::OnLatencyChanged()
+void Controller_VST3::OnLatencyChanged()
 {
 	getComponentHandler()->restartComponent(kLatencyChanged);
 //	_RPT0(_CRT_WARN, "restartComponent(kLatencyChanged)\n");
 }
 #endif
 
-tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& returnInfo)
+tresult Controller_VST3::getParameterInfo(int32 paramIndex, ParameterInfo& returnInfo)
 {
 	if( paramIndex < 0 || paramIndex >= static_cast<int>(gmpiController.nativeParams.size()))
 		return kInvalidArgument;
@@ -524,7 +524,7 @@ tresult VST3Controller::getParameterInfo(int32 paramIndex, ParameterInfo& return
 	return kResultOk;
 }
 
-tresult PLUGIN_API VST3Controller::getParamStringByValue(ParamID tag, ParamValue valueNormalized, String128 string)
+tresult PLUGIN_API Controller_VST3::getParamStringByValue(ParamID tag, ParamValue valueNormalized, String128 string)
 {
 	if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
 		return 0.0;
@@ -547,7 +547,7 @@ tresult PLUGIN_API VST3Controller::getParamStringByValue(ParamID tag, ParamValue
 }
 
 #if 0 // TODO
-std::string VST3Controller::loadNativePreset(std::wstring sourceFilename)
+std::string Controller_VST3::loadNativePreset(std::wstring sourceFilename)
 {
 	auto filetype = GetExtension(sourceFilename);
 
@@ -580,7 +580,7 @@ std::string VST3Controller::loadNativePreset(std::wstring sourceFilename)
 #endif
 
 #if 0 // todo
-std::vector< MpController::presetInfo > VST3Controller::scanFactoryPresets()
+std::vector< MpController::presetInfo > Controller_VST3::scanFactoryPresets()
 {
 	platform_string factoryPresetsFolder(_T("vst2FactoryPresets/"));
 	auto factoryPresetFolder = ToPlatformString(BundleInfo::instance()->getImbeddedFileFolder());
@@ -597,7 +597,7 @@ std::vector< MpController::presetInfo > VST3Controller::scanFactoryPresets()
 #endif
 
 #if 0 // TODO
-void VST3Controller::loadFactoryPreset(int index, bool fromDaw)
+void Controller_VST3::loadFactoryPreset(int index, bool fromDaw)
 {
 	platform_string vst2FactoryPresetsFolder(_T("vst2FactoryPresets/"));
 	auto PresetFolder = ToPlatformString(BundleInfo::instance()->getImbeddedFileFolder());
@@ -608,14 +608,14 @@ void VST3Controller::loadFactoryPreset(int index, bool fromDaw)
 	ImportPresetXml(filenameUtf8.c_str());
 }
 
-void VST3Controller::setPresetFromSelf(DawPreset const* preset)
+void Controller_VST3::setPresetFromSelf(DawPreset const* preset)
 {
 	// since there is no explicit sharing between controller and processor, we need to send entire preset in one hit via queue
 	const auto xml = preset->toString(BundleInfo::instance()->getPluginId());
 	setPresetXmlFromSelf(xml);
 }
 
-void VST3Controller::setPresetXmlFromSelf(const std::string& xml)
+void Controller_VST3::setPresetXmlFromSelf(const std::string& xml)
 {
 	// send to processor
 	auto message = allocateMessage();
@@ -654,14 +654,14 @@ void VST3Controller::setPresetXmlFromSelf(const std::string& xml)
 }
 #endif
 
-platform_string VST3Controller::calcFactoryPresetFolder()
+platform_string Controller_VST3::calcFactoryPresetFolder()
 {
 	// TODO
 	return {};
 }
 #if 0
 
-std::string VST3Controller::getFactoryPresetXml(std::string filename)
+std::string Controller_VST3::getFactoryPresetXml(std::string filename)
 {
 	auto PresetFolder = calcFactoryPresetFolder();
 	auto fullFilePath = PresetFolder + ToPlatformString(filename);
@@ -670,7 +670,7 @@ std::string VST3Controller::getFactoryPresetXml(std::string filename)
 #endif
 
 #if 0
-void VST3Controller::saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml)
+void Controller_VST3::saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml)
 {
 	const auto filetype = GetExtension(std::string(filename));
 
@@ -694,7 +694,7 @@ void VST3Controller::saveNativePreset(const char* filename, const std::string& p
 }
 #endif
 
-bool VST3Controller::onTimer()
+bool Controller_VST3::onTimer()
 {
 	// parameter updates from the Processor
 	gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
@@ -716,7 +716,7 @@ bool VST3Controller::onTimer()
 	return true; // MpController::onTimer();
 }
 
-int32 VST3Controller::getNoteExpressionCount(int32 busIndex, int16 channel)
+int32 Controller_VST3::getNoteExpressionCount(int32 busIndex, int16 channel)
 {
     // we accept only the first bus and 1 channel
     if (busIndex != 0 || channel != 0)
@@ -725,7 +725,7 @@ int32 VST3Controller::getNoteExpressionCount(int32 busIndex, int16 channel)
 	return 1;
 }
 
-tresult VST3Controller::getNoteExpressionInfo (int32 busIndex, int16 channel, int32 noteExpressionIndex, NoteExpressionTypeInfo& info)
+tresult Controller_VST3::getNoteExpressionInfo (int32 busIndex, int16 channel, int32 noteExpressionIndex, NoteExpressionTypeInfo& info)
 {
     // we accept only the first bus and 1 channel
     if (busIndex != 0 || channel != 0 || noteExpressionIndex > 3)
@@ -820,7 +820,7 @@ tresult VST3Controller::getNoteExpressionInfo (int32 busIndex, int16 channel, in
 	return kResultTrue;
 }
 
-tresult VST3Controller::getNoteExpressionStringByValue (int32 busIndex, int16 channel, NoteExpressionTypeID id, NoteExpressionValue valueNormalized , String128 string)
+tresult Controller_VST3::getNoteExpressionStringByValue (int32 busIndex, int16 channel, NoteExpressionTypeID id, NoteExpressionValue valueNormalized , String128 string)
 {
     // we accept only the first bus and 1 channel
     if (busIndex != 0 || channel != 0)
@@ -861,7 +861,7 @@ tresult VST3Controller::getNoteExpressionStringByValue (int32 busIndex, int16 ch
 	return kResultOk;
 }
 
-tresult VST3Controller::getNoteExpressionValueByString (int32 busIndex, int16 channel, NoteExpressionTypeID id, const TChar* string, NoteExpressionValue& valueNormalized)
+tresult Controller_VST3::getNoteExpressionValueByString (int32 busIndex, int16 channel, NoteExpressionTypeID id, const TChar* string, NoteExpressionValue& valueNormalized)
 {
     // we accept only the first bus and 1 channel
     if (busIndex != 0 || channel != 0)
@@ -910,7 +910,7 @@ tresult VST3Controller::getNoteExpressionValueByString (int32 busIndex, int16 ch
 	return kResultOk;
 }
 
-tresult PLUGIN_API VST3Controller::getPhysicalUIMapping(int32 busIndex, int16 channel,
+tresult PLUGIN_API Controller_VST3::getPhysicalUIMapping(int32 busIndex, int16 channel,
 	PhysicalUIMapList& list)
 {
 	if (busIndex == 0 && channel == 0)

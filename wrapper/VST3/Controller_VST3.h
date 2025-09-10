@@ -16,7 +16,7 @@
 #include "helpers/Timer.h"
 
 namespace wrapper {
-	class VST3Controller;
+	class Controller_VST3;
 }
 
 namespace wrapper
@@ -94,7 +94,7 @@ public:
 
 // Manages plugin parameters.
 //-----------------------------------------------------------------------------
-class VST3Controller :
+class Controller_VST3 :
 //	public MpController,
 	public gmpi::TimerClient,
 	public Steinberg::Vst::EditController,
@@ -117,8 +117,8 @@ class VST3Controller :
 public:
 	gmpi::hosting::gmpi_controller_holder gmpiController;
 
-	VST3Controller(gmpi::hosting::pluginInfo& pinfo);
-	~VST3Controller();
+	Controller_VST3(gmpi::hosting::pluginInfo& pinfo);
+	~Controller_VST3();
 
 	Steinberg::tresult PLUGIN_API initialize (FUnknown* context) override;
 	Steinberg::tresult PLUGIN_API connect(IConnectionPoint* other) override;

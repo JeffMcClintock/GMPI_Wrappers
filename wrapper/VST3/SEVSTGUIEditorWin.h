@@ -44,7 +44,7 @@ class SEVSTGUIEditorWin : public VST3EditorBase
 	float Dpi{ 1.0f };
 
 public:
-    SEVSTGUIEditorWin(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* controller, int width, int height);
+    SEVSTGUIEditorWin(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::Controller_VST3* controller, int width, int height);
 	~SEVSTGUIEditorWin();
 
 //	void onParameterUpdate(int32_t parameterHandle, gmpi::Field fieldId, int32_t voice, const uint8_t* data, int32_t size);

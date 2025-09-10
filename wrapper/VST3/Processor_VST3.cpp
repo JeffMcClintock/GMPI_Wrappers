@@ -1,4 +1,4 @@
-#include "adelayprocessor.h"
+#include "Processor_VST3.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -27,7 +27,7 @@ namespace wrapper
 {
 
 //-----------------------------------------------------------------------------
-SeProcessor::SeProcessor (gmpi::hosting::pluginInfo& pinfo)
+Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 : active_(false)
 , info(pinfo)
 , outputsAsStereoPairs(true)
@@ -229,7 +229,7 @@ SeProcessor::SeProcessor (gmpi::hosting::pluginInfo& pinfo)
     plugin.init(info);
 }
 
-SeProcessor::~SeProcessor ()
+Processor_VST3::~Processor_VST3 ()
 {
 	if (background.joinable())
 	{
@@ -245,7 +245,7 @@ SeProcessor::~SeProcessor ()
 	gmpi_dynamic_linking::MP_DllUnload(plugin_dllHandle_to_unload);
 }
 
-void SeProcessor::reInitialise()
+void Processor_VST3::reInitialise()
 {
 	silence.assign(processSetup.maxSamplesPerBlock, 0.0f);
 
@@ -256,7 +256,7 @@ void SeProcessor::reInitialise()
 }
 
 //-----------------------------------------------------------------------------
-tresult PLUGIN_API SeProcessor::initialize (FUnknown* context)
+tresult PLUGIN_API Processor_VST3::initialize (FUnknown* context)
 {
 	tresult result = AudioEffect::initialize(context);
 	if (result != kResultTrue)
@@ -341,7 +341,7 @@ tresult PLUGIN_API SeProcessor::initialize (FUnknown* context)
 	return result;
 }
 
-uint32 SeProcessor::getLatencySamples()
+uint32 Processor_VST3::getLatencySamples()
 {
 	// see also kLatencyChanged and componentHandler->restartComponent (Vst::kLatencyChanged & Vst::kParamValuesChanged);
 	// _RPT1(_CRT_WARN, "SeProcessor::getLatencySamples() -> %d\n", synthEditProject.getLatencySamples());
@@ -351,7 +351,7 @@ uint32 SeProcessor::getLatencySamples()
 
 //-----------------------------------------------------------------------------
 // Not called?
-tresult PLUGIN_API SeProcessor::setBusArrangements (SpeakerArrangement* inputs, int32 numIns, SpeakerArrangement* outputs, int32 numOuts)
+tresult PLUGIN_API Processor_VST3::setBusArrangements (SpeakerArrangement* inputs, int32 numIns, SpeakerArrangement* outputs, int32 numOuts)
 {
 	// we only support one in and output bus and these buses must have the same number of channels
 	if (numIns == 1 && numOuts == 1 && inputs[0] == outputs[0])
@@ -361,7 +361,7 @@ tresult PLUGIN_API SeProcessor::setBusArrangements (SpeakerArrangement* inputs, 
 }
 
 //-----------------------------------------------------------------------------
-tresult PLUGIN_API SeProcessor::setActive (TBool state)
+tresult PLUGIN_API Processor_VST3::setActive (TBool state)
 {
 /* Seems to be checking number of output channels. SE does not require any particular number.
 	SpeakerArrangement arr;
@@ -410,7 +410,7 @@ int SeProcessor::allocateKey(int noteId, int pitchSemiTone)
 	return key;
 }
 #endif
-SeProcessor::vstNoteInfo* SeProcessor::findKey(uint8_t channel, int noteId)
+Processor_VST3::vstNoteInfo* Processor_VST3::findKey(uint8_t channel, int noteId)
 {
 	for (auto& keyInfo : noteIds[channel])
 	{
@@ -423,7 +423,7 @@ SeProcessor::vstNoteInfo* SeProcessor::findKey(uint8_t channel, int noteId)
 	return {};
 }
 
-SeProcessor::vstNoteInfo& SeProcessor::allocateKey(const NoteOnEvent& note)
+Processor_VST3::vstNoteInfo& Processor_VST3::allocateKey(const NoteOnEvent& note)
 {
 	auto& ret = noteIds[note.channel][note.pitch];
 
@@ -475,7 +475,7 @@ SeProcessor::vstNoteInfo& SeProcessor::allocateKey(const NoteOnEvent& note)
 #endif
 }
 
-void SeProcessor::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
+void Processor_VST3::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
 {
 	assert(plugin.MidiInputPinIdx > -1);
 
@@ -497,7 +497,7 @@ void SeProcessor::MidiIn(int sampleOffset, const uint8_t* data, int32_t size)
 
 //-----------------------------------------------------------------------------
 
-tresult PLUGIN_API SeProcessor::process (ProcessData& data)
+tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 {
 	auto& plugin_ = plugin.processor;
 	auto& events = plugin.events;
@@ -1033,7 +1033,7 @@ tresult PLUGIN_API SeProcessor::process (ProcessData& data)
 	return kResultTrue;
 }
 
-void SeProcessor::DoNoteOff(int channel, int32_t noteId, float velocity, int sampleOffset)
+void Processor_VST3::DoNoteOff(int channel, int32_t noteId, float velocity, int sampleOffset)
 {
 	if (auto keyInfo = findKey(channel, noteId); keyInfo)
 	{
@@ -1049,7 +1049,7 @@ void SeProcessor::DoNoteOff(int channel, int32_t noteId, float velocity, int sam
 	}
 }
 
-tresult SeProcessor::setState (IBStream* state)
+tresult Processor_VST3::setState (IBStream* state)
 {
 	int32 bytesRead{};
 	int32 chunkSize{};
@@ -1065,7 +1065,7 @@ tresult SeProcessor::setState (IBStream* state)
 }
 
 // Seems to be called before audio starts to set GUI up correctly.
-tresult SeProcessor::getState (IBStream* state)
+tresult Processor_VST3::getState (IBStream* state)
 {
 	const auto chunk = plugin.getPresetUnsafe();// active_);
 
@@ -1078,7 +1078,7 @@ tresult SeProcessor::getState (IBStream* state)
 	return kResultTrue;
 }
 
-tresult PLUGIN_API SeProcessor::notify( IMessage* message )
+tresult PLUGIN_API Processor_VST3::notify( IMessage* message )
 {
 	// WARNING: CALLED FROM GUI THREAD (In Ableton Live).
 	if( !message )
@@ -1102,7 +1102,7 @@ tresult PLUGIN_API SeProcessor::notify( IMessage* message )
 	return AudioEffect::notify( message );
 }
 
-void SeProcessor::onQueDataAvailable()
+void Processor_VST3::onQueDataAvailable()
 {
 	// TODO!!! This is INCORRECT. The que write pointer must be updated under the lock, else waiting thread can miss it.
 	std::unique_lock<std::mutex> lk(backgroundMutex);
@@ -1110,7 +1110,7 @@ void SeProcessor::onQueDataAvailable()
 }
 
 // background thread
-void SeProcessor::CommunicationProc()
+void Processor_VST3::CommunicationProc()
 {
 //	auto que = synthEditProject.MessageQueToGuiRaw();
 
@@ -1147,7 +1147,7 @@ void SeProcessor::CommunicationProc()
 	}
 }
 
-void SeProcessor::MidiToHost(MidiBuffer3* mb, timestamp_t SeStartClock, int numSamples)
+void Processor_VST3::MidiToHost(MidiBuffer3* mb, timestamp_t SeStartClock, int numSamples)
 {
 #if 0
 	while (!mb->IsEmpty())
@@ -1280,37 +1280,37 @@ void SeProcessor::MidiToHost(MidiBuffer3* mb, timestamp_t SeStartClock, int numS
 }
 
 // IAudioPluginHost
-gmpi::ReturnCode SeProcessor::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
+gmpi::ReturnCode Processor_VST3::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
 {
 	return plugin.setPin(timestamp, pinId, size, data);
 }
 
-gmpi::ReturnCode SeProcessor::setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming)
+gmpi::ReturnCode Processor_VST3::setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming)
 {
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode SeProcessor::setLatency(int32_t latency)
+gmpi::ReturnCode Processor_VST3::setLatency(int32_t latency)
 {
 	return gmpi::ReturnCode::Ok;
 }
 
-gmpi::ReturnCode SeProcessor::sleep()
+gmpi::ReturnCode Processor_VST3::sleep()
 {
 	return gmpi::ReturnCode::Ok;
 }
 
-int32_t SeProcessor::getBlockSize()
+int32_t Processor_VST3::getBlockSize()
 {
 	return processSetup.maxSamplesPerBlock;
 }
 
-float SeProcessor::getSampleRate()
+float Processor_VST3::getSampleRate()
 {
 	return static_cast<float>(processSetup.sampleRate);
 }
 
-int32_t SeProcessor::getHandle()
+int32_t Processor_VST3::getHandle()
 {
 	return 0; // only one plugin, can have handle zero.
 }

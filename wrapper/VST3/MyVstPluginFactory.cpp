@@ -4,8 +4,8 @@
 #include "public.sdk/source/main/pluginfactory.h"
 #include "public.sdk/source/vst/vstcomponent.h"
 #include "MyVstPluginFactory.h"
-#include "adelaycontroller.h"
-#include "adelayprocessor.h"
+#include "Controller_VST3.h"
+#include "Processor_VST3.h"
 #include "Common.h"
 //#include "wrapper/common/tinyXml2/tinyxml2.h"
 #include "wrapper/common/dynamic_linking.h"
@@ -403,14 +403,14 @@ tresult MyVstPluginFactory::createInstance (FIDString cid, FIDString iid, void**
 
 		if (/*interfaceId == IComponent::iid ||*/ classId == Steinberg::FUID(procUUid))
 		{
-			auto i = new wrapper::SeProcessor(*plugin);
+			auto i = new wrapper::Processor_VST3(*plugin);
 			i->setControllerClass(ctrlUUid); // associate with controller.
 			instance = (IAudioProcessor*)i;
 			break;
 		}
 		else if(classId == Steinberg::FUID(ctrlUUid))
 		{
-			instance = static_cast<Steinberg::Vst::IEditController*>(new wrapper::VST3Controller(*plugin));
+			instance = static_cast<Steinberg::Vst::IEditController*>(new wrapper::Controller_VST3(*plugin));
 			break;
 		}
 	}

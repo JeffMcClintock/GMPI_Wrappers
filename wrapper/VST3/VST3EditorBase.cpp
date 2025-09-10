@@ -1,5 +1,5 @@
 #include "VST3EditorBase.h"
-#include "adelaycontroller.h"
+#include "Controller_VST3.h"
 #include "MyVstPluginFactory.h"
 
 namespace wrapper
@@ -59,7 +59,7 @@ void ParameterHelper::invalidateRect(const gmpi::drawing::Rect* invalidRect)
 #endif
 
 // TODO !!! pass IUnknown to constructor, then QueryInterface for IDrawingClient
-VST3EditorBase::VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight) :
+VST3EditorBase::VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::Controller_VST3* pcontroller, int pwidth, int pheight) :
 	controller(pcontroller)
 	, width(pwidth)
 	, height(pheight)

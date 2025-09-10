@@ -9,7 +9,7 @@
 
 namespace wrapper
 {
-class VST3Controller;
+class Controller_VST3;
 
 #if 0
 class ParameterHelper :
@@ -58,7 +58,7 @@ class VST3EditorBase : public Steinberg::FObject, public Steinberg::IPlugView
 
 protected:
 	gmpi::hosting::pluginInfo const& info;
-	wrapper::VST3Controller* controller = {};
+	wrapper::Controller_VST3* controller = {};
     int width, height;
     
 	gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
@@ -66,7 +66,7 @@ protected:
 //	ParameterHelper helper;
 
 public:
-	VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::VST3Controller* pcontroller, int pwidth, int pheight);
+	VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::Controller_VST3* pcontroller, int pwidth, int pheight);
 	~VST3EditorBase();
 
     void initPlugin();//gmpi::api::IUnknown* host);

@@ -35,10 +35,10 @@ ${gmpi_sdk_folder}/Hosting/gmpi_factory.cpp
 
 MyVstPluginFactory.h
 MyVstPluginFactory.cpp
-adelayprocessor.h
-adelayprocessor.cpp
-adelaycontroller.h
-adelaycontroller.cpp
+Processor_VST3.h
+Processor_VST3.cpp
+Controller_VST3.h
+Controller_VST3.cpp
 VST3EditorBase.h
 VST3EditorBase.cpp
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.h

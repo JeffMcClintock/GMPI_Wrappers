@@ -37,11 +37,11 @@ public:
 //-----------------------------------------------------------------------------
 typedef int64_t timestamp_t;
 
-class SeProcessor : public Steinberg::Vst::AudioEffect, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
+class Processor_VST3 : public Steinberg::Vst::AudioEffect, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
 {
 public:
-	SeProcessor (gmpi::hosting::pluginInfo& pinfo);
-	~SeProcessor ();
+	Processor_VST3 (gmpi::hosting::pluginInfo& pinfo);
+	~Processor_VST3 ();
 	
 	Steinberg::tresult PLUGIN_API initialize (FUnknown* context) override;
 	Steinberg::uint32 PLUGIN_API getLatencySamples() override;
@@ -112,7 +112,7 @@ protected:
 
 	vstNoteInfo* findKey(uint8_t channel, int noteId);
 
-	SeProcessor::vstNoteInfo& allocateKey(const Steinberg::Vst::NoteOnEvent& note);
+	Processor_VST3::vstNoteInfo& allocateKey(const Steinberg::Vst::NoteOnEvent& note);
 
 	gmpi::hosting::gmpi_processor plugin;
 
