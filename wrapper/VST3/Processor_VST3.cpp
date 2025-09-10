@@ -8,7 +8,6 @@
 #include "wrapper/common/unicode_conversion.h"
 #include "GmpiMidi.h"
 #include "wrapper/common/dynamic_linking.h"
-#include "wrapper/common/it_enum_list.h"
 
 using namespace wrapper::JmUnicodeConversions;
 

@@ -1,9 +1,6 @@
+#include <thread>
 #include "FileWatcher.h"
 #include "wrapper/common/string_utilities.h"
-#include "wrapper/common/it_enum_list.h"
-#include "wrapper/common/string_utilities.h"
-//#include "../se_sdk3/MpString.h"
-#include <thread>
 
 #if defined(__APPLE__)
 #include "CoreFoundation/CoreFoundation.h"

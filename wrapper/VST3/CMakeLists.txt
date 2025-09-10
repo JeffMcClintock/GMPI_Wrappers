@@ -5,20 +5,12 @@ project(VST3_Wrapper)
 set(CMAKE_CXX_STANDARD 20)
 
 add_definitions(-D_UNICODE)
-add_definitions(-DSE_TARGET_PLUGIN)
-add_definitions(-DSE_TARGET_VST3)
-add_definitions(-DGMPI_VST3_WRAPPER)
 
 if (MSVC)
     # Floating Point Model: Fast (/fp:fast)
     # Buffer Security Check: No (/GS-)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fp:fast /GS-")
 endif()
-
-# ${ADAPTORS_COMMON_FOLDER}/HostControls.h
-# ${ADAPTORS_COMMON_FOLDER}/HostControls.cpp
-# ${ADAPTORS_COMMON_FOLDER}/Controller.h
-# ${ADAPTORS_COMMON_FOLDER}/Controller.cpp
 
 set(srcs
 ${gmpi_sdk_folder}/Hosting/parse_enum.h
@@ -48,15 +40,6 @@ ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 
 ${ADAPTORS_COMMON_FOLDER}/dynamic_linking.h
 ${ADAPTORS_COMMON_FOLDER}/dynamic_linking.cpp
-${ADAPTORS_COMMON_FOLDER}/MpParameter.h
-${ADAPTORS_COMMON_FOLDER}/MpParameter.cpp
-${ADAPTORS_COMMON_FOLDER}/GmpiResourceManager.h
-${ADAPTORS_COMMON_FOLDER}/GmpiResourceManager.cpp
-${ADAPTORS_COMMON_FOLDER}/platform_plugin.cpp
-${ADAPTORS_COMMON_FOLDER}/MyTypeTraits.h
-${ADAPTORS_COMMON_FOLDER}/MyTypeTraits.cpp
-${ADAPTORS_COMMON_FOLDER}/RawConversions.h
-${ADAPTORS_COMMON_FOLDER}/RawConversions.cpp
 ${ADAPTORS_COMMON_FOLDER}/BundleInfo.h
 ${ADAPTORS_COMMON_FOLDER}/BundleInfo.cpp
 ${ADAPTORS_COMMON_FOLDER}/conversion.h
@@ -78,8 +61,6 @@ ${gmpi_ui_folder}/helpers/Timer.h
 ${gmpi_ui_folder}/helpers/Timer.cpp
 )
 
-# adelay.def
-
 IF(WIN32)
 set(srcs ${srcs}
 SEVSTGUIEditorWin.h
@@ -99,7 +80,6 @@ ${gmpi_ui_folder}/backends/Bezier.h
 ${VST3_SDK}/public.sdk/source/main/macmain.cpp
 )
 ENDIF()
-
 
 set(vst_gui_minimal_srcs
     ${VST3_SDK}/public.sdk/source/common/pluginview.h
@@ -155,9 +135,6 @@ MARK_AS_ADVANCED (ACCELERATE_LIBRARY)
 endif()
 
 include (GenerateExportHeader)
-
-# TESTING ONLY!!!!! this is for AU
-#add_executable(gmpi_InfoPlistGen ${CMAKE_CURRENT_LIST_DIR}/InfoPlistGen.cpp ${gmpi_hosting_srcs} ${srcs})
 
 add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${vst_gui_minimal_srcs})
 

@@ -9,18 +9,12 @@
 #include "Processor_VST3.h"
 #include "GmpiApiEditor.h"
 //#include "wrapper/common/se_datatypes.h" // kill this
-#include "wrapper/common/RawConversions.h"
-#include "wrapper/common/BundleInfo.h"
 #include "wrapper/common/unicode_conversion.h"
-#include "wrapper/common/it_enum_list.h"
 #include "Hosting/gmpi_factory.h"
 
 
 #ifdef _WIN32
 #include "SEVSTGUIEditorWin.h"
-//#include "../../se_vst3/source/MyVstPluginFactory.h"
-//#include "pluginterfaces/base/funknown.h"
-//#include "../shared/unicode _conversion.h"
 #else
 #include "SEVSTGUIEditorMac.h"
 #endif
@@ -31,7 +25,6 @@
 /*
 #include "midi_defs.h"
 #include "conversion.h"
-#include "it_enum_list.h"
 #include "IPluginGui.h"
 #include "HostControls.h"
 #include "../Shared/jsoncpp/json/json.h"
