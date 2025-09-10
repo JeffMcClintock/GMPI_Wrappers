@@ -192,6 +192,9 @@ set_target_properties(${PROJECT_NAME} PROPERTIES BUNDLE TRUE)
 set_target_properties(${PROJECT_NAME} PROPERTIES BUNDLE_EXTENSION vst3)
 endif()
 
+# required by Linux build
+set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 ########################### VST3 SDK #######################################
 
 list(APPEND CMAKE_MODULE_PATH "${VST3_SDK}/cmake/modules")
