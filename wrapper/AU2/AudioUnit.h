@@ -329,8 +329,8 @@ public:
 		UInt32							inNumberFrames) override;
 
 	// MIDI dispatch
-	OSStatus MIDIEvent(
-		UInt32 inStatus, UInt32 inData1, UInt32 inData2, UInt32 inOffsetSampleFrame) override;
+//	OSStatus MIDIEvent(
+//		UInt32 inStatus, UInt32 inData1, UInt32 inData2, UInt32 inOffsetSampleFrame) override;
         
 #if AUSDK_HAVE_MIDI2
 	OSStatus MIDIEventList(
@@ -518,7 +518,7 @@ private:
 //	std::string pluginType; // "aumu" : "aufx"
 //	std::string manufacturerId;
 
-    uint8_t midi2conversionbuffer[256];
+//    uint8_t midi2conversionbuffer[256];
     bool processorIsInitialized = false;
     
     GMPI_REFCOUNT_NO_DELETE;

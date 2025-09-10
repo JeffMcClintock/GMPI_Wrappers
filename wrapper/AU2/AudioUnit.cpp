@@ -610,7 +610,9 @@ void SEInstrumentBase::PerformEvents(const AudioTimeStamp& inTimeStamp)
 	{
 		curMidiEvents.store((readingMidiEvents + 1) & 1);
 	}
-#if 1
+#if 0
+    
+    int crashAfter{};
 	while (!midiEvents[readingMidiEvents].IsEmpty())
 	{
 		auto e = midiEvents[readingMidiEvents].Current();
@@ -618,6 +620,8 @@ void SEInstrumentBase::PerformEvents(const AudioTimeStamp& inTimeStamp)
 		midiConverter.processMidi({ e->data, e->size }, static_cast<int>(e->timestamp));
 
 		midiEvents[readingMidiEvents].UpdateReadPos();
+        
+        crashAfter++;
 	}
 #endif
 	for (auto& p : parameterChanges[readingMidiEvents])
@@ -698,8 +702,6 @@ OSStatus SEInstrumentBase::Render(AudioUnitRenderActionFlags& ioActionFlags,
 	const AudioTimeStamp& inTimeStamp,
 	UInt32 inNumberFrames)
 {
-    return noErr;
-    
 	auto& plugin_ = plugin.processor;
 	auto& events = plugin.events;
 
@@ -1004,6 +1006,7 @@ OSStatus SEInstrumentBase::HandleMidiEvent(UInt8 status, UInt8 channel, UInt8 da
 }
 #endif
 
+#if 0
 OSStatus SEInstrumentBase::MIDIEvent(
     UInt32 inStatus, UInt32 inData1, UInt32 inData2, UInt32 inOffsetSampleFrame)
 {
@@ -1026,6 +1029,7 @@ OSStatus SEInstrumentBase::MIDIEvent(
 
 	return noErr;
 }
+#endif
 
 #if AUSDK_HAVE_MIDI2
 OSStatus SEInstrumentBase::MIDIEventList(
@@ -1035,7 +1039,71 @@ OSStatus SEInstrumentBase::MIDIEventList(
 	{
 		return 1; // satisfy auval
 	}
+    
+    static const int midi_message_size[16] = // in 32-bit words
+    {
+        1,
+        1,
+        1,
+        2,
+        2,
+        4,
+        1,
+        1,
+        2,
+        2,
+        2,
+        3,
+        3,
+        4,
+        4,
+        4
+    };
+    
+    uint8_t reversebuffer[8];
 
+    const auto* packet = eventList->packet;
+    for (unsigned i = 0; i < eventList->numPackets; ++i)
+    {
+        int j = 0;
+        while(j < packet->wordCount)
+        {
+            const auto src = reinterpret_cast<const uint8_t*>(packet->words + j);
+            
+            const auto message_type = src[3] >> 4;
+            const auto message_length = midi_message_size[message_type];
+            
+            if(message_length < 3)
+            {
+                int bufferIndex = 0;
+                // 32-bit messages.
+                reversebuffer[bufferIndex++] = src[3];
+                reversebuffer[bufferIndex++] = src[2];
+                reversebuffer[bufferIndex++] = src[1];
+                reversebuffer[bufferIndex++] = src[0];
+                
+                if(message_length == 2)
+                {
+                    // 64-bit messages
+                    reversebuffer[bufferIndex++] = src[7];
+                    reversebuffer[bufferIndex++] = src[6];
+                    reversebuffer[bufferIndex++] = src[5];
+                    reversebuffer[bufferIndex++] = src[4];
+                }
+                
+                midiConverter.processMidi(
+                      { reversebuffer, message_length * 4 }
+                      , static_cast<int>(inOffsetSampleFrame + packet->timeStamp)
+                      );
+            }
+            
+            j += message_length;
+        }
+
+        packet = MIDIEventPacketNext(packet);
+    }
+    
+/*
 	std::lock_guard<std::mutex> guard(hostMidiLock);
     
 	const int current = curMidiEvents.load();
@@ -1062,6 +1130,7 @@ OSStatus SEInstrumentBase::MIDIEventList(
 
 		packet = MIDIEventPacketNext(packet);
 	}
+ */
     return noErr;
 }
 #endif
