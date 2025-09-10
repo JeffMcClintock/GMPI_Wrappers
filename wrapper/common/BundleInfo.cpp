@@ -431,6 +431,8 @@ std::string BundleInfo::getResource( const char* resourceId )
 #endif // __APPLE__
 #endif
 #endif // JUCE
+
+    return {};
 }
 
 int32_t BundleInfo::getPluginId() // 4-char VST2 code to identify presets.

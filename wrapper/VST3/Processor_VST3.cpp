@@ -2,7 +2,6 @@
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/base/ibstream.h"
-//#include "midi_defs.h"
 #include <algorithm>
 #include <math.h>
 #include "MyVstPluginFactory.h"

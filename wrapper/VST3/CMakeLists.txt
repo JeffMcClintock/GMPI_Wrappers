@@ -59,8 +59,6 @@ ${ADAPTORS_COMMON_FOLDER}/RawConversions.h
 ${ADAPTORS_COMMON_FOLDER}/RawConversions.cpp
 ${ADAPTORS_COMMON_FOLDER}/BundleInfo.h
 ${ADAPTORS_COMMON_FOLDER}/BundleInfo.cpp
-${ADAPTORS_COMMON_FOLDER}/ProcessorStateManager.h
-${ADAPTORS_COMMON_FOLDER}/ProcessorStateManager.cpp
 ${ADAPTORS_COMMON_FOLDER}/conversion.h
 ${ADAPTORS_COMMON_FOLDER}/conversion.cpp
 ${ADAPTORS_COMMON_FOLDER}/FileFinder.h
