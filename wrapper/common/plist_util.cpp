@@ -212,7 +212,7 @@ out << R"XML(<?xml version="1.0" encoding="UTF-8"?>
 
             out << R"XML(
 			<key>factoryFunction</key>
-			<string>SEInstrumentBaseFactory</string>
+			<string>AU2_WrapperFactory</string>
 			<key>manufacturer</key>
 )XML";
             out << "\t\t\t<string>" << vendor_code << "</string>\n";
