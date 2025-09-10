@@ -86,7 +86,9 @@ SEVSTGUIEditorWin.h
 SEVSTGUIEditorWin.cpp
 ${VST3_SDK}/public.sdk/source/main/dllmain.cpp
 )
-ELSE()
+ENDIF()
+
+if(APPLE)
 set(srcs ${srcs}
 SEVSTGUIEditorMac.h
 SEVSTGUIEditorMac.cpp
