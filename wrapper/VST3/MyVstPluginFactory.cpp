@@ -106,9 +106,6 @@ bool bundleExit_internal(void)
 using namespace Steinberg;
 using namespace Steinberg::Vst;
 
-extern "C"
-gmpi::ReturnCode MP_GetFactory( void** returnInterface );
-
 #if 0
 SMTG_EXPORT_SYMBOL IPluginFactory* PLUGIN_API GetPluginFactory ()
 {

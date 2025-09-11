@@ -239,7 +239,7 @@ Processor_VST3::~Processor_VST3 ()
 		background.join();
 	}
 
-	gmpi_dynamic_linking::MP_DllUnload(plugin_dllHandle_to_unload);
+//	gmpi_dynamic_linking::MP_DllUnload(plugin_dllHandle_to_unload);
 }
 
 void Processor_VST3::reInitialise()
@@ -247,9 +247,6 @@ void Processor_VST3::reInitialise()
 	silence.assign(processSetup.maxSamplesPerBlock, 0.0f);
 
 	plugin.start_processor(this, info);
-
-	if (!plugin.processor)
-		return;
 }
 
 //-----------------------------------------------------------------------------

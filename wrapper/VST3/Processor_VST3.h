@@ -25,7 +25,7 @@ namespace wrapper
 {
 
 // to work around Steinberg Interfaces having incompatible addRef etc
-class GmpiBaseClass :public gmpi::api::IProcessorHost
+class GmpiBaseClass : public gmpi::api::IProcessorHost
 {
 public:
 	GMPI_REFCOUNT_NO_DELETE;
@@ -38,6 +38,8 @@ typedef int64_t timestamp_t;
 
 class Processor_VST3 : public Steinberg::Vst::AudioEffect, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
 {
+	gmpi::hosting::gmpi_processor plugin;
+
 public:
 	Processor_VST3 (gmpi::hosting::pluginInfo& pinfo);
 	~Processor_VST3 ();
@@ -113,13 +115,7 @@ protected:
 
 	Processor_VST3::vstNoteInfo& allocateKey(const Steinberg::Vst::NoteOnEvent& note);
 
-	gmpi::hosting::gmpi_processor plugin;
-
-	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle = {};
-	gmpi_dynamic_linking::DLL_HANDLE plugin_dllHandle_to_unload = {};
-
 	bool active_;
-//	Steinberg::Vst::ProcessContext timeInfo{};
 
 	std::vector<float*> inputBuffers;
 	std::vector<float*> outputBuffers;
@@ -154,7 +150,7 @@ protected:
 	std::vector<float> silence;
 	gmpi::hosting::pluginInfo const& info;
 
-//	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IAudioPluginHost);
+//	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IProcessorHost);
 	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
 	{
 		*returnInterface = 0;

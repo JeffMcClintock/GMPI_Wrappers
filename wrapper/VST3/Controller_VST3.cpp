@@ -19,8 +19,6 @@
 #include "SEVSTGUIEditorMac.h"
 #endif
 
-//extern "C"
-//gmpi::ReturnCode MP_GetFactory( void** returnInterface );
 
 /*
 #include "midi_defs.h"

@@ -25,8 +25,8 @@ ${gmpi_sdk_folder}/Hosting/message_queues.cpp
 ${gmpi_sdk_folder}/Hosting/gmpi_factory.h
 ${gmpi_sdk_folder}/Hosting/gmpi_factory.cpp
 
-# MyVstPluginFactory.h
-# MyVstPluginFactory.cpp
+Factory_Clap.h
+Factory_Clap.cpp
 Processor_CLAP.h
 Processor_CLAP.cpp
 # Controller_VST3.h

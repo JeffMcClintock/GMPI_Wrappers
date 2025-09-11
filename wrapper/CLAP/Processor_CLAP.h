@@ -34,33 +34,29 @@
  */
 
 #include "clap/helpers/plugin.hh"
-//#include <clap/helpers/plugin.hh>
 #include <atomic>
 #include <array>
 #include <unordered_map>
 #include <memory>
-// #include <readerwriterqueue.h>
-
-#include "saw-voice.h"
-#include <memory>
+#include "Hosting/processor_holder.h"
+#include "GmpiMidi.h"
 
 namespace sst::clap_saw_demo
 {
 
 struct ClapSawDemoEditor;
 
-struct ClapSawDemo : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
                                                   clap::helpers::CheckingLevel::Maximal>
+    , public gmpi::api::IProcessorHost
 {
-    static constexpr int max_voices = 64;
-    ClapSawDemo(const clap_host *host);
-    ~ClapSawDemo();
+    gmpi::hosting::gmpi_processor plugin;
+    gmpi::hosting::pluginInfo& info;
+    gmpi::midi_2_0::MidiConverter2 midiConverter;
 
-    /*
-     * This static (defined in the cpp file) allows us to present a name, feature set,
-     * url etc... and is consumed by clap-saw-demo-pluginentry.cpp
-     */
-    static clap_plugin_descriptor desc;
+    static constexpr int max_voices = 64;
+    Processor(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& info, const clap_host *host);
+    ~Processor();
 
     /*
      * Activate makes sure sampleRate is distributed through
@@ -68,12 +64,7 @@ struct ClapSawDemo : public clap::helpers::Plugin<clap::helpers::MisbehaviourHan
      * onto each pre-allocated voice object.
      */
     bool activate(double sampleRate, uint32_t minFrameCount,
-                  uint32_t maxFrameCount) noexcept override
-    {
-        for (auto &v : voices)
-            v.sampleRate = sampleRate;
-        return true;
-    }
+        uint32_t maxFrameCount) noexcept override;
 
     /*
      * Parameter Handling:
@@ -89,6 +80,7 @@ struct ClapSawDemo : public clap::helpers::Plugin<clap::helpers::MisbehaviourHan
      * contains a map from these IDs to a double * which the constructor sets up
      * as references to members.
      */
+#if 0
     enum paramIds : uint32_t
     {
         pmUnisonCount = 1378,
@@ -106,19 +98,12 @@ struct ClapSawDemo : public clap::helpers::Plugin<clap::helpers::MisbehaviourHan
         pmFilterMode = 14255
     };
     static constexpr int nParams = 10;
-
+#endif
     bool implementsParams() const noexcept override { return true; }
-    bool isValidParamId(clap_id paramId) const noexcept override
-    {
-        return paramToValue.find(paramId) != paramToValue.end();
-    }
-    uint32_t paramsCount() const noexcept override { return nParams; }
+    bool isValidParamId(clap_id paramId) const noexcept override;
+    uint32_t paramsCount() const noexcept override { return plugin.nativeParams.size(); }
     bool paramsInfo(uint32_t paramIndex, clap_param_info *info) const noexcept override;
-    bool paramsValue(clap_id paramId, double *value) noexcept override
-    {
-        *value = *paramToValue[paramId];
-        return true;
-    }
+    bool paramsValue(clap_id paramId, double* value) noexcept override;
 
     /*
      * This converts the numerical value of the parameter to a display value for the DAW.
@@ -161,7 +146,7 @@ struct ClapSawDemo : public clap::helpers::Plugin<clap::helpers::MisbehaviourHan
      * you can support overlapping notes, which in conjunction with CLAP_DIALECT_NOTE
      * and the Bitwig voice stack modulator lets you stack this little puppy!
      */
-    bool implementsVoiceInfo() const noexcept override { return true; }
+    bool implementsVoiceInfo() const noexcept override { return false; }
     bool voiceInfoGet(clap_voice_info *info) noexcept override
     {
         info->voice_capacity = max_voices;
@@ -186,11 +171,6 @@ struct ClapSawDemo : public clap::helpers::Plugin<clap::helpers::MisbehaviourHan
      * delegated to.
      */
     clap_process_status process(const clap_process *process) noexcept override;
-    void handleInboundEvent(const clap_event_header_t *evt);
-    void pushParamsToVoices();
-    void handleNoteOn(int port_index, int channel, int key, int noteid);
-    void handleNoteOff(int port_index, int channel, int key);
-    void activateVoice(SawDemoVoice &v, int port_index, int channel, int key, int noteid);
     void handleEventsFromUIQueue(const clap_output_events_t *);
 
     /*
@@ -307,6 +287,16 @@ struct ClapSawDemo : public clap::helpers::Plugin<clap::helpers::MisbehaviourHan
 #endif
 
   public:
+
+      // IProcessorHost
+	  gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override { return gmpi::ReturnCode::Ok; };
+      gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override { return gmpi::ReturnCode::Ok; };
+      gmpi::ReturnCode setLatency(int32_t latency) override { return gmpi::ReturnCode::Ok; };
+      gmpi::ReturnCode sleep() override { return gmpi::ReturnCode::Ok; };
+      int32_t getBlockSize() override { return maxFrameCount; }
+      float getSampleRate() override {return sampleRate;}
+      int32_t getHandle() override { return 0; };
+
 #if HAS_GUI
     static constexpr uint32_t GUI_DEFAULT_W = 390, GUI_DEFAULT_H = 530;
 
@@ -363,16 +353,11 @@ struct ClapSawDemo : public clap::helpers::Plugin<clap::helpers::MisbehaviourHan
     ClapSawDemoEditor *editor{nullptr};
 #endif
 
-    // These items are ONLY read and written on the audio thread, so they
-    // are safe to be non-atomic doubles. We keep a map to locate them
-    // for parameter updates.
-    double unisonCount{3}, unisonSpread{10}, oscDetune{0}, cutoff{69}, resonance{0.7},
-        ampAttack{0.01}, ampRelease{0.2}, ampIsGate{0}, preFilterVCA{1.0}, filterMode{0};
-    std::unordered_map<clap_id, double *> paramToValue;
+    double sampleRate{ 44100.0 };
+	uint32_t maxFrameCount{ 0 };
 
-    // "Voice Management" is "randomly pick a voice to kill and put it in stolen voices"
-    std::array<SawDemoVoice, max_voices> voices;
-    std::vector<std::tuple<int, int, int, int>> terminatedVoices; // that's PCK ID
+    GMPI_QUERYINTERFACE_METHOD(gmpi::api::IProcessorHost);
+    GMPI_REFCOUNT_NO_DELETE;
 };
 } // namespace sst::clap_saw_demo
 

@@ -104,12 +104,12 @@ AU2_Wrapper::AU2_Wrapper(AudioComponentInstance inInstance)
 		[this](const gmpi::midi::message_view& msg, int sampleOffset) {
             gmpi::api::Event ge
             {
-                {},                         // next (populated later)
-                sampleOffset,               // timeDelta
+                {},									// next (populated later)
+                sampleOffset,						// timeDelta
                 gmpi::api::EventType::Midi,
-                plugin.MidiInputPinIdx,            // pinIdx
-                static_cast<int32_t>(msg.size()),                 // size_
-                {}                          // data_/oversizeData_
+                plugin.MidiInputPinIdx,				// pinIdx
+                static_cast<int32_t>(msg.size()),	// size_
+                {}									// data_/oversizeData_
             };
 
             auto dst = reinterpret_cast<uint8_t*>(&ge.data_);
@@ -646,13 +646,13 @@ OSStatus AU2_Wrapper::SetParameter(
     if(inID < 0 || inID >= gmpiController.nativeParams.size())
         return kAudioUnitErr_InvalidParameter;
     
-    auto p = gmpiController.nativeParams[inID];
+    auto p = plugin.nativeParams[inID];
     
     plugin.setParameterNormalizedFromDaw(
          *plugin.info
         , inBufferOffsetInFrames
         , p->info->id
-        , gmpiController.nativeParams[inID]->real2Normalized(inValue)
+        , plugin.nativeParams[inID]->real2Normalized(inValue)
         );
     
 //	if (auto p = getDawParameter(inID); p)

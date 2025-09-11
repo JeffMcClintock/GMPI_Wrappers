@@ -21,25 +21,33 @@
 namespace sst::clap_saw_demo
 {
 
-ClapSawDemo::ClapSawDemo(const clap_host *host)
+Processor::Processor(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& pinfo, const clap_host *host)
     : clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
-                            clap::helpers::CheckingLevel::Maximal>(&desc, host)
-{
-//    _DBGCOUT << "Constructing ClapSawDemo" << std::endl;
-    paramToValue[pmUnisonCount] = &unisonCount;
-    paramToValue[pmUnisonSpread] = &unisonSpread;
-    paramToValue[pmOscDetune] = &oscDetune;
-    paramToValue[pmAmpAttack] = &ampAttack;
-    paramToValue[pmAmpRelease] = &ampRelease;
-    paramToValue[pmAmpIsGate] = &ampIsGate;
-    paramToValue[pmCutoff] = &cutoff;
-    paramToValue[pmResonance] = &resonance;
-    paramToValue[pmPreFilterVCA] = &preFilterVCA;
-    paramToValue[pmFilterMode] = &filterMode;
+                            clap::helpers::CheckingLevel::Maximal>(desc, host)
+    , info(pinfo)
+    , midiConverter([this](const gmpi::midi::message_view msg, int sampleOffset)
+        {
+            gmpi::api::Event ge
+            {
+                {},									// next (populated later)
+                sampleOffset,						// timeDelta
+                gmpi::api::EventType::Midi,
+                plugin.MidiInputPinIdx,				// pinIdx
+                static_cast<int32_t>(msg.size()),	// size_
+                {}									// data_/oversizeData_
+            };
 
-    terminatedVoices.reserve(max_voices * 4);
+            auto dst = reinterpret_cast<uint8_t*>(&ge.data_);
+            auto data = msg.begin();
+            std::copy(data, data + msg.size(), dst);
+
+            plugin.events.push(ge);
+        })
+{
+    plugin.init(info);
 }
-ClapSawDemo::~ClapSawDemo()
+
+Processor::~Processor()
 {
 #if HAS_GUI
     // I *think* this is a bitwig bug that they won't call guiDestroy if destroying a plugin
@@ -49,135 +57,96 @@ ClapSawDemo::~ClapSawDemo()
 #endif
 }
 
-const char *features[] = {CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER, nullptr};
-clap_plugin_descriptor ClapSawDemo::desc = {CLAP_VERSION,
-                                            "org.surge-synth-team.clap-saw-demo",
-                                            "Clap Saw Demo Synth",
-                                            "Surge Synth Team",
-                                            "https://surge-synth-team.org",
-                                            "",
-                                            "",
-                                            "1.0.0",
-                                            "A simple sawtooth synth to show CLAP features.",
-                                            features};
 /*
  * PARAMETER SETUP SECTION
  */
-bool ClapSawDemo::paramsInfo(uint32_t paramIndex, clap_param_info *info) const noexcept
+bool Processor::isValidParamId(clap_id paramId) const noexcept
 {
-    if (paramIndex >= nParams)
+    for(const auto param : plugin.nativeParams)
+        if(param->info->dawTag == paramId)
+			return true;
+
+	return false;
+}
+
+bool Processor::paramsInfo(uint32_t paramIndex, clap_param_info *clap_info) const noexcept
+{
+    if (paramIndex < 0 || paramIndex >= plugin.nativeParams.size())
         return false;
+
+	const auto& param_info = *plugin.nativeParams[paramIndex]->info;
+
+    *clap_info = {};
 
     /*
      * Our job is to populate the clap_param_info. We set each of our parameters as AUTOMATABLE
      * and then begin setting per-parameter features.
      */
-    info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+    clap_info->flags = CLAP_PARAM_IS_AUTOMATABLE;
 
     /*
      * These constants activate polyphonic modulatability on a parameter. Not all the params here
      * support that
      */
-    auto mod = CLAP_PARAM_IS_MODULATABLE | CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID |
-               CLAP_PARAM_IS_MODULATABLE_PER_KEY;
+   // TODO auto mod = CLAP_PARAM_IS_MODULATABLE; // | CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID | CLAP_PARAM_IS_MODULATABLE_PER_KEY;
 
-    switch (paramIndex)
+    strncpy(clap_info->name, param_info.name.c_str(), CLAP_NAME_SIZE);
+    strncpy(clap_info->module, "", CLAP_NAME_SIZE);
+    clap_info->id            = param_info.dawTag;
+    clap_info->min_value     = param_info.minimum;
+    clap_info->max_value     = param_info.maximum;
+    clap_info->default_value = param_info.default_value;
+
+    if ((param_info.datatype == gmpi::PinDatatype::Int32 || param_info.datatype == gmpi::PinDatatype::Int64) && !param_info.enum_entries.empty())
     {
-    case 0:
-        info->id = pmUnisonCount;
-        strncpy(info->name, "Unison Count", CLAP_NAME_SIZE);
-        strncpy(info->module, "Oscillator", CLAP_NAME_SIZE);
-        info->min_value = 1;
-        info->max_value = SawDemoVoice::max_uni;
-        info->default_value = 3;
-        info->flags |= CLAP_PARAM_IS_STEPPED;
-        break;
-    case 1:
-        info->id = pmUnisonSpread;
-        strncpy(info->name, "Unison Spread in Cents", CLAP_NAME_SIZE);
-        strncpy(info->module, "Oscillator", CLAP_NAME_SIZE);
-        info->min_value = 0;
-        info->max_value = 100;
-        info->default_value = 10;
-        info->flags |= mod;
-        break;
-    case 2:
-        info->id = pmOscDetune;
-        strncpy(info->name, "Oscillator Detuning (in cents)", CLAP_NAME_SIZE);
-        strncpy(info->module, "Oscillator", CLAP_NAME_SIZE);
-        info->min_value = -200;
-        info->max_value = 200;
-        info->default_value = 0;
-        info->flags |= mod;
-        break;
-    case 3:
-        info->id = pmAmpAttack;
-        strncpy(info->name, "Amplitude Attack (s)", CLAP_NAME_SIZE);
-        strncpy(info->module, "Amplitude Envelope Generator", CLAP_NAME_SIZE);
-        info->min_value = 0;
-        info->max_value = 1;
-        info->default_value = 0.01;
-        break;
-    case 4:
-        info->id = pmAmpRelease;
-        strncpy(info->name, "Amplitude Release (s)", CLAP_NAME_SIZE);
-        strncpy(info->module, "Amplitude Envelope Generator", CLAP_NAME_SIZE);
-        info->min_value = 0;
-        info->max_value = 1;
-        info->default_value = 0.2;
-        break;
-    case 5:
-        info->id = pmAmpIsGate;
-        strncpy(info->name, "Deactivate Amp Envelope", CLAP_NAME_SIZE);
-        strncpy(info->module, "Amplitude Envelope Generator", CLAP_NAME_SIZE);
-        info->min_value = 0;
-        info->max_value = 1;
-        info->default_value = 0;
-        info->flags |= CLAP_PARAM_IS_STEPPED;
-        break;
-    case 6:
-        info->id = pmPreFilterVCA;
-        strncpy(info->name, "Pre Filter VCA", CLAP_NAME_SIZE);
-        strncpy(info->module, "Filter", CLAP_NAME_SIZE);
-        info->min_value = 0;
-        info->max_value = 1;
-        info->default_value = 1;
-        info->flags |= mod;
-        break;
-    case 7:
-        info->id = pmCutoff;
-        strncpy(info->name, "Cutoff in Keys", CLAP_NAME_SIZE);
-        strncpy(info->module, "Filter", CLAP_NAME_SIZE);
-        info->min_value = 1;
-        info->max_value = 127;
-        info->default_value = 69;
-        info->flags |= mod;
-        break;
-    case 8:
-        info->id = pmResonance;
-        strncpy(info->name, "Resonance", CLAP_NAME_SIZE);
-        strncpy(info->module, "Filter", CLAP_NAME_SIZE);
-        info->min_value = 0.0;
-        info->max_value = 1.0;
-        info->default_value = 0.7;
-        info->flags |= mod;
-        break;
-    case 9:
-        info->id = pmFilterMode;
-        strncpy(info->name, "Filter Type", CLAP_NAME_SIZE);
-        strncpy(info->module, "Filter", CLAP_NAME_SIZE);
-        info->min_value = SawDemoVoice::StereoSimperSVF::Mode::LP;
-        info->max_value = SawDemoVoice::StereoSimperSVF::Mode::ALL;
-        info->default_value = 0;
-        info->flags |= CLAP_PARAM_IS_STEPPED;
-        break;
+        clap_info->flags |= CLAP_PARAM_IS_STEPPED;
+        //clap_info->stepCount = (std::max)(0, static_cast<int>(p.info->enum_entries.size()) - 1);
     }
+
     return true;
 }
 
-bool ClapSawDemo::paramsValueToText(clap_id paramId, double value, char *display,
+bool Processor::paramsValue(clap_id paramId, double* value) noexcept
+{
+    assert(paramId >= 0 && paramId < plugin.nativeParams.size());
+
+    if (paramId < 0 || paramId >= plugin.nativeParams.size())
+        return false;
+
+    auto p = plugin.nativeParams[paramId];
+
+    *value = p->valueReal;
+
+    return true;
+}
+
+bool Processor::paramsValueToText(clap_id paramId, double value, char *display,
                                     uint32_t size) noexcept
 {
+    assert(paramId >= 0 && paramId < plugin.nativeParams.size());
+
+    if (paramId < 0 || paramId >= plugin.nativeParams.size())
+        return false;
+
+    const auto& param = *plugin.nativeParams[paramId];
+
+    std::string valueString;
+
+    // enums
+    if ((param.info->datatype == gmpi::PinDatatype::Int32 || param.info->datatype == gmpi::PinDatatype::Int64) && !param.info->enum_entries.empty())
+    {
+        const int index = std::clamp(static_cast<int>(std::round(value)), 0, static_cast<int>(param.info->enum_entries.size()) - 1);
+		valueString = param.info->enum_entries[index].name;
+    }
+    else
+    {
+        valueString = std::to_string(value);
+	}
+
+    strncpy(display, valueString.c_str(), size);
+    display[size - 1] = '\0';
+
+#if 0
     auto pid = (paramIds)paramId;
     std::string sValue{"ERROR"};
     auto n2s = [](auto n)
@@ -245,11 +214,26 @@ bool ClapSawDemo::paramsValueToText(clap_id paramId, double value, char *display
 
     strncpy(display, sValue.c_str(), size);
     display[size - 1] = '\0';
+#endif
+
     return true;
 }
 
-bool ClapSawDemo::paramsTextToValue(clap_id paramId, const char *display, double *value) noexcept
+bool Processor::paramsTextToValue(clap_id paramId, const char *display, double *value) noexcept
 {
+    assert(paramId >= 0 && paramId < plugin.nativeParams.size());
+
+    if (paramId < 0 || paramId >= plugin.nativeParams.size())
+        return false;
+
+    const auto& param = *plugin.nativeParams[paramId];
+
+    *value = std::clamp(std::atof(display), param.info->minimum, param.info->maximum);
+
+    // todo enums
+
+    return true;
+#if 0
     switch (paramId)
     {
     case pmResonance:
@@ -294,7 +278,7 @@ bool ClapSawDemo::paramsTextToValue(clap_id paramId, const char *display, double
         return false;
         break;
     }
-
+#endif
     return false;
 }
 
@@ -303,7 +287,7 @@ bool ClapSawDemo::paramsTextToValue(clap_id paramId, const char *display, double
  * The only trick is the idi in also has NOTE_DIALECT_CLAP which provides us
  * with options on note expression and the like.
  */
-bool ClapSawDemo::audioPortsInfo(uint32_t index, bool isInput,
+bool Processor::audioPortsInfo(uint32_t index, bool isInput,
                                  clap_audio_port_info *info) const noexcept
 {
     if (isInput || index != 0)
@@ -318,18 +302,29 @@ bool ClapSawDemo::audioPortsInfo(uint32_t index, bool isInput,
     return true;
 }
 
-bool ClapSawDemo::notePortsInfo(uint32_t index, bool isInput,
+bool Processor::notePortsInfo(uint32_t index, bool isInput,
                                 clap_note_port_info *info) const noexcept
 {
     if (isInput)
     {
         info->id = 1;
-        info->supported_dialects = CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_CLAP;
-        info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
+        info->supported_dialects = CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_MIDI2;
+        info->preferred_dialect = CLAP_NOTE_DIALECT_MIDI2;
         strncpy(info->name, "NoteInput", CLAP_NAME_SIZE);
         return true;
     }
     return false;
+}
+
+bool Processor::activate(double psampleRate, uint32_t minFrameCount,
+    uint32_t pmaxFrameCount) noexcept
+{
+    sampleRate = psampleRate;
+    maxFrameCount = pmaxFrameCount;
+
+    plugin.start_processor(this, info);
+
+    return true;
 }
 
 /*
@@ -349,11 +344,15 @@ bool ClapSawDemo::notePortsInfo(uint32_t index, bool isInput,
  * 3. Detect any voices which have terminated in the block (their state has become 'NEWLY_OFF'),
  *    update them to 'OFF' and send a CLAP NOTE_END event to terminate any polyphonic modulators.
  */
-clap_process_status ClapSawDemo::process(const clap_process *process) noexcept
+clap_process_status Processor::process(const clap_process *process) noexcept
 {
     // If I have no outputs, do nothing
     if (process->audio_outputs_count <= 0)
         return CLAP_PROCESS_SLEEP;
+
+    auto& plugin_ = plugin.processor;
+    auto& events = plugin.events;
+
 
     /*
      * Stage 1:
@@ -361,7 +360,120 @@ clap_process_status ClapSawDemo::process(const clap_process *process) noexcept
      * The UI can send us gesture begin/end events which translate in to a
      * `clap_event_param_gesture` or value adjustments. Handle those.
      */
-    handleEventsFromUIQueue(process->out_events);
+//    handleEventsFromUIQueue(process->out_events);
+
+    {
+        auto ev = process->in_events;
+        auto sz = ev->size(ev);
+
+        for (int i = 0; i < sz; ++i)
+        {
+            if (auto evt = ev->get(ev, i); evt)
+            {
+                switch (evt->type)
+                {
+                case CLAP_EVENT_MIDI:
+                {
+                    auto mevt = reinterpret_cast<const clap_event_midi*>(evt);
+					const int size = gmpi::midi_1_0::status_type::ChannelPressure == (mevt->data[0] & 0xF0) ? 2 : 3;
+                    midiConverter.processMidi({ mevt->data, size }, evt->time);
+                }
+                break;
+
+                case CLAP_EVENT_MIDI2:
+                {
+                    static const int midi_message_size[16] = // in 32-bit words
+                    {
+                        1,
+                        1,
+                        1,
+                        2,
+                        2,
+                        4,
+                        1,
+                        1,
+                        2,
+                        2,
+                        2,
+                        3,
+                        3,
+                        4,
+                        4,
+                        4
+                    };
+
+                    auto mevt = reinterpret_cast<const clap_event_midi2*>(evt);
+                    const auto src = reinterpret_cast<const uint8_t*>(mevt->data);
+
+                    const auto message_type = src[3] >> 4;
+                    const auto message_length = midi_message_size[message_type];
+
+                    if (message_length < 3)
+                    {
+                        uint8_t reversebuffer[8];
+
+                        int bufferIndex = 0;
+                        // 32-bit messages.
+                        reversebuffer[bufferIndex++] = src[3];
+                        reversebuffer[bufferIndex++] = src[2];
+                        reversebuffer[bufferIndex++] = src[1];
+                        reversebuffer[bufferIndex++] = src[0];
+
+                        if (message_length == 2)
+                        {
+                            // 64-bit messages
+                            reversebuffer[bufferIndex++] = src[7];
+                            reversebuffer[bufferIndex++] = src[6];
+                            reversebuffer[bufferIndex++] = src[5];
+                            reversebuffer[bufferIndex++] = src[4];
+                        }
+
+                        midiConverter.processMidi(
+                            { reversebuffer, message_length * 4 }
+                            , static_cast<int>(evt->time)
+                        );
+                    }
+                }
+                break;
+
+                case CLAP_EVENT_PARAM_VALUE:
+                {
+                    auto v = reinterpret_cast<const clap_event_param_value*>(evt);
+					const auto& inID = v->param_id;
+
+                    //*paramToValue[v->param_id] = v->value;
+                    //pushParamsToVoices();
+
+                    if (inID >= 0 && inID < plugin.nativeParams.size())
+                    {
+                        auto p = plugin.nativeParams[inID];
+
+                        plugin.setParameterNormalizedFromDaw(
+                             *plugin.info
+                            , evt->time
+                            , p->info->id
+                            , plugin.nativeParams[inID]->real2Normalized(v->value)
+                        );
+                    }
+#if HAS_GUI
+                    if (editor)
+                    {
+                        auto r = ToUI();
+                        r.type = ToUI::PARAM_VALUE;
+                        r.id = v->param_id;
+                        r.value = (double)v->value;
+
+                        toUiQ.try_enqueue(r);
+                    }
+#endif
+                }
+
+                default:
+                    break;
+                }
+            }
+        }
+    }
 
 #if HAS_GUI
     /*
@@ -385,12 +497,42 @@ clap_process_status ClapSawDemo::process(const clap_process *process) noexcept
      * and other events with audio generation. Here we do everything completely sample accurately
      * by maintaining a pointer to the 'nextEvent' which we check at every sample.
      */
-    float **out = process->audio_outputs[0].data32;
-    auto chans = process->audio_outputs->channel_count;
+    float** inputBuffers = process->audio_inputs ? process->audio_inputs[0].data32 : nullptr;
+    float** outputBuffers = process->audio_outputs ? process->audio_outputs[0].data32 : nullptr;
+	auto chansIn = process->audio_inputs? process->audio_inputs->channel_count : 0;
+    auto chansOut = process->audio_outputs ? process->audio_outputs->channel_count : 0;
 
-    auto ev = process->in_events;
-    auto sz = ev->size(ev);
+    // pass buffer pointers to plugin
+    {
+        int inIdx = 0;
+        int outIdx = 0;
+        for (auto& pin : info.dspPins)
+        {
+            if (pin.datatype != gmpi::PinDatatype::Audio)
+                continue;
 
+            if (pin.direction == gmpi::PinDirection::In)
+            {
+                plugin_->setBuffer(pin.id, process->audio_inputs[0].data32[inIdx++]);
+            }
+            else
+            {
+                plugin_->setBuffer(pin.id, process->audio_outputs[0].data32[outIdx++]);
+            }
+        }
+
+        assert(inIdx == chansIn);
+        assert(outIdx == chansOut);
+    }
+
+    // Process audio.
+    plugin_->process(process->frames_count, events.head());
+
+    events.clear();
+
+    return CLAP_PROCESS_CONTINUE;
+
+#if 0
     // This pointer is the sentinel to our next event which we advance once an event is processed
     const clap_event_header_t *nextEvent{nullptr};
     uint32_t nextEventIndex{0};
@@ -417,7 +559,7 @@ clap_process_status ClapSawDemo::process(const clap_process *process) noexcept
 
         // This is a simple accumulator of output across our active voices.
         // See saw-voice.h for information on the individual voice.
-        for (int ch = 0; ch < chans; ++ch)
+        for (int ch = 0; ch < chansOut; ++ch)
         {
             out[ch][i] = 0.f;
         }
@@ -426,12 +568,12 @@ clap_process_status ClapSawDemo::process(const clap_process *process) noexcept
             if (v.isPlaying())
             {
                 v.step();
-                if (chans >= 2)
+                if (chansOut >= 2)
                 {
                     out[0][i] += v.L;
                     out[1][i] += v.R;
                 }
-                else if (chans == 1)
+                else if (chansOut == 1)
                 {
                     out[0][i] += (v.L + v.R) * 0.5;
                 }
@@ -499,228 +641,10 @@ clap_process_status ClapSawDemo::process(const clap_process *process) noexcept
     // Otherwise we have no voices - we can return CLAP_PROCESS_SLEEP until we get the next event
     // And our host can optionally skip processing
     return CLAP_PROCESS_SLEEP;
-}
-
-/*
- * handleInboundEvent provides the core event mechanism including
- * voice activation and deactivation, parameter modulation, note expression,
- * and so on.
- *
- * It reads, unsurprisingly, as a simple switch over type with reactions.
- */
-void ClapSawDemo::handleInboundEvent(const clap_event_header_t *evt)
-{
-    if (evt->space_id != CLAP_CORE_EVENT_SPACE_ID)
-        return;
-
-    switch (evt->type)
-    {
-    case CLAP_EVENT_MIDI:
-    {
-        /*
-         * We advertise both CLAP_DIALECT_MIDI and CLAP_DIALECT_CLAP_NOTE so we do need
-         * to handle midi events. CLAP just gives us MIDI 1 (or 2 if you want, but I didn't code
-         * that) streams to do with as you wish. The CLAP_MIDI_EVENT here does the obvious thing.
-         */
-        auto mevt = reinterpret_cast<const clap_event_midi *>(evt);
-        auto msg = mevt->data[0] & 0xF0;
-        auto chan = mevt->data[0] & 0x0F;
-        switch (msg)
-        {
-        case 0x90:
-        {
-            // Hosts should prefer CLAP_NOTE events but if they don't
-            handleNoteOn(mevt->port_index, chan, mevt->data[1], -1);
-            break;
-        }
-        case 0x80:
-        {
-            // Hosts should prefer CLAP_NOTE events but if they don't
-            handleNoteOff(mevt->port_index, chan, mevt->data[1]);
-            break;
-        }
-        case 0xE0:
-        {
-            // pitch bend
-            auto bv = (mevt->data[1] + mevt->data[2] * 128 - 8192) / 8192.0;
-
-            for (auto &v : voices)
-            {
-                v.pitchBendWheel = bv * 2; // just hardcode a pitch bend depth of 2
-                v.recalcPitch();
-            }
-
-            break;
-        }
-        }
-        break;
-    }
-    /*
-     * CLAP_EVENT_NOTE_ON and OFF simply deliver the event to the note creators below,
-     * which find (probably) and activate a spare or playing voice. Our 'voice stealing'
-     * algorithm here is 'just don't play a note 65 if 64 are ringing. Remember this is an
-     * example synth!
-     */
-    case CLAP_EVENT_NOTE_ON:
-    {
-        auto nevt = reinterpret_cast<const clap_event_note *>(evt);
-        handleNoteOn(nevt->port_index, nevt->channel, nevt->key, nevt->note_id);
-    }
-    break;
-    case CLAP_EVENT_NOTE_OFF:
-    {
-        auto nevt = reinterpret_cast<const clap_event_note *>(evt);
-        handleNoteOff(nevt->port_index, nevt->channel, nevt->key);
-    }
-    break;
-    /*
-     * CLAP_EVENT_PARAM_VALUE sets a value. What happens if you change a parameter
-     * outside a modulation context. We simply update our engine value and, if an editor
-     * is attached, send an editor message.
-     */
-    case CLAP_EVENT_PARAM_VALUE:
-    {
-        auto v = reinterpret_cast<const clap_event_param_value *>(evt);
-
-        *paramToValue[v->param_id] = v->value;
-        pushParamsToVoices();
-
-#if HAS_GUI
-        if (editor)
-        {
-            auto r = ToUI();
-            r.type = ToUI::PARAM_VALUE;
-            r.id = v->param_id;
-            r.value = (double)v->value;
-
-            toUiQ.try_enqueue(r);
-        }
 #endif
-    }
-    break;
-    /*
-     * CLAP_EVENT_PARAM_MOD provides both monophonic and polyphonic modulation.
-     * We do this by seeing which parameter is modulated then adjusting the
-     * side-by-side modulation values in a voice.
-     */
-    case CLAP_EVENT_PARAM_MOD:
-    {
-        auto pevt = reinterpret_cast<const clap_event_param_mod *>(evt);
-
-        // This little lambda updates a modulation slot in a voice properly
-        auto applyToVoice = [&pevt](auto &v)
-        {
-            if (!v.isPlaying())
-                return;
-
-            auto pd = pevt->param_id;
-            switch (pd)
-            {
-            case paramIds::pmCutoff:
-            {
-                v.cutoffMod = pevt->amount;
-                v.recalcFilter();
-                break;
-            }
-            case paramIds::pmUnisonSpread:
-            {
-                v.uniSpreadMod = pevt->amount;
-                v.recalcPitch();
-                break;
-            }
-            case paramIds::pmOscDetune:
-            {
-                // _DBGCOUT << "Detune Mod" << _D(pevt->amount) << std::endl;
-                v.oscDetuneMod = pevt->amount;
-                v.recalcPitch();
-                break;
-            }
-            case paramIds::pmResonance:
-            {
-                v.resMod = pevt->amount;
-                v.recalcFilter();
-                break;
-            }
-            case paramIds::pmPreFilterVCA:
-            {
-                v.preFilterVCAMod = pevt->amount;
-            }
-            }
-        };
-
-        /*
-         * The real meat is here. If we have a note id, find the note and modulate it.
-         * Otherwise if we have a key (we are doing "PCK modulation" rather than "noteid
-         * modulation") find a voice and update that. Otherwise it is a monophonic modulation
-         * so update every voice.
-         */
-        if (pevt->note_id >= 0)
-        {
-            // poly by note_id
-            for (auto &v : voices)
-            {
-                if (v.note_id == pevt->note_id)
-                {
-                    applyToVoice(v);
-                }
-            }
-        }
-        else if (pevt->key >= 0 && pevt->channel >= 0 && pevt->port_index >= 0)
-        {
-            // poly by PCK
-            for (auto &v : voices)
-            {
-                if (v.key == pevt->key && v.channel == pevt->channel &&
-                    v.portid == pevt->port_index)
-                {
-                    applyToVoice(v);
-                }
-            }
-        }
-        else
-        {
-            // mono
-            for (auto &v : voices)
-            {
-                applyToVoice(v);
-            }
-        }
-    }
-    break;
-    /*
-     * Note expression handling is similar to polymod. Traverse the voices - in note expression
-     * indexed by channel / key / port - and adjust the modulation slot in each.
-     */
-    case CLAP_EVENT_NOTE_EXPRESSION:
-    {
-        auto pevt = reinterpret_cast<const clap_event_note_expression *>(evt);
-        for (auto &v : voices)
-        {
-            if (!v.isPlaying())
-                continue;
-
-            // Note expressions work on key not note id
-            if (v.key == pevt->key && v.channel == pevt->channel && v.portid == pevt->port_index)
-            {
-                switch (pevt->expression_id)
-                {
-                case CLAP_NOTE_EXPRESSION_VOLUME:
-                    // I can mod the VCA
-                    v.volumeNoteExpressionValue = pevt->value - 1.0;
-                    break;
-                case CLAP_NOTE_EXPRESSION_TUNING:
-                    v.pitchNoteExpressionValue = pevt->value;
-                    v.recalcPitch();
-                    break;
-                }
-            }
-        }
-    }
-    break;
-    }
 }
 
-void ClapSawDemo::handleEventsFromUIQueue(const clap_output_events_t *ov)
+void Processor::handleEventsFromUIQueue(const clap_output_events_t *ov)
 {
 #if HAS_GUI
     bool uiAdjustedValues{false};
@@ -787,103 +711,13 @@ void ClapSawDemo::handleEventsFromUIQueue(const clap_output_events_t *ov)
 #endif
 }
 
-/*
- * The note on, note off, and push params to voices implementations are, basically, completely
- * uninteresting.
- */
-void ClapSawDemo::handleNoteOn(int port_index, int channel, int key, int noteid)
-{
-    bool foundVoice{false};
-    for (auto &v : voices)
-    {
-        if (v.state == SawDemoVoice::OFF)
-        {
-            activateVoice(v, port_index, channel, key, noteid);
-            foundVoice = true;
-            break;
-        }
-    }
-
-    if (!foundVoice)
-    {
-        // We could steal oldest. If you want to do that toss in a PR to add age
-        // to the voice I guess. This is just a demo synth though.
-        auto idx = rand() % max_voices;
-        auto &v = voices[idx];
-        terminatedVoices.emplace_back(v.portid, v.channel, v.key, v.note_id);
-        activateVoice(v, port_index, channel, key, noteid);
-    }
-
-#if HAS_GUI
-    dataCopyForUI.updateCount++;
-    dataCopyForUI.polyphony++;
-
-    if (editor)
-    {
-        auto r = ToUI();
-        r.type = ToUI::MIDI_NOTE_ON;
-        r.id = (uint32_t)key;
-        toUiQ.try_enqueue(r);
-    }
-#endif
-}
-
-void ClapSawDemo::handleNoteOff(int port_index, int channel, int n)
-{
-    for (auto &v : voices)
-    {
-        if (v.isPlaying() && v.key == n && v.portid == port_index && v.channel == channel)
-        {
-            v.release();
-        }
-    }
-
-#if HAS_GUI
-    if (editor)
-    {
-        auto r = ToUI();
-        r.type = ToUI::MIDI_NOTE_OFF;
-        r.id = (uint32_t)n;
-        toUiQ.try_enqueue(r);
-    }
-#endif
-}
-
-void ClapSawDemo::activateVoice(SawDemoVoice &v, int port_index, int channel, int key, int noteid)
-{
-    v.unison = std::max(1, std::min(7, (int)unisonCount));
-    v.filterMode = (int)static_cast<int>(filterMode);
-    v.note_id = noteid;
-    v.portid = port_index;
-    v.channel = channel;
-
-    v.uniSpread = unisonSpread;
-    v.oscDetune = oscDetune;
-    v.cutoff = cutoff;
-    v.res = resonance;
-    v.preFilterVCA = preFilterVCA;
-    v.ampRelease = scaleTimeParamToSeconds(ampRelease);
-    v.ampAttack = scaleTimeParamToSeconds(ampAttack);
-    v.ampGate = ampIsGate > 0.5;
-
-    // reset all the modulations
-    v.cutoffMod = 0;
-    v.oscDetuneMod = 0;
-    v.resMod = 0;
-    v.preFilterVCAMod = 0;
-    v.uniSpreadMod = 0;
-    v.volumeNoteExpressionValue = 0;
-    v.pitchNoteExpressionValue = 0;
-
-    v.start(key);
-}
 
 /*
  * If the processing loop isn't running, the call to requestParamFlush from the UI will
  * result in this being called on the main thread, and generating all the appropriate
  * param updates.
  */
-void ClapSawDemo::paramsFlush(const clap_input_events *in, const clap_output_events *out) noexcept
+void Processor::paramsFlush(const clap_input_events *in, const clap_output_events *out) noexcept
 {
     auto sz = in->size(in);
 
@@ -891,7 +725,7 @@ void ClapSawDemo::paramsFlush(const clap_input_events *in, const clap_output_eve
     for (auto e = 0U; e < sz; ++e)
     {
         auto nextEvent = in->get(in, e);
-        handleInboundEvent(nextEvent);
+//        handleInboundEvent(nextEvent);
     }
 
     handleEventsFromUIQueue(out);
@@ -900,49 +734,9 @@ void ClapSawDemo::paramsFlush(const clap_input_events *in, const clap_output_eve
     // output, so we are done.
 }
 
-void ClapSawDemo::pushParamsToVoices()
+bool Processor::stateSave(const clap_ostream *stream) noexcept
 {
-    for (auto &v : voices)
-    {
-        if (v.isPlaying())
-        {
-            v.uniSpread = unisonSpread;
-            v.oscDetune = oscDetune;
-            v.cutoff = cutoff;
-            v.res = resonance;
-            v.preFilterVCA = preFilterVCA;
-            v.ampRelease = scaleTimeParamToSeconds(ampRelease);
-            v.ampAttack = scaleTimeParamToSeconds(ampAttack);
-            v.ampGate = ampIsGate > 0.5;
-            v.filterMode = filterMode;
-
-            v.recalcPitch();
-            v.recalcFilter();
-        }
-    }
-}
-
-float ClapSawDemo::scaleTimeParamToSeconds(float param)
-{
-    auto scaleTime = std::clamp((param - 2.0 / 3.0) * 6, -100.0, 2.0);
-    auto res = powf(2.f, scaleTime);
-    return res;
-}
-
-float ClapSawDemo::scaleSecondsToTimeParam(float seconds)
-{
-    seconds = std::max(seconds, 0.000001f);
-    auto scaleTime = std::clamp((float)log2(seconds), -100.f, 2.f);
-
-    // scaletime = (param - 2 / 3) * 6 so
-    // param = scaleTime / 6 + 2/ 3
-
-    auto param = scaleTime / 6 * 2.0 / 3.0;
-    return param;
-}
-
-bool ClapSawDemo::stateSave(const clap_ostream *stream) noexcept
-{
+#if 0 // TODO
     // Oh this is soooo bad. Please don't judge me. I'm just trying to get this
     // together for launch day! If you are using this as an example for your plugins,
     // you should write a less dumb serializer of course. On and I bet this might have
@@ -968,11 +762,15 @@ bool ClapSawDemo::stateSave(const clap_ostream *stream) noexcept
         s -= r;
         c += r;
     }
+
+#endif
+
     return true;
 }
 
-bool ClapSawDemo::stateLoad(const clap_istream *stream) noexcept
+bool Processor::stateLoad(const clap_istream *stream) noexcept
 {
+#if 0 // TODO
     // Again, see the comment above on 'this is terrible'
     static constexpr uint32_t maxSize = 4096 * 8, chunkSize = 256;
     char buffer[maxSize];
@@ -1030,13 +828,15 @@ bool ClapSawDemo::stateLoad(const clap_istream *stream) noexcept
     }
 
     pushParamsToVoices();
+#endif
+
     return true;
 }
 
 /*
  * A simple passthrough. Put it here to allow the template mechanics to see the impl.
  */
-void ClapSawDemo::editorParamsFlush()
+void Processor::editorParamsFlush()
 {
     if (_host.canUseParams())
         _host.paramsRequestFlush();
