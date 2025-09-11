@@ -77,10 +77,10 @@ void VST3EditorBase::initPlugin(/*gmpi::api::IUnknown* host*/)
 #if 0
 	controller->RegisterGui2(&helper);
 /*move
-	if (pluginParameters_GMPI)
+	if (plugin Parameters_GMPI)
 	{
-		pluginParameters_GMPI->setHost(host);
-		pluginParameters_GMPI->initialize();
+		plugin Parameters_GMPI->setHost(host);
+		plugin Parameters_GMPI->initialize();
 	}
  */
 

@@ -63,7 +63,6 @@ protected:
     
 	gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
 	gmpi::shared_ptr<gmpi::api::IDrawingClient> pluginGraphics_GMPI;
-//	ParameterHelper helper;
 
 public:
 	VST3EditorBase(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::Controller_VST3* pcontroller, int pwidth, int pheight);

@@ -44,6 +44,26 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
             plugin.events.push(ge);
         })
 {
+    gmpiController.notifyDaw = [this](gmpi::hosting::GmpiParameter const* param)
+        {
+            assert(param->info->dawTag != -1); // should never be called for non-native param.
+
+            const auto paramID = param->info->dawTag;
+#if 0 // TODO
+            // Usually parameter will have sent beginEdit() already (if it has mouse-down connected properly, else fake it.
+            if (!param->isGrabbed)
+                beginEdit(paramID);
+
+            //   _RPT2(0, "param[%d] %f => DAW\n", paramID, param->getNormalized());
+            performEdit(paramID, param->normalisedValue()); // Send the value to DSP.
+
+            if (!param->isGrabbed)
+                endEdit(paramID);
+#endif
+        };
+
+    gmpiController.init(pinfo);
+
     plugin.init(info);
 }
 

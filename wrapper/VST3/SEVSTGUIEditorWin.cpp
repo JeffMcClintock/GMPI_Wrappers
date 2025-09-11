@@ -7,20 +7,18 @@ namespace wrapper
 SEVSTGUIEditorWin::SEVSTGUIEditorWin(gmpi::hosting::pluginInfo const& info, gmpi::shared_ptr<gmpi::api::IEditor>& peditor, wrapper::Controller_VST3* pcontroller, int pwidth, int pheight) :
 	VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
+    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&pcontroller->gmpiController));
+
+    if (pluginParameters_GMPI)
+    {
+        pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
+    }
+
     // DPI of system. only a GUESS at this point of DPI we will be using. (until we know DAW window handle).
     {
         HDC hdc = ::GetDC(NULL);
         Dpi = GetDeviceCaps(hdc, LOGPIXELSX) / 96.f;
         ::ReleaseDC(NULL, hdc);
-    }
-
-    // 'helper' provides hosting for parameters, 'drawingframe' for graphics hosting.
-    // so when plugin queries the drawing from for 'IParameterObserver' it gets redirected to 'helper'.
-    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&pcontroller->gmpiController));//   helper));
-
-    if (pluginParameters_GMPI)
-    {
-        pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
     }
 
     if (auto drawingClient = peditor.as<gmpi::api::IDrawingClient>(); drawingClient)

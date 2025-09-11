@@ -12,7 +12,8 @@
 #include "Editor_CLAP.h"
 #include "Processor_CLAP.h"
 
-namespace gmpi { namespace hosting
+namespace gmpi {
+namespace hosting
 {
 
 /*
@@ -85,7 +86,7 @@ bool Processor_CLAP::guiCreate(const char* api, bool isFloating) noexcept
         everInit = true;
     }
 
-    editor = new Editor_CLAP(); // toUiQ, fromUiQ, dataCopyForUI, [this]() { editorParamsFlush(); });
+    editor = new Editor_CLAP(&gmpiController); // toUiQ, fromUiQ, dataCopyForUI, [this]() { editorParamsFlush(); });
 
     return editor != nullptr;
 }
@@ -129,9 +130,9 @@ bool Processor_CLAP::guiSetParent(const clap_window* window) noexcept
 #if IS_MAC
     editor->open(window->cocoa);
 #endif
-//#if IS_LINUX
-//    editor->open((void*)(window->x11));
-//#endif
+    //#if IS_LINUX
+    //    editor->open((void*)(window->x11));
+    //#endif
 #ifdef _WIN32
     editor->open(window->win32);
 #endif
@@ -176,8 +177,101 @@ LRESULT CALLBACK Editor_CLAPWindowProc(
     return DefWindowProc(hwnd, message, wParam, lParam);
 }
 
+Editor_CLAP::Editor_CLAP(
+    gmpi_controller_holder* pgmpiController
+
+    /*Processor_CLAP::SynthToUI_Queue_t& i,
+    Processor_CLAP::UIToSynth_Queue_t& o,
+    const Processor_CLAP::DataCopyForUI& d, std::function<void()> pf)
+    : inbound(i), outbound(o), synthData(d), paramRequestFlush(std::move(pf)) */)
+    : gmpiController(pgmpiController)
+{
+    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(gmpiController));
+
+    // instansiate client now, so it can be measured.
+    if (auto info = gmpi::hosting::factory::getInstance().getPluginInfo(); info)
+    {
+        auto pluginUnknown = gmpi::hosting::factory::getInstance().createInstance(info->id.c_str(), gmpi::api::PluginSubtype::Editor);
+        pluginGraphics_GMPI = pluginUnknown.as<gmpi::api::IDrawingClient>();
+        pluginParameters_GMPI = pluginUnknown.as<gmpi::api::IEditor>();
+    }
+
+    if (pluginParameters_GMPI)
+    {
+        pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
+    }
+}
+
+Editor_CLAP::~Editor_CLAP()
+{
+	if (pluginParameters_GMPI)
+		gmpiController->unRegisterGui(pluginParameters_GMPI.get());
+}
+
+void Editor_CLAP::getSize(uint32_t& width, uint32_t& height)
+{
+    // DPI of system. only a GUESS at this point of DPI we will be using. (until we know DAW window handle).
+    {
+        HDC hdc = ::GetDC(NULL);
+        Dpi = GetDeviceCaps(hdc, LOGPIXELSX) / 96.f;
+        ::ReleaseDC(NULL, hdc);
+    }
+
+    if (pluginGraphics_GMPI)
+    {
+        gmpi::drawing::Size desiredSize{ 100.f, 100.f };
+        gmpi::drawing::Size availableSize{ 99999.f, 99999.f };
+        pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
+
+        width = static_cast<uint32_t>(Dpi * desiredSize.width);
+        height = static_cast<uint32_t>(Dpi * desiredSize.height);
+    }
+    else
+    {
+        width = 32;
+        height = 32;
+    }
+
+#if 0
+
+
+    if (!drawingClient)
+    {
+        width = 0;
+        height = 0;
+        return;
+    }
+
+    gmpi::drawing::Size desiredSize{ 100.f, 100.f };
+    gmpi::drawing::Size availableSize{ 99999.f, 99999.f };
+    drawingClient->measure(&availableSize, &desiredSize);
+
+    // DPI of system. only a GUESS at this point of DPI we will be using. (until we know DAW window handle).
+    {
+        HDC hdc = ::GetDC(NULL);
+        Dpi = GetDeviceCaps(hdc, LOGPIXELSX) / 96.f;
+        ::ReleaseDC(NULL, hdc);
+    }
+
+    width = static_cast<uint32_t>(Dpi * desiredSize.width);
+    height = static_cast<uint32_t>(Dpi * desiredSize.height);
+#endif
+}
+
+void Editor_CLAP::setSize(uint32_t pwidth, uint32_t pheight)
+{
+    width = pwidth;
+    height = pheight;
+
+    gmpi::drawing::Rect r{ 0.f, 0.f, width / Dpi, height / Dpi };
+
+    if (pluginGraphics_GMPI)
+        pluginGraphics_GMPI->arrange(&r);
+}
+
 void Editor_CLAP::open(void* parentWindow)
 {
+#if 0 // TODO
     clientInvalidated = [this]()
         {
             detachAndRecreate();
@@ -202,9 +296,34 @@ void Editor_CLAP::open(void* parentWindow)
             gmpi::drawing::Rect r{ 0.f, 0.f, width / Dpi, height / Dpi };
             drawingClient->arrange(&r);
         };
-
+#endif
 
 #ifdef _WIN32
+
+    // now that we know which monitor we're on, update Dpi.
+    Dpi = GetDpiForWindow((HWND)parentWindow) / 96.f;
+
+    if (pluginGraphics_GMPI)
+    {
+        drawingframe.attachClient(pluginGraphics_GMPI.get());
+
+        const gmpi::drawing::SizeL overrideSize{ static_cast<int32_t>(width), static_cast<int32_t>(height) };
+        drawingframe.open(parentWindow, &overrideSize);
+
+        //        controller->gmpiController.initUi(&helper);
+    }
+
+    if (pluginParameters_GMPI)
+    {
+        pluginParameters_GMPI->initialize();
+
+        gmpiController->initUi(pluginParameters_GMPI.get());
+    }
+#endif
+
+
+
+#if  0 // def _WIN32
     // while constructing editor, JUCE main window is a small fixed size, so no point querying it. easier to just pass in required size.
     RECT r{ 0, 0, width, height };
 
@@ -215,22 +334,23 @@ void Editor_CLAP::open(void* parentWindow)
     if (!myhwnd)
         return;
 
-//    juceComponent.setHWND(lwindowHandle);
-
     CreateSwapPanel(DrawingFactory.getD2dFactory());
 
     initTooltip();
 
-    clientInvalidated();
-
+//    clientInvalidated();
     if (drawingClient)
     {
+        attachClient(drawingClient.get());
+
         const auto scale = 1.0 / getRasterizationScale();
 
         sizeClientDips(
             static_cast<float>(width) * scale,
             static_cast<float>(height) * scale);
 
+        //gmpi::drawing::Rect r{ 0.f, 0.f, width / Dpi, height / Dpi };
+        //drawingClient->arrange(&r);
     }
 #endif
 }
@@ -282,39 +402,6 @@ bool Processor_CLAP::guiGetSize(uint32_t* width, uint32_t* height) noexcept
     return true;
 }
 
-void Editor_CLAP::getSize(uint32_t& width, uint32_t& height)
-{
-    if(!drawingClient)
-    {
-        width = 0;
-        height = 0;
-        return;
-	}
-
-    gmpi::drawing::Size desiredSize{ 100.f, 100.f };
-    gmpi::drawing::Size availableSize{ 99999.f, 99999.f };
-    drawingClient->measure(&availableSize, &desiredSize);
-
-    // DPI of system. only a GUESS at this point of DPI we will be using. (until we know DAW window handle).
-    {
-        HDC hdc = ::GetDC(NULL);
-        Dpi = GetDeviceCaps(hdc, LOGPIXELSX) / 96.f;
-        ::ReleaseDC(NULL, hdc);
-    }
-
-    width = static_cast<uint32_t>(Dpi * desiredSize.width);
-    height = static_cast<uint32_t>(Dpi * desiredSize.height);
-}
-
-void Editor_CLAP::setSize(uint32_t pwidth, uint32_t pheight)
-{
-    width = pwidth;
-    height = pheight;
-
-    gmpi::drawing::Rect r{ 0.f, 0.f, width / Dpi, height / Dpi };
-	drawingClient->arrange(&r);
-}
-
 bool Processor_CLAP::guiAdjustSize(uint32_t* width, uint32_t* height) noexcept
 {
     assert(editor);
@@ -322,35 +409,6 @@ bool Processor_CLAP::guiAdjustSize(uint32_t* width, uint32_t* height) noexcept
     return true;
 }
 
-/*
- * Part TWO of this example is actually writing a VSTGUI UI
- *
- * Surge used to be all VSTGUI but we ported to JUCE. Doing that meant my
- * VSTGUI is a bit rusty. Also I'm not a designer. But really the only thing
- * here which is even mildly unexpected is how events go from the editor back to the engine
- * and from the engine to the UI using the thread safe queues, which our editor is
- * constructed with references to.
- */
-
-
-Editor_CLAP::Editor_CLAP(/*Processor_CLAP::SynthToUI_Queue_t& i,
-    Processor_CLAP::UIToSynth_Queue_t& o,
-    const Processor_CLAP::DataCopyForUI& d, std::function<void()> pf)
-    : inbound(i), outbound(o), synthData(d), paramRequestFlush(std::move(pf)) */ )
-{
-    // create client now, so it can be measured.
-    auto info = gmpi::hosting::factory::getInstance().getPluginInfo();
-
-    if (!info)
-        return;
-
-    auto pluginUnknown = gmpi::hosting::factory::getInstance().createInstance(info->id.c_str(), gmpi::api::PluginSubtype::Editor);
-
-    if (!pluginUnknown)
-        return;
-
-    drawingClient = pluginUnknown.as<gmpi::api::IDrawingClient>();
-}
 
 #if 0
 // Create and add our UI objects with a callback tag. Completely standard VSTGUI
