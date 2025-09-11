@@ -30,7 +30,7 @@
 #include <unordered_map>
 #include <memory>
 #include "Hosting/processor_holder.h"
-#include "Hosting/controller_holder.h"
+#include "Controller_CLAP.h"
 #include "GmpiMidi.h"
 
 namespace gmpi {
@@ -41,8 +41,8 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
     clap::helpers::CheckingLevel::Maximal>
     , public gmpi::api::IProcessorHost
 {
+    Controller_CLAP controller;
     gmpi::hosting::gmpi_processor plugin;
-    gmpi::hosting::gmpi_controller_holder gmpiController;
 
     gmpi::hosting::pluginInfo& info;
     gmpi::midi_2_0::MidiConverter2 midiConverter;

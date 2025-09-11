@@ -44,7 +44,8 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
             plugin.events.push(ge);
         })
 {
-    gmpiController.notifyDaw = [this](gmpi::hosting::GmpiParameter const* param)
+#if 0 // moved
+    controller.gmpiController.notifyDaw = [this](gmpi::hosting::GmpiParameter const* param)
         {
             assert(param->info->dawTag != -1); // should never be called for non-native param.
 
@@ -61,8 +62,9 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
                 endEdit(paramID);
 #endif
         };
+#endif
 
-    gmpiController.init(pinfo);
+    controller.gmpiController.init(pinfo);
 
     plugin.init(info);
 }
@@ -381,6 +383,7 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
      * `clap_event_param_gesture` or value adjustments. Handle those.
      */
 //    handleEventsFromUIQueue(process->out_events);
+    controller.message_que_ui_to_dsp.pollMessage(&plugin);
 
     {
         auto ev = process->in_events;

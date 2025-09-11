@@ -29,6 +29,8 @@ Factory_Clap.h
 Factory_Clap.cpp
 Processor_CLAP.h
 Processor_CLAP.cpp
+Controller_CLAP.h
+Controller_CLAP.cpp
 Editor_CLAP.h
 Editor_CLAP.cpp
 

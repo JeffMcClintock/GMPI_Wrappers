@@ -86,7 +86,7 @@ bool Processor_CLAP::guiCreate(const char* api, bool isFloating) noexcept
         everInit = true;
     }
 
-    editor = new Editor_CLAP(&gmpiController); // toUiQ, fromUiQ, dataCopyForUI, [this]() { editorParamsFlush(); });
+    editor = new Editor_CLAP(&controller.gmpiController); // toUiQ, fromUiQ, dataCopyForUI, [this]() { editorParamsFlush(); });
 
     return editor != nullptr;
 }

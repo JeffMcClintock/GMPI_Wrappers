@@ -688,13 +688,14 @@ bool Controller_VST3::onTimer()
 	gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 
 	// parameter updates to the Processor
+/* TODO, rationalise with clap controller, who should own the queue?
 	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
 	gmpiController.pendingControllerQueueClients.ServiceWaiters(
 		toProcessor,
 		queueToDsp_.freeSpace(),
 		queueToDsp_.freeSpace()
 	);
-
+*/
 	if (!queueToDsp_.empty())
 	{
 		sendMessageToProcessor(queueToDsp_.data(), queueToDsp_.size());
