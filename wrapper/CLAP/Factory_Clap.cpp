@@ -1,7 +1,7 @@
 #pragma once
 #include "./Factory_Clap.h"
-#include "Hosting/gmpi_factory.h"
 #include "Processor_CLAP.h"
+#include "Hosting/gmpi_factory.h"
 
 namespace gmpi
 {
@@ -41,7 +41,7 @@ const clap_plugin* ClapFactory::createInstance(const clap_host* host, const char
     if (!pluginInfo)
         return nullptr;
 
-    auto p = new sst::clap_saw_demo::Processor(&clap_desciptor, *pluginInfo, host);
+    auto p = new Processor_CLAP(&clap_desciptor, *pluginInfo, host);
     return p->clapPlugin();
 }
 

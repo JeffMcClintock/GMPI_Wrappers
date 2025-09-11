@@ -29,8 +29,8 @@ Factory_Clap.h
 Factory_Clap.cpp
 Processor_CLAP.h
 Processor_CLAP.cpp
-# Controller_VST3.h
-# Controller_VST3.cpp
+Editor_CLAP.h
+Editor_CLAP.cpp
 
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
 ${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp

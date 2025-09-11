@@ -1,14 +1,5 @@
-/*
- * ClapSawDemo
- * https://github.com/surge-synthesizer/clap-saw-demo
- *
- * Copyright 2022 Paul Walker and others as listed in the git history
- *
- * Released under the MIT License. See LICENSE.md for full text.
- */
+#pragma once
 
-#ifndef CLAP_SAW_DEMO_H
-#define CLAP_SAW_DEMO_H
 #include <iostream>
 //#include "debug-helpers.h"
 
@@ -41,13 +32,12 @@
 #include "Hosting/processor_holder.h"
 #include "GmpiMidi.h"
 
-namespace sst::clap_saw_demo
+namespace gmpi {
+namespace hosting
 {
 
-struct ClapSawDemoEditor;
-
-struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
-                                                  clap::helpers::CheckingLevel::Maximal>
+struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    clap::helpers::CheckingLevel::Maximal>
     , public gmpi::api::IProcessorHost
 {
     gmpi::hosting::gmpi_processor plugin;
@@ -55,8 +45,8 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
     gmpi::midi_2_0::MidiConverter2 midiConverter;
 
     static constexpr int max_voices = 64;
-    Processor(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& info, const clap_host *host);
-    ~Processor();
+    Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& info, const clap_host* host);
+    ~Processor_CLAP();
 
     /*
      * Activate makes sure sampleRate is distributed through
@@ -102,7 +92,7 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
     bool implementsParams() const noexcept override { return true; }
     bool isValidParamId(clap_id paramId) const noexcept override;
     uint32_t paramsCount() const noexcept override { return plugin.nativeParams.size(); }
-    bool paramsInfo(uint32_t paramIndex, clap_param_info *info) const noexcept override;
+    bool paramsInfo(uint32_t paramIndex, clap_param_info* info) const noexcept override;
     bool paramsValue(clap_id paramId, double* value) noexcept override;
 
     /*
@@ -114,13 +104,13 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
      * inverse function, for hosts which allow user typeins. In this example, we choose
      * to not implement that.
      */
-    bool paramsValueToText(clap_id paramId, double value, char *display,
-                           uint32_t size) noexcept override;
+    bool paramsValueToText(clap_id paramId, double value, char* display,
+        uint32_t size) noexcept override;
 
-  protected:
-    bool paramsTextToValue(clap_id paramId, const char *display, double *value) noexcept override;
+protected:
+    bool paramsTextToValue(clap_id paramId, const char* display, double* value) noexcept override;
 
-  public:
+public:
     // Convert 0-1 linear into 0-4s exponential
     float scaleTimeParamToSeconds(float param);
     float scaleSecondsToTimeParam(float seconds);
@@ -133,12 +123,12 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
     bool implementsAudioPorts() const noexcept override { return true; }
     uint32_t audioPortsCount(bool isInput) const noexcept override { return isInput ? 0 : 1; }
     bool audioPortsInfo(uint32_t index, bool isInput,
-                        clap_audio_port_info *info) const noexcept override;
+        clap_audio_port_info* info) const noexcept override;
 
     bool implementsNotePorts() const noexcept override { return true; }
     uint32_t notePortsCount(bool isInput) const noexcept override { return isInput ? 1 : 0; }
     bool notePortsInfo(uint32_t index, bool isInput,
-                       clap_note_port_info *info) const noexcept override;
+        clap_note_port_info* info) const noexcept override;
 
     /*
      * VoiceInfo is an optional (currently draft) extension where you advertise
@@ -147,7 +137,7 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
      * and the Bitwig voice stack modulator lets you stack this little puppy!
      */
     bool implementsVoiceInfo() const noexcept override { return false; }
-    bool voiceInfoGet(clap_voice_info *info) noexcept override
+    bool voiceInfoGet(clap_voice_info* info) noexcept override
     {
         info->voice_capacity = max_voices;
         info->voice_count = max_voices;
@@ -161,8 +151,8 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
      * from-a-stream api really.
      */
     bool implementsState() const noexcept override { return true; }
-    bool stateSave(const clap_ostream *) noexcept override;
-    bool stateLoad(const clap_istream *) noexcept override;
+    bool stateSave(const clap_ostream*) noexcept override;
+    bool stateLoad(const clap_istream*) noexcept override;
 
     /*
      * process is the meat of the operation. It does obvious things like trigger
@@ -170,8 +160,8 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
      * comments in the cpp file to understand it and the helper functions we have
      * delegated to.
      */
-    clap_process_status process(const clap_process *process) noexcept override;
-    void handleEventsFromUIQueue(const clap_output_events_t *);
+    clap_process_status process(const clap_process* process) noexcept override;
+    void handleEventsFromUIQueue(const clap_output_events_t*);
 
     /*
      * In addition to ::process, the plugin should implement ::paramsFlush. ::paramsFlush will be
@@ -179,7 +169,7 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
      * wants to update a value - usually a parameter value. In effect it looks like a version
      * of process with no audio buffers.
      */
-    void paramsFlush(const clap_input_events *in, const clap_output_events *out) noexcept override;
+    void paramsFlush(const clap_input_events* in, const clap_output_events* out) noexcept override;
 
     /*
      * start and stop processing are called when you start and stop obviously.
@@ -202,8 +192,8 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
 #endif
     }
 
-  protected:
-#if HAS_GUI
+protected:
+#if 1 //HAS_GUI
     /*
      * OK so now you see how the engine works. Great! But how does the GUI work?
      * CLAP is based on extensions and the core gui extension has a simple
@@ -236,22 +226,24 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
      * `clap-saw-demo-editor.cpp` along with the VSTGUI implementation. You can consult the
      * extensive comments in the clap gui extension for semantics and rules.
      */
-    bool implementsGui() const noexcept override { return true; }
-    bool guiIsApiSupported(const char *api, bool isFloating) noexcept override;
 
-    bool guiCreate(const char *api, bool isFloating) noexcept override;
+     // Note these are implemented in Editor_CLAP.cpp
+    bool implementsGui() const noexcept override { return true; }
+    bool guiIsApiSupported(const char* api, bool isFloating) noexcept override;
+
+    bool guiCreate(const char* api, bool isFloating) noexcept override;
     void guiDestroy() noexcept override;
-    bool guiSetParent(const clap_window *window) noexcept override;
+    bool guiSetParent(const clap_window* window) noexcept override;
 
     bool guiSetScale(double scale) noexcept override;
     bool guiCanResize() const noexcept override { return true; }
-    bool guiAdjustSize(uint32_t *width, uint32_t *height) noexcept override;
+    bool guiAdjustSize(uint32_t* width, uint32_t* height) noexcept override;
     bool guiSetSize(uint32_t width, uint32_t height) noexcept override;
-    bool guiGetSize(uint32_t *width, uint32_t *height) noexcept override;
+    bool guiGetSize(uint32_t* width, uint32_t* height) noexcept override;
 
     // Setting this atomic to true will force a push of all current engine
     // params to ui using the queue mechanism
-    std::atomic<bool> refreshUIValues{false};
+//    std::atomic<bool> refreshUIValues{false};
 #endif
 
     // This is an API point the editor can call back to request the host to flush
@@ -264,7 +256,7 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
     // but the VSTGUI global plus runnign a bit out of time has this implementation right now
     // which can leak or crash in some circumstances when you delete a plugin. Expect updates
     // soon enough.
-  public:
+public:
     bool implementsTimerSupport() const noexcept override
     {
         _DBGMARK;
@@ -272,7 +264,7 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
     }
     void onTimer(clap_id timerId) noexcept override;
 
-    bool registerTimer(uint32_t interv, clap_id *id);
+    bool registerTimer(uint32_t interv, clap_id* id);
     bool unregisterTimer(clap_id id);
 
     bool implementsPosixFdSupport() const noexcept override
@@ -286,16 +278,16 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
 
 #endif
 
-  public:
+public:
 
-      // IProcessorHost
-	  gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override { return gmpi::ReturnCode::Ok; };
-      gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override { return gmpi::ReturnCode::Ok; };
-      gmpi::ReturnCode setLatency(int32_t latency) override { return gmpi::ReturnCode::Ok; };
-      gmpi::ReturnCode sleep() override { return gmpi::ReturnCode::Ok; };
-      int32_t getBlockSize() override { return maxFrameCount; }
-      float getSampleRate() override {return sampleRate;}
-      int32_t getHandle() override { return 0; };
+    // IProcessorHost
+    gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override { return gmpi::ReturnCode::Ok; };
+    gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override { return gmpi::ReturnCode::Ok; };
+    gmpi::ReturnCode setLatency(int32_t latency) override { return gmpi::ReturnCode::Ok; };
+    gmpi::ReturnCode sleep() override { return gmpi::ReturnCode::Ok; };
+    int32_t getBlockSize() override { return maxFrameCount; }
+    float getSampleRate() override { return sampleRate; }
+    int32_t getHandle() override { return 0; };
 
 #if HAS_GUI
     static constexpr uint32_t GUI_DEFAULT_W = 390, GUI_DEFAULT_H = 530;
@@ -335,12 +327,12 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
      */
     struct DataCopyForUI
     {
-        std::atomic<uint32_t> updateCount{0};
-        std::atomic<bool> isProcessing{false};
-        std::atomic<int> polyphony{0};
-        std::atomic<double> tempo{0};
-        std::atomic<int> tsNum{0}, tsDen{0};
-        std::atomic<double> songpos{0};
+        std::atomic<uint32_t> updateCount{ 0 };
+        std::atomic<bool> isProcessing{ false };
+        std::atomic<int> polyphony{ 0 };
+        std::atomic<double> tempo{ 0 };
+        std::atomic<int> tsNum{ 0 }, tsDen{ 0 };
+        std::atomic<double> songpos{ 0 };
     } dataCopyForUI;
 
     typedef moodycamel::ReaderWriterQueue<ToUI, 4096> SynthToUI_Queue_t;
@@ -349,16 +341,15 @@ struct Processor : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandl
     SynthToUI_Queue_t toUiQ;
     UIToSynth_Queue_t fromUiQ;
 
-  private:
-    ClapSawDemoEditor *editor{nullptr};
+private:
 #endif
+    struct Editor_CLAP* editor{ nullptr };
 
     double sampleRate{ 44100.0 };
-	uint32_t maxFrameCount{ 0 };
+    uint32_t maxFrameCount{ 0 };
 
     GMPI_QUERYINTERFACE_METHOD(gmpi::api::IProcessorHost);
     GMPI_REFCOUNT_NO_DELETE;
 };
-} // namespace sst::clap_saw_demo
-
-#endif
+}
+} // namespace

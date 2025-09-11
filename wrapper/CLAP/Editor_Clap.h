@@ -1,0 +1,34 @@
+#pragma once
+#include "clap/helpers/plugin.hh"
+#ifdef _WIN32
+#include "backends/DrawingFrameWin.h"
+#endif
+
+namespace gmpi { namespace hosting
+{
+
+struct Editor_CLAP : public gmpi::hosting::DxDrawingFrameBase
+{
+	float Dpi{ 1.0f };
+	HWND myhwnd{};
+	uint32_t width{ 100 };
+	uint32_t height{ 100 };
+//	gmpi::shared_ptr<gmpi::api::IDrawingClient> client;
+
+	Editor_CLAP();
+
+	void open(void* parentWindow);
+
+
+	HWND getWindowHandle() override
+	{
+		return myhwnd;
+	}
+	float calcWhiteLevel() override { return 1.0f; }
+
+	void getSize(uint32_t& width, uint32_t& height);
+	void setSize(uint32_t width, uint32_t height);
+	//	bool onTimer() override { return true };
+};
+
+}}

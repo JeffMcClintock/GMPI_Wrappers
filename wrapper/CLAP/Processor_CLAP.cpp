@@ -18,10 +18,10 @@
 #include <iomanip>
 #include <locale>
 
-namespace sst::clap_saw_demo
+namespace gmpi { namespace hosting
 {
 
-Processor::Processor(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& pinfo, const clap_host *host)
+Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& pinfo, const clap_host *host)
     : clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
                             clap::helpers::CheckingLevel::Maximal>(desc, host)
     , info(pinfo)
@@ -47,7 +47,7 @@ Processor::Processor(const clap_plugin_descriptor* desc, gmpi::hosting::pluginIn
     plugin.init(info);
 }
 
-Processor::~Processor()
+Processor_CLAP::~Processor_CLAP()
 {
 #if HAS_GUI
     // I *think* this is a bitwig bug that they won't call guiDestroy if destroying a plugin
@@ -60,7 +60,7 @@ Processor::~Processor()
 /*
  * PARAMETER SETUP SECTION
  */
-bool Processor::isValidParamId(clap_id paramId) const noexcept
+bool Processor_CLAP::isValidParamId(clap_id paramId) const noexcept
 {
     for(const auto param : plugin.nativeParams)
         if(param->info->dawTag == paramId)
@@ -69,7 +69,7 @@ bool Processor::isValidParamId(clap_id paramId) const noexcept
 	return false;
 }
 
-bool Processor::paramsInfo(uint32_t paramIndex, clap_param_info *clap_info) const noexcept
+bool Processor_CLAP::paramsInfo(uint32_t paramIndex, clap_param_info *clap_info) const noexcept
 {
     if (paramIndex < 0 || paramIndex >= plugin.nativeParams.size())
         return false;
@@ -106,7 +106,7 @@ bool Processor::paramsInfo(uint32_t paramIndex, clap_param_info *clap_info) cons
     return true;
 }
 
-bool Processor::paramsValue(clap_id paramId, double* value) noexcept
+bool Processor_CLAP::paramsValue(clap_id paramId, double* value) noexcept
 {
     assert(paramId >= 0 && paramId < plugin.nativeParams.size());
 
@@ -120,7 +120,7 @@ bool Processor::paramsValue(clap_id paramId, double* value) noexcept
     return true;
 }
 
-bool Processor::paramsValueToText(clap_id paramId, double value, char *display,
+bool Processor_CLAP::paramsValueToText(clap_id paramId, double value, char *display,
                                     uint32_t size) noexcept
 {
     assert(paramId >= 0 && paramId < plugin.nativeParams.size());
@@ -219,7 +219,7 @@ bool Processor::paramsValueToText(clap_id paramId, double value, char *display,
     return true;
 }
 
-bool Processor::paramsTextToValue(clap_id paramId, const char *display, double *value) noexcept
+bool Processor_CLAP::paramsTextToValue(clap_id paramId, const char *display, double *value) noexcept
 {
     assert(paramId >= 0 && paramId < plugin.nativeParams.size());
 
@@ -287,7 +287,7 @@ bool Processor::paramsTextToValue(clap_id paramId, const char *display, double *
  * The only trick is the idi in also has NOTE_DIALECT_CLAP which provides us
  * with options on note expression and the like.
  */
-bool Processor::audioPortsInfo(uint32_t index, bool isInput,
+bool Processor_CLAP::audioPortsInfo(uint32_t index, bool isInput,
                                  clap_audio_port_info *info) const noexcept
 {
     if (isInput || index != 0)
@@ -302,7 +302,7 @@ bool Processor::audioPortsInfo(uint32_t index, bool isInput,
     return true;
 }
 
-bool Processor::notePortsInfo(uint32_t index, bool isInput,
+bool Processor_CLAP::notePortsInfo(uint32_t index, bool isInput,
                                 clap_note_port_info *info) const noexcept
 {
     if (isInput)
@@ -316,7 +316,7 @@ bool Processor::notePortsInfo(uint32_t index, bool isInput,
     return false;
 }
 
-bool Processor::activate(double psampleRate, uint32_t minFrameCount,
+bool Processor_CLAP::activate(double psampleRate, uint32_t minFrameCount,
     uint32_t pmaxFrameCount) noexcept
 {
     sampleRate = psampleRate;
@@ -344,7 +344,7 @@ bool Processor::activate(double psampleRate, uint32_t minFrameCount,
  * 3. Detect any voices which have terminated in the block (their state has become 'NEWLY_OFF'),
  *    update them to 'OFF' and send a CLAP NOTE_END event to terminate any polyphonic modulators.
  */
-clap_process_status Processor::process(const clap_process *process) noexcept
+clap_process_status Processor_CLAP::process(const clap_process *process) noexcept
 {
     // If I have no outputs, do nothing
     if (process->audio_outputs_count <= 0)
@@ -644,7 +644,7 @@ clap_process_status Processor::process(const clap_process *process) noexcept
 #endif
 }
 
-void Processor::handleEventsFromUIQueue(const clap_output_events_t *ov)
+void Processor_CLAP::handleEventsFromUIQueue(const clap_output_events_t *ov)
 {
 #if HAS_GUI
     bool uiAdjustedValues{false};
@@ -717,7 +717,7 @@ void Processor::handleEventsFromUIQueue(const clap_output_events_t *ov)
  * result in this being called on the main thread, and generating all the appropriate
  * param updates.
  */
-void Processor::paramsFlush(const clap_input_events *in, const clap_output_events *out) noexcept
+void Processor_CLAP::paramsFlush(const clap_input_events *in, const clap_output_events *out) noexcept
 {
     auto sz = in->size(in);
 
@@ -725,7 +725,7 @@ void Processor::paramsFlush(const clap_input_events *in, const clap_output_event
     for (auto e = 0U; e < sz; ++e)
     {
         auto nextEvent = in->get(in, e);
-//        handleInboundEvent(nextEvent);
+// TODO        handleInboundEvent(nextEvent);
     }
 
     handleEventsFromUIQueue(out);
@@ -734,7 +734,7 @@ void Processor::paramsFlush(const clap_input_events *in, const clap_output_event
     // output, so we are done.
 }
 
-bool Processor::stateSave(const clap_ostream *stream) noexcept
+bool Processor_CLAP::stateSave(const clap_ostream *stream) noexcept
 {
 #if 0 // TODO
     // Oh this is soooo bad. Please don't judge me. I'm just trying to get this
@@ -768,7 +768,7 @@ bool Processor::stateSave(const clap_ostream *stream) noexcept
     return true;
 }
 
-bool Processor::stateLoad(const clap_istream *stream) noexcept
+bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
 {
 #if 0 // TODO
     // Again, see the comment above on 'this is terrible'
@@ -836,7 +836,7 @@ bool Processor::stateLoad(const clap_istream *stream) noexcept
 /*
  * A simple passthrough. Put it here to allow the template mechanics to see the impl.
  */
-void Processor::editorParamsFlush()
+void Processor_CLAP::editorParamsFlush()
 {
     if (_host.canUseParams())
         _host.paramsRequestFlush();
@@ -857,4 +857,4 @@ bool ClapSawDemo::registerPosixFd(int fd)
 bool ClapSawDemo::unregisterPosixFD(int fd) { return _host.posixFdSupportUnregister(fd); }
 #endif
 
-} // namespace sst::clap_saw_demo
+}} // namespace
