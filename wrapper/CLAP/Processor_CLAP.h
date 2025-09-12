@@ -39,7 +39,6 @@ namespace hosting
 
 struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
     clap::helpers::CheckingLevel::Maximal>
-    , public gmpi::api::IProcessorHost
 {
     Controller_CLAP controller;
     gmpi::hosting::gmpi_processor plugin;
@@ -283,14 +282,14 @@ public:
 
 public:
 
-    // IProcessorHost
-    gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override { return gmpi::ReturnCode::Ok; };
-    gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override { return gmpi::ReturnCode::Ok; };
-    gmpi::ReturnCode setLatency(int32_t latency) override { return gmpi::ReturnCode::Ok; };
-    gmpi::ReturnCode sleep() override { return gmpi::ReturnCode::Ok; };
-    int32_t getBlockSize() override { return maxFrameCount; }
-    float getSampleRate() override { return sampleRate; }
-    int32_t getHandle() override { return 0; };
+    //// IProcessorHost
+    //gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override { return gmpi::ReturnCode::Ok; };
+    //gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override { return gmpi::ReturnCode::Ok; };
+    //gmpi::ReturnCode setLatency(int32_t latency) override { return gmpi::ReturnCode::Ok; };
+    //gmpi::ReturnCode sleep() override { return gmpi::ReturnCode::Ok; };
+    //int32_t getBlockSize() override { return maxFrameCount; }
+    //float getSampleRate() override { return sampleRate; }
+    //int32_t getHandle() override { return 0; };
 
 #if HAS_GUI
     static constexpr uint32_t GUI_DEFAULT_W = 390, GUI_DEFAULT_H = 530;
@@ -350,9 +349,6 @@ private:
 
     double sampleRate{ 44100.0 };
     uint32_t maxFrameCount{ 0 };
-
-    GMPI_QUERYINTERFACE_METHOD(gmpi::api::IProcessorHost);
-    GMPI_REFCOUNT_NO_DELETE;
 };
 }
 } // namespace

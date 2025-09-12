@@ -246,7 +246,7 @@ void Processor_VST3::reInitialise()
 {
 	silence.assign(processSetup.maxSamplesPerBlock, 0.0f);
 
-	plugin.start_processor(this, info);
+	plugin.start_processor(&plugin, info, processSetup.maxSamplesPerBlock, processSetup.sampleRate);
 }
 
 //-----------------------------------------------------------------------------
@@ -1014,6 +1014,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 #endif
 #endif
 
+	// messages from Processor -> Editor
 	plugin.pendingControllerQueueClients.ServiceWaitersIncremental(
 		  &m_message_que_dsp_to_ui
 		, data.numSamples
@@ -1273,39 +1274,5 @@ void Processor_VST3::MidiToHost(MidiBuffer3* mb, timestamp_t SeStartClock, int n
 #endif
 }
 
-// IAudioPluginHost
-gmpi::ReturnCode Processor_VST3::setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data)
-{
-	return plugin.setPin(timestamp, pinId, size, data);
-}
 
-gmpi::ReturnCode Processor_VST3::setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming)
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-gmpi::ReturnCode Processor_VST3::setLatency(int32_t latency)
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-gmpi::ReturnCode Processor_VST3::sleep()
-{
-	return gmpi::ReturnCode::Ok;
-}
-
-int32_t Processor_VST3::getBlockSize()
-{
-	return processSetup.maxSamplesPerBlock;
-}
-
-float Processor_VST3::getSampleRate()
-{
-	return static_cast<float>(processSetup.sampleRate);
-}
-
-int32_t Processor_VST3::getHandle()
-{
-	return 0; // only one plugin, can have handle zero.
-}
 }

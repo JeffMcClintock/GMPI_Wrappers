@@ -25,18 +25,18 @@ namespace wrapper
 {
 
 // to work around Steinberg Interfaces having incompatible addRef etc
-class GmpiBaseClass : public gmpi::api::IProcessorHost
-{
-public:
-	GMPI_REFCOUNT_NO_DELETE;
-};
+//class GmpiBaseClass : public gmpi::api::IProcessorHost
+//{
+//public:
+//	GMPI_REFCOUNT_NO_DELETE;
+//};
 
 
 
 //-----------------------------------------------------------------------------
 typedef int64_t timestamp_t;
 
-class Processor_VST3 : public Steinberg::Vst::AudioEffect, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
+class Processor_VST3 : public Steinberg::Vst::AudioEffect //, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
 {
 	gmpi::hosting::gmpi_processor plugin;
 
@@ -85,16 +85,7 @@ public:
 		}
 	}
 #endif
-
-	// IAudioPluginHost
-	gmpi::ReturnCode setPin(int32_t timestamp, int32_t pinId, int32_t size, const uint8_t* data) override;
-	gmpi::ReturnCode setPinStreaming(int32_t timestamp, int32_t pinId, bool isStreaming) override;
-	gmpi::ReturnCode setLatency(int32_t latency) override;
-	gmpi::ReturnCode sleep() override;
-	int32_t getBlockSize() override;
-	float getSampleRate() override;
-	int32_t getHandle() override;
-    
+   
 	void setHostControlFromDaw(gmpi::hosting::HostControls hc, double value);
 
 protected:
@@ -151,16 +142,16 @@ protected:
 	gmpi::hosting::pluginInfo const& info;
 
 //	GMPI_QUERYINTERFACE_METHOD(gmpi::api::IProcessorHost);
-	gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
-	{
-		*returnInterface = 0;
-		if ((*iid) == gmpi::api::IProcessorHost::guid || (*iid) == gmpi::api::IUnknown::guid)
-		{
-			*returnInterface = static_cast<gmpi::api::IProcessorHost*>(this); GmpiBaseClass::addRef();
-			return gmpi::ReturnCode::Ok;
-		}
-		return gmpi::ReturnCode::NoSupport;
-	}
+	//gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+	//{
+	//	*returnInterface = 0;
+	//	if ((*iid) == gmpi::api::IProcessorHost::guid || (*iid) == gmpi::api::IUnknown::guid)
+	//	{
+	//		*returnInterface = static_cast<gmpi::api::IProcessorHost*>(this); GmpiBaseClass::addRef();
+	//		return gmpi::ReturnCode::Ok;
+	//	}
+	//	return gmpi::ReturnCode::NoSupport;
+	//}
 };
 
 }

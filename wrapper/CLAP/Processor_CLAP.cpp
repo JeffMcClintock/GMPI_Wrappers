@@ -344,7 +344,7 @@ bool Processor_CLAP::activate(double psampleRate, uint32_t minFrameCount,
     sampleRate = psampleRate;
     maxFrameCount = pmaxFrameCount;
 
-    plugin.start_processor(this, info);
+    plugin.start_processor(&plugin, info, maxFrameCount, sampleRate);
 
     return true;
 }
@@ -552,6 +552,12 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
     plugin_->process(process->frames_count, events.head());
 
     events.clear();
+
+    // messages from Processor -> Editor
+    plugin.pendingControllerQueueClients.ServiceWaitersIncremental(
+          &controller.gmpiController.message_que_dsp_to_ui
+        , process->frames_count
+    );
 
     return CLAP_PROCESS_CONTINUE;
 
