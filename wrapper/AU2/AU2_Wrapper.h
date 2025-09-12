@@ -513,7 +513,7 @@ private:
 	const UInt32	mInitNumPartEls;
 
 	std::mutex hostMidiLock;
-	float dummyInputBuffer[kAUDefaultMaxFramesPerSlice];
+	float dummyInputBuffer[kAUDefaultMaxFramesPerSlice]; // TODO GetMaxFramesPerSlice()
 	float dummyOutputBuffer[kAUDefaultMaxFramesPerSlice];
 
 //	std::string pluginType; // "aumu" : "aufx"
