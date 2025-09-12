@@ -498,19 +498,22 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
         }
     }
 
-#if HAS_GUI
     /*
      * and then update transport information for the display on our
      * shared state object
      */
     if (process->transport)
     {
-        dataCopyForUI.tempo = process->transport->tempo;
-        dataCopyForUI.tsDen = process->transport->tsig_denom;
-        dataCopyForUI.tsNum = process->transport->tsig_num;
-        dataCopyForUI.songpos = 1.0 * process->transport->song_pos_beats / CLAP_BEATTIME_FACTOR;
+        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm, process->transport->tempo);
+        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator, process->transport->tsig_num);
+        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator, process->transport->tsig_denom);
+        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, 1.0 * process->transport->song_pos_beats / CLAP_BEATTIME_FACTOR);
+
+        //dataCopyForUI.tempo = process->transport->tempo;
+        //dataCopyForUI.tsDen = process->transport->tsig_denom;
+        //dataCopyForUI.tsNum = process->transport->tsig_num;
+        //dataCopyForUI.songpos = 1.0 * process->transport->song_pos_beats / CLAP_BEATTIME_FACTOR;
     }
-#endif
 
     /*
      * Stage 2: Create the AUDIO output and process events
@@ -535,13 +538,9 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
                 continue;
 
             if (pin.direction == gmpi::PinDirection::In)
-            {
                 plugin_->setBuffer(pin.id, process->audio_inputs[0].data32[inIdx++]);
-            }
             else
-            {
                 plugin_->setBuffer(pin.id, process->audio_outputs[0].data32[outIdx++]);
-            }
         }
 
         assert(inIdx == chansIn);
@@ -550,7 +549,6 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
 
     // Process audio.
     plugin_->process(process->frames_count, events.head());
-
     events.clear();
 
     // messages from Processor -> Editor
