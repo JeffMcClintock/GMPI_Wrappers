@@ -1,5 +1,7 @@
 #pragma once
-#include "clap/helpers/plugin.hh"
+
+//#include "clap/helpers/plugin.hh"
+#include "NativeUi.h"
 #ifdef _WIN32
 #include "backends/DrawingFrameWin.h"
 #endif
@@ -7,9 +9,16 @@
 namespace gmpi { namespace hosting
 {
 
-struct Editor_CLAP //: public gmpi::hosting::DxDrawingFrameBase
+struct Editor_CLAP
 {
+#if _WIN32
 	gmpi::hosting::DrawingFrame drawingframe;
+#endif
+    
+#if __APPLE__
+    void* nsView{};
+#endif
+    
 	gmpi::shared_ptr<gmpi::api::IEditor> pluginParameters_GMPI;
 	gmpi::shared_ptr<gmpi::api::IDrawingClient> pluginGraphics_GMPI;
 	struct gmpi_controller_holder* gmpiController{};

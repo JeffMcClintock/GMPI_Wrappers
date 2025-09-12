@@ -12,6 +12,15 @@
 #include "Editor_CLAP.h"
 #include "Processor_CLAP.h"
 
+#if __APPLE__
+
+// without including objective-C headers, we need to create an NSView.
+// forward declare function here to return the view, using void* as return type.
+void* createNativeView(void* parent, class IUnknown* paramHost, class IUnknown* client, int width, int height);
+void gmpi_onCloseNativeView(void* ptr);
+
+#endif
+
 namespace gmpi {
 namespace hosting
 {
@@ -27,7 +36,7 @@ bool Processor_CLAP::guiIsApiSupported(const char* api, bool isFloating) noexcep
     if (isFloating)
         return false;
 
-#if IS_MAC
+#if __APPLE__
     if (strcmp(api, CLAP_WINDOW_API_COCOA) == 0)
         return true;
 #endif
@@ -127,7 +136,7 @@ void Processor_CLAP::guiDestroy() noexcept
  */
 bool Processor_CLAP::guiSetParent(const clap_window* window) noexcept
 {
-#if IS_MAC
+#if __APPLE__
     editor->open(window->cocoa);
 #endif
     //#if IS_LINUX
@@ -162,6 +171,7 @@ bool Processor_CLAP::guiSetParent(const clap_window* window) noexcept
     return true;
 }
 
+#ifdef _WIN32
 LRESULT CALLBACK Editor_CLAPWindowProc(
     HWND hwnd,
     UINT message,
@@ -176,6 +186,7 @@ LRESULT CALLBACK Editor_CLAPWindowProc(
 
     return DefWindowProc(hwnd, message, wParam, lParam);
 }
+#endif
 
 Editor_CLAP::Editor_CLAP(
     gmpi_controller_holder* pgmpiController
@@ -186,8 +197,11 @@ Editor_CLAP::Editor_CLAP(
     : inbound(i), outbound(o), synthData(d), paramRequestFlush(std::move(pf)) */)
     : gmpiController(pgmpiController)
 {
+    
+#ifdef _WIN32
     drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(gmpiController));
-
+#endif
+    
     // instansiate client now, so it can be measured.
     if (auto info = gmpi::hosting::factory::getInstance().getPluginInfo(); info)
     {
@@ -195,28 +209,40 @@ Editor_CLAP::Editor_CLAP(
         pluginGraphics_GMPI = pluginUnknown.as<gmpi::api::IDrawingClient>();
         pluginParameters_GMPI = pluginUnknown.as<gmpi::api::IEditor>();
     }
-
+    
+#ifdef _WIN32
     if (pluginParameters_GMPI)
     {
         pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
     }
+#endif
+    
+#if __APPLE__
+#endif
 }
 
 Editor_CLAP::~Editor_CLAP()
 {
 	if (pluginParameters_GMPI)
 		gmpiController->unRegisterGui(pluginParameters_GMPI.get());
+    
+#if __APPLE__
+    gmpi_onCloseNativeView(nsView);
+#endif
 }
 
 void Editor_CLAP::getSize(uint32_t& width, uint32_t& height)
 {
+    
+#ifdef _WIN32
     // DPI of system. only a GUESS at this point of DPI we will be using. (until we know DAW window handle).
     {
         HDC hdc = ::GetDC(NULL);
         Dpi = GetDeviceCaps(hdc, LOGPIXELSX) / 96.f;
         ::ReleaseDC(NULL, hdc);
     }
-
+#endif
+    
     if (pluginGraphics_GMPI)
     {
         gmpi::drawing::Size desiredSize{ 100.f, 100.f };
@@ -316,12 +342,26 @@ void Editor_CLAP::open(void* parentWindow)
     if (pluginParameters_GMPI)
     {
         pluginParameters_GMPI->initialize();
-
-        gmpiController->initUi(pluginParameters_GMPI.get());
     }
 #endif
-
-
+    
+#if __APPLE__
+    //    auto nsview = (NSView*) parentWindow;
+    
+ //   const auto r = nsview->getLocalBounds();
+    nsView = createNativeView(
+          parentWindow
+          , (class IUnknown*) static_cast<gmpi::api::IEditorHost*>(gmpiController)
+          , (class IUnknown*) pluginParameters_GMPI.get()
+          , width, height
+          );
+//    nsview->setView(nsView);
+#endif
+    
+    if (pluginParameters_GMPI)
+    {
+        gmpiController->initUi(pluginParameters_GMPI.get());
+    }
 
 #if  0 // def _WIN32
     // while constructing editor, JUCE main window is a small fixed size, so no point querying it. easier to just pass in required size.

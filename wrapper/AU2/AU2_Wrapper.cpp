@@ -563,7 +563,7 @@ bool AU2_Wrapper::onTimer()
 
 	// parameter updates to the Processor
 	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
-	
+/*
     if(gmpiController.pendingControllerQueueClients.ServiceWaiters(
 		toProcessor,
 		queueToDsp_.freeSpace(),
@@ -572,7 +572,7 @@ bool AU2_Wrapper::onTimer()
     {
         queueToDsp_.Send();
     }
-
+*/
     return true;
 }
 

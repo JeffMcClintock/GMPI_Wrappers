@@ -4,13 +4,12 @@
 #include "base/source/fobject.h"
 #include "GmpiSdkCommon.h"
 #include "GmpiApiEditor.h"
-//#include "helpers/GraphicsRedrawClient.h"
 #include "VST3EditorBase.h"
 
 namespace wrapper
 {
 
-class SEVSTGUIEditorMac : public VST3EditorBase //Steinberg::FObject, public Steinberg::IPlugView
+class SEVSTGUIEditorMac : public VST3EditorBase
 {
     void* nsView = {};
     
