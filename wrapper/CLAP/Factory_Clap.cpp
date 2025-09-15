@@ -16,9 +16,12 @@ ClapFactory* ClapFactory::GetInstance()
 
 ClapFactory::ClapFactory()
 {
-    const auto& plugin = gmpi::hosting::factory::getInstance().getPluginInfo();
+    auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo();
 
-	static const char* features[] = { CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER, nullptr };
+	const bool hasMidiInput = 0 < countPins(*plugin, gmpi::PinDirection::In, gmpi::PinDatatype::Midi);
+
+	static const char* instrument_features[] = { CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER, nullptr };
+	static const char* effect_features[] = { CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, nullptr };
 
 	clap_desciptor.id          = plugin->id.c_str();
 	clap_desciptor.name        = plugin->name.c_str();
@@ -28,9 +31,8 @@ ClapFactory::ClapFactory()
 	clap_desciptor.support_url = "";
 	clap_desciptor.version     = "1.0.0";
 	clap_desciptor.description = plugin->name.c_str();
-	clap_desciptor.features    = features;
+	clap_desciptor.features    = hasMidiInput ? instrument_features : effect_features;
 }
-
 
 const clap_plugin* ClapFactory::createInstance(const clap_host* host, const char* plugin_id)
 {

@@ -149,3 +149,5 @@ if(APPLE)
 endif()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".au")
+SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES FOLDER "wrappers")
+

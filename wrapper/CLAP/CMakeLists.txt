@@ -130,17 +130,4 @@ endif()
 # required by Linux build?
 #set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-########################### VST3 SDK #######################################
-
-#list(APPEND CMAKE_MODULE_PATH "${VST3_SDK}/cmake/modules")
-
-#include(SMTG_VST3_SDK)
-
-#---Add base libraries---------------------------
-#set(VST_SDK TRUE) # used for Base module which provides only a subset of Base for VST-SDK
-#add_subdirectory(${VST3_SDK}/pluginterfaces ${CMAKE_CURRENT_BINARY_DIR}/pluginterfaces)
-#add_subdirectory(${VST3_SDK}/base           ${CMAKE_CURRENT_BINARY_DIR}/base)
-
 SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES FOLDER "wrappers")
-SET_TARGET_PROPERTIES(base PROPERTIES FOLDER "wrappers")
-SET_TARGET_PROPERTIES(pluginterfaces PROPERTIES FOLDER "wrappers")
