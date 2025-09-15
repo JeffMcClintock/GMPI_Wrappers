@@ -1,19 +1,11 @@
 #include <iostream>
+#include <dlfcn.h>
 #include "AU2_Wrapper.h"
-#include "wrapper/common/BundleInfo.h"
+#include "Hosting/Bundle.h"
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/gmpi_factory.h"
 #include "GmpiSdkCommon.h"
-#include "conversion.h"
-//#include "backends/DrawingFrameMac.h"
 
-//#include "mp_midi.h"
-//#include "UgDatabase.h"
-//#include "tinyxml/tinyxml.h"
-//#include "CocoaNamespaceMacros.h"
-//#include "../Shared/AuPreset.h"
-
-//using namespace GmpiMidi;
 using namespace ausdk;
 
 #ifdef DEBUG
@@ -155,7 +147,7 @@ AU2_Wrapper::AU2_Wrapper(AudioComponentInstance inInstance)
                 mParameterListener,
                 NULL, //AUcontroller->GetComponentInstance(), //this, //NULL,
                 &nativeParameter,
-                param->valueReal,
+                param->valueReal(),
                 0
             );
 
@@ -370,7 +362,7 @@ void AU2_Wrapper::PostConstructor()
     for (auto p : gmpiController.nativeParams)
     {
  //       auto p = it.second;
-        Globals()->SetParameter(p->info->dawTag, p->valueReal);
+        Globals()->SetParameter(p->info->dawTag, p->valueReal());
     }
 
     auto result = AUEventListenerCreate(ParameterListener,
@@ -693,7 +685,7 @@ OSStatus AU2_Wrapper::GetParameter(
         
         auto p = plugin.nativeParams[inID];
 
-        outValue = p->valueReal;
+        outValue = p->valueReal();
         return noErr;
 	}
 
@@ -1094,7 +1086,7 @@ OSStatus AU2_Wrapper::MIDIEventList(
                 }
                 
                 midiConverter.processMidi(
-                      { reversebuffer, message_length * 4 }
+                      { reversebuffer, static_cast<size_t>(message_length * 4) }
                       , static_cast<int>(inOffsetSampleFrame + packet->timeStamp)
                       );
             }
@@ -1213,7 +1205,42 @@ OSStatus	AU2_Wrapper::GetPropertyInfo(AudioUnitPropertyID		inID,
 }
 
 int heyLinkerDontDiscardAudioUnitView_mm();
+
+CFBundleRef CreatePluginBundleRef()
+{
+    CFBundleRef rBundleRef = 0;
     
+    Dl_info info;
+    if (dladdr ((const void*)CreatePluginBundleRef, &info))
+    {
+        if (info.dli_fname)
+        {
+            std::string name;
+            name.assign (info.dli_fname);
+            for (int i = 0; i < 3; i++)
+            {
+                auto p = name.find_last_of ('/');
+                if (p == std::string::npos)
+                {
+                    fprintf (stdout, "Could not determine bundle location.\n");
+                    return 0; // unexpected
+                }
+                //                name.remove (delPos, name.length () - delPos);
+                name = name.substr(0, p);
+                
+            }
+            CFURLRef bundleUrl = CFURLCreateFromFileSystemRepresentation (0, (const UInt8*)name.c_str(), name.length (), true);
+            if (bundleUrl)
+            {
+                rBundleRef = CFBundleCreate (0, bundleUrl);
+                CFRelease (bundleUrl);
+            }
+        }
+    }
+    
+    return rBundleRef;
+}
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //	Filter::GetProperty
 //
@@ -1234,7 +1261,7 @@ OSStatus AU2_Wrapper::GetProperty(
             
             heyLinkerDontDiscardAudioUnitView_mm();
             
-            CFBundleRef bundle = wrapper::BundleInfo::instance()->GetBundle();
+            CFBundleRef bundle = CreatePluginBundleRef();
 
             if (bundle == NULL) return 1;
 
@@ -1242,7 +1269,6 @@ OSStatus AU2_Wrapper::GetProperty(
             CFRetain(url);
 
             CFStringRef className = CFStringCreateWithCString(NULL, "GMPI_VIEW_MAKER_VERSION_02", kCFStringEncodingUTF8);
-
             info = { url, {className} };
 
             CFRelease(bundle);
@@ -1507,8 +1533,6 @@ OSStatus AU2_Wrapper::GetParameterInfo(
 		| kAudioUnitParameterFlag_HasCFNameString
 		| kAudioUnitParameterFlag_CFNameRelease;
 
-    const auto enumList = wrapper::Utf8ToWstring(p.info->enum_list);
-
 	if (!p.info->enum_entries.empty())
 	{
 		outParameterInfo.flags |= kAudioUnitParameterFlag_ValuesHaveStrings;
@@ -1527,7 +1551,7 @@ OSStatus AU2_Wrapper::GetParameterInfo(
 		outParameterInfo.unit = kAudioUnitParameterUnit_Generic;
 	}
 
-    outParameterInfo.defaultValue = p.info->default_value;
+    outParameterInfo.defaultValue = atof(p.info->default_value_s.c_str());// p.info->default_value;
 
 	outParameterInfo.clumpID = 0;
 
@@ -1703,6 +1727,7 @@ void AU2_Wrapper::setPresetFromSelf(DawPreset const* preset)
     
 void AU2_Wrapper::saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml)
 {
+#if 0 // TODO
     const auto p_id = wrapper::BundleInfo::instance()->getPluginId();
 
 	char i[5];
@@ -1723,6 +1748,7 @@ void AU2_Wrapper::saveNativePreset(const char* filename, const std::string& pres
 		xml
 	);
  */
+#endif
 }
 
 std::string AU2_Wrapper::loadNativePreset(std::wstring sourceFilename)

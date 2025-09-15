@@ -2,7 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include "tinyXml2/tinyxml2.h"
-#include "dynamic_linking.h"
+#include "../Hosting/dynamic_linking.h"
 #include "GmpiApiCommon.h"
 #include "GmpiSdkCommon.h"
 #if __APPLE__

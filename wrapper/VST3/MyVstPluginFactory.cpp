@@ -445,7 +445,8 @@ typedef gmpi::ReturnCode (*MP_DllEntry)(void**);
 
 bool MyVstPluginFactory::initializeFactory()
 {
-	#if 0	std::string pluginPath;
+#if 0
+    std::string pluginPath;
 	wrapper::gmpi_dynamic_linking::DLL_HANDLE hinstLib{};
 	wrapper::gmpi_dynamic_linking::MP _GetDllHandle(&hinstLib);
 
