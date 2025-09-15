@@ -19,35 +19,6 @@
 #include "SEVSTGUIEditorMac.h"
 #endif
 
-
-/*
-#include "midi_defs.h"
-#include "conversion.h"
-#include "IPluginGui.h"
-#include "HostControls.h"
-#include "../Shared/jsoncpp/json/json.h"
-#include "modules/shared/FileFinder.h"
-#include "UgDatabase.h"
-#include "../se_sdk3_hosting/GuiPatchAutomator3.h"
-#include "tinyxml/tinyxml.h" // anoyingly defines DEBUG as blank which messes with vstgui. put last.
-#include "../tinyXml2/tinyxml2.h"
-#include "VstPreset.h"
-#include "Vst2Preset.h"
-
-#ifdef _WIN32
-#include "SEVSTGUIEditorWin.h"
-#include "../../se_vst3/source/MyVstPluginFactory.h"
-#include "pluginterfaces/base/funknown.h"
-#include "../shared/unicode _conversion.h"
-#else
-#include "SEVSTGUIEditorMac.h"
-#endif
-#include "AuPreset.h"
-#include "mfc_emulation.h"
-
-using namespace std;
-using namespace tinyxml2;
-*/
 using namespace Steinberg;
 using namespace Steinberg::Vst;
 
@@ -55,8 +26,6 @@ typedef gmpi::ReturnCode(*MP_DllEntry)(void**);
 
 namespace wrapper
 {
-
-//using namespace JmUnicodeConversions;
 
 #if 0
 void Safe Messagebox(
@@ -477,6 +446,23 @@ void Controller_VST3::OnLatencyChanged()
 }
 #endif
 
+Steinberg::tresult PLUGIN_API Controller_VST3::getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized)
+{
+	if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
+		return Steinberg::kInvalidArgument;
+
+	const auto& p = *gmpiController.nativeParams[tag];
+
+	auto valueString = wrapper::JmUnicodeConversions::ToWstring(string);
+
+	wchar_t* endPtr{};
+	const auto real = wcstof(valueString.c_str(), &endPtr);
+
+	valueNormalized = p.real2Normalized(real);
+
+	return Steinberg::kResultOk;
+}
+
 tresult Controller_VST3::getParameterInfo(int32 paramIndex, ParameterInfo& returnInfo)
 {
 	if( paramIndex < 0 || paramIndex >= static_cast<int>(gmpiController.nativeParams.size()))
@@ -642,12 +628,12 @@ void Controller_VST3::setPresetXmlFromSelf(const std::string& xml)
 }
 #endif
 
+#if 0
 platform_string Controller_VST3::calcFactoryPresetFolder()
 {
 	// TODO
 	return {};
 }
-#if 0
 
 std::string Controller_VST3::getFactoryPresetXml(std::string filename)
 {

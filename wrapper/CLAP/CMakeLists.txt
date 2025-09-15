@@ -34,23 +34,8 @@ Controller_CLAP.cpp
 Editor_CLAP.h
 Editor_CLAP.cpp
 
-${ADAPTORS_COMMON_FOLDER}/my_input_stream.h
-${ADAPTORS_COMMON_FOLDER}/my_input_stream.cpp
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
-
-${ADAPTORS_COMMON_FOLDER}/dynamic_linking.h
-${ADAPTORS_COMMON_FOLDER}/dynamic_linking.cpp
-${ADAPTORS_COMMON_FOLDER}/BundleInfo.h
-${ADAPTORS_COMMON_FOLDER}/BundleInfo.cpp
-${ADAPTORS_COMMON_FOLDER}/conversion.h
-${ADAPTORS_COMMON_FOLDER}/conversion.cpp
-${ADAPTORS_COMMON_FOLDER}/FileFinder.h
-${ADAPTORS_COMMON_FOLDER}/FileFinder.cpp
-${ADAPTORS_COMMON_FOLDER}/FileWatcher.h
-${ADAPTORS_COMMON_FOLDER}/FileWatcher.cpp
-${ADAPTORS_COMMON_FOLDER}/it_enum_list.h
-${ADAPTORS_COMMON_FOLDER}/it_enum_list.cpp
 
 ${gmpi_ui_folder}/backends/DrawingFrameCommon.h
 ${gmpi_ui_folder}/backends/DrawingFrameCommon.cpp

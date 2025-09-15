@@ -1,18 +1,12 @@
 #pragma once
 
 #include "public.sdk/source/vst/vstaudioeffect.h"
-#include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "pluginterfaces/vst/ivstevents.h"
-#include "GmpiApiAudio.h"
-#include "GmpiSdkCommon.h"
 #include <thread>
 #include <mutex>
 #include <atomic>
-#include <array>
 #include <condition_variable>
-#include <optional>
 #include "GmpiMidi.h"
-#include "wrapper/common/dynamic_linking.h"
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/processor_holder.h"
 #include "Hosting/message_queues.h"

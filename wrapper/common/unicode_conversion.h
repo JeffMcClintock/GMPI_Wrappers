@@ -160,6 +160,24 @@ inline std::wstring Utf8ToWstring(const char* p_string)
         return ToUtf16(Utf8ToWstring(s));
     }
 
+    // for VST3 SDK 'TChar'
+    inline std::wstring ToWstring(const char16_t* p_string)
+    {
+        std::wstring temp;
+        if (p_string)
+        {
+            int length = 0;
+            while (p_string[length])
+                ++length;
+
+            temp.assign(length, 0);
+
+            for (int i = 0; i < temp.size(); ++i)
+                temp[i] = (wchar_t)p_string[i];
+        }
+
+        return temp;
+    }
 #else
 /*
 #ifdef __INTEL__

@@ -8,7 +8,6 @@
 #include <pluginterfaces/vst/ivstunits.h>
 #include <pluginterfaces/vst/ivstnoteexpression.h>
 #include <pluginterfaces/vst/ivstphysicalui.h>
-#include "wrapper/common/conversion.h"
 #include "Hosting/controller_holder.h"
 #include "helpers/Timer.h"
 
@@ -300,22 +299,7 @@ public:
 	}
 	Steinberg::tresult PLUGIN_API getParameterInfo(Steinberg::int32 paramIndex, Steinberg::Vst::ParameterInfo& info) override;
 	Steinberg::tresult PLUGIN_API getParamStringByValue(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized, Steinberg::Vst::String128 string) override;
-	Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized) override
-	{
-		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
-			return Steinberg::kInvalidArgument;
-
-		const auto& p = *gmpiController.nativeParams[tag];
-
-		auto valueString = ToWstring(string);
-
-		wchar_t* endPtr{};
-		const auto real = wcstof(valueString.c_str(), &endPtr);
-
-		valueNormalized = p.real2Normalized(real);
-
-		return Steinberg::kResultOk;
-	}
+	Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized) override;
 	Steinberg::Vst::ParamValue PLUGIN_API normalizedParamToPlain(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override
 	{
 		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
@@ -367,7 +351,7 @@ public:
 	parameter - in this case parameter programIndex is < 0). */
 	Steinberg::tresult PLUGIN_API setUnitProgramData(Steinberg::int32 listOrUnitId, Steinberg::int32 programIndex, Steinberg::IBStream* data) override { return Steinberg::kResultOk; }
 
-	platform_string calcFactoryPresetFolder();
+//	platform_string calcFactoryPresetFolder();
 
 	bool sendMessageToProcessor(const void* data, int size);
 

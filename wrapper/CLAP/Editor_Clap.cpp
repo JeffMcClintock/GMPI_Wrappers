@@ -360,16 +360,12 @@ void Editor_CLAP::open(void* parentWindow)
 #endif
     
 #if __APPLE__
-    //    auto nsview = (NSView*) parentWindow;
-    
- //   const auto r = nsview->getLocalBounds();
     nsView = createNativeView(
           parentWindow
           , (class IUnknown*) static_cast<gmpi::api::IEditorHost*>(gmpiController)
           , (class IUnknown*) pluginParameters_GMPI.get()
           , width, height
           );
-//    nsview->setView(nsView);
 #endif
     
     if (pluginParameters_GMPI)

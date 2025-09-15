@@ -1,23 +1,23 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include "Windows.h"
+#endif
+
 #include "pluginterfaces/base/funknown.h"
 #include "pluginterfaces/vst/vsttypes.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
-#include "public.sdk/source/main/pluginfactory.h"
+//#include "public.sdk/source/main/pluginfactory.h"
 #include "public.sdk/source/vst/vstcomponent.h"
 #include "MyVstPluginFactory.h"
 #include "Controller_VST3.h"
 #include "Processor_VST3.h"
-#include "Common.h"
-//#include "wrapper/common/tinyXml2/tinyxml2.h"
-#include "wrapper/common/dynamic_linking.h"
+//#include "Common.h"
+//#include "wrapper/common/dynamic_linking.h"
 #include "Hosting/gmpi_factory.h"
 
-#if 0
-#include "BundleInfo.h"
-#include "FileFinder.h"
-#include "FileFinder.h"
-#include "GmpiApiAudio.h"
-#include "GmpiSdkCommon.h"
-#endif
 
 #if defined( _WIN32 )
 extern HINSTANCE ghInst;
@@ -445,9 +445,9 @@ typedef gmpi::ReturnCode (*MP_DllEntry)(void**);
 
 bool MyVstPluginFactory::initializeFactory()
 {
-	std::string pluginPath;
+	#if 0	std::string pluginPath;
 	wrapper::gmpi_dynamic_linking::DLL_HANDLE hinstLib{};
-	wrapper::gmpi_dynamic_linking::MP_GetDllHandle(&hinstLib);
+	wrapper::gmpi_dynamic_linking::MP _GetDllHandle(&hinstLib);
 
 	if (!hinstLib)
 	{
@@ -482,6 +482,7 @@ bool MyVstPluginFactory::initializeFactory()
 	}
 #else
   // not needed for built-in XML  #error implement this for mac
+#endif
 #endif
 
 	return true;

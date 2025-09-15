@@ -1,13 +1,11 @@
 #include "Processor_VST3.h"
-#include "pluginterfaces/base/ustring.h"
+//#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
+#include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "pluginterfaces/base/ibstream.h"
 #include <algorithm>
-#include <math.h>
-#include "MyVstPluginFactory.h"
 #include "wrapper/common/unicode_conversion.h"
 #include "GmpiMidi.h"
-#include "wrapper/common/dynamic_linking.h"
 
 using namespace wrapper::JmUnicodeConversions;
 
