@@ -99,9 +99,7 @@ Controller_VST3::Controller_VST3(gmpi::hosting::pluginInfo& pinfo) :
 
 Controller_VST3::~Controller_VST3()
 {
-#if 1
 	stopTimer();
-#endif
 }
 
 tresult PLUGIN_API Controller_VST3::connect(IConnectionPoint* other)

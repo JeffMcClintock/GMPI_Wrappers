@@ -411,6 +411,8 @@ void AU2_Wrapper::PostConstructor()
 
 AU2_Wrapper::~AU2_Wrapper()
 {
+    stopTimer();
+    
 	if (callbackOnUnloadPlugin)
 	{
 		callbackOnUnloadPlugin();
