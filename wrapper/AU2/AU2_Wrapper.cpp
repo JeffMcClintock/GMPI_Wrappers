@@ -475,7 +475,7 @@ OSStatus AU2_Wrapper::Initialize()
 	processor.prepareToPlay(
 		this,
 		timeInfo.sampleRate,
-		kAUDefaultMaxFramesPerSlice,
+        GetMaxFramesPerSlice(), //		kAUDefaultMax FramesPerSlice,
 		0 == offLineRenderMode
 	);
 
@@ -488,7 +488,7 @@ OSStatus AU2_Wrapper::Initialize()
 
 	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
 
-	plugin.start_processor(this, info);
+	plugin.start_processor(this, info, GetMaxFramesPerSlice(), Output(0).GetStreamFormat().mSampleRate);
 
 	if (!plugin.processor)
 		return 1;
@@ -506,7 +506,7 @@ void AU2_Wrapper::reInitialize()
 
 	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
 
-	plugin.start_processor(this, info);
+	plugin.start_processor(this, info, GetMaxFramesPerSlice(), Output(0).GetStreamFormat().mSampleRate);
 
 	if (!plugin.processor)
 		return;
