@@ -245,12 +245,26 @@ void Editor_CLAP::getSize(uint32_t& width, uint32_t& height)
     
     if (pluginGraphics_GMPI)
     {
-        gmpi::drawing::Size desiredSize{ 100.f, 100.f };
-        gmpi::drawing::Size availableSize{ 99999.f, 99999.f };
-        pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
+        constexpr float defaultSize = 100.0f;
 
-        width = static_cast<uint32_t>(Dpi * desiredSize.width);
-        height = static_cast<uint32_t>(Dpi * desiredSize.height);
+        gmpi::drawing::Size minimumSize{ 0.f, 0.f };
+        gmpi::drawing::Size maximumSize{ 0.f, 0.f };
+        gmpi::drawing::Size availableSizeMin{ 0.f, 0.f };
+        gmpi::drawing::Size availableSizeMax{ 99999.f, 99999.f };
+
+        pluginGraphics_GMPI->measure(&availableSizeMin, &minimumSize);
+        pluginGraphics_GMPI->measure(&availableSizeMax, &maximumSize);
+
+        gmpi::drawing::Size finalSize{ defaultSize, defaultSize };
+
+		finalSize.width = std::clamp(finalSize.width, minimumSize.width, maximumSize.width);
+		finalSize.height = std::clamp(finalSize.height, minimumSize.height, maximumSize.height);
+
+        finalSize.width = (std::max)(1.0f, finalSize.width);
+        finalSize.height = (std::max)(1.0f, finalSize.height);
+
+        width = static_cast<uint32_t>(Dpi * finalSize.width);
+        height = static_cast<uint32_t>(Dpi * finalSize.height);
     }
     else
     {

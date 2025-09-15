@@ -27,6 +27,9 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
     , info(pinfo)
     , midiConverter([this](const gmpi::midi::message_view msg, int sampleOffset)
         {
+            if (plugin.MidiInputPinIdx < 0) // no MIDI input pin.
+                return;
+			
             gmpi::api::Event ge
             {
                 {},									// next (populated later)
@@ -117,7 +120,7 @@ bool Processor_CLAP::paramsInfo(uint32_t paramIndex, clap_param_info *clap_info)
     clap_info->id            = param_info.dawTag;
     clap_info->min_value     = param_info.minimum;
     clap_info->max_value     = param_info.maximum;
-    clap_info->default_value = param_info.default_value;
+    clap_info->default_value = atof(param_info.default_value_s.c_str());
 
     if ((param_info.datatype == gmpi::PinDatatype::Int32 || param_info.datatype == gmpi::PinDatatype::Int64) && !param_info.enum_entries.empty())
     {
@@ -137,7 +140,7 @@ bool Processor_CLAP::paramsValue(clap_id paramId, double* value) noexcept
 
     auto p = plugin.nativeParams[paramId];
 
-    *value = p->valueReal;
+    *value = p->valueReal();
 
     return true;
 }
@@ -304,35 +307,51 @@ bool Processor_CLAP::paramsTextToValue(clap_id paramId, const char *display, dou
     return false;
 }
 
-/*
- * Stereo out, Midi in, in a pretty obvious way.
- * The only trick is the idi in also has NOTE_DIALECT_CLAP which provides us
- * with options on note expression and the like.
- */
-bool Processor_CLAP::audioPortsInfo(uint32_t index, bool isInput,
-                                 clap_audio_port_info *info) const noexcept
+bool Processor_CLAP::implementsAudioPorts() const noexcept 
 {
-    if (isInput || index != 0)
+    return countPins(info, gmpi::PinDirection::In, gmpi::PinDatatype::Audio) > 0
+        || countPins(info, gmpi::PinDirection::Out, gmpi::PinDatatype::Audio) > 0;
+}
+
+uint32_t Processor_CLAP::audioPortsCount(bool isInput) const noexcept
+{
+    const auto count = countPins(info, isInput ? gmpi::PinDirection::In : gmpi::PinDirection::Out, gmpi::PinDatatype::Audio);
+
+    // assume stereo pairs
+    return count / 2;
+}
+
+bool Processor_CLAP::audioPortsInfo(uint32_t index, bool isInput,
+                                 clap_audio_port_info *ret_info) const noexcept
+{
+	const auto count = countPins(info, isInput ? gmpi::PinDirection::In : gmpi::PinDirection::Out, gmpi::PinDatatype::Audio);
+
+    // assume stereo pairs
+	const auto steroPairCount = count / 2;
+
+    if (index >= steroPairCount)
         return false;
 
-    info->id = 0;
-    info->in_place_pair = CLAP_INVALID_ID;
-    strncpy(info->name, "main", sizeof(info->name));
-    info->flags = CLAP_AUDIO_PORT_IS_MAIN;
-    info->channel_count = 2;
-    info->port_type = CLAP_PORT_STEREO;
+    ret_info->id = 0;
+    ret_info->in_place_pair = CLAP_INVALID_ID;
+    strncpy(ret_info->name, "main", sizeof(ret_info->name));
+    ret_info->flags = CLAP_AUDIO_PORT_IS_MAIN;
+    ret_info->channel_count = 2;
+    ret_info->port_type = CLAP_PORT_STEREO;
     return true;
 }
 
 bool Processor_CLAP::notePortsInfo(uint32_t index, bool isInput,
-                                clap_note_port_info *info) const noexcept
+                                clap_note_port_info *ret_info) const noexcept
 {
-    if (isInput)
+    const auto count = countPins(info, isInput ? gmpi::PinDirection::In : gmpi::PinDirection::Out, gmpi::PinDatatype::Midi);
+
+    if (count > index)
     {
-        info->id = 1;
-        info->supported_dialects = CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_MIDI2;
-        info->preferred_dialect = CLAP_NOTE_DIALECT_MIDI2;
-        strncpy(info->name, "NoteInput", CLAP_NAME_SIZE);
+        ret_info->id = index + 1;
+        ret_info->supported_dialects = CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_MIDI2;
+        ret_info->preferred_dialect = CLAP_NOTE_DIALECT_MIDI2;
+        strncpy(ret_info->name, "NoteInput", CLAP_NAME_SIZE);
         return true;
     }
     return false;
@@ -399,7 +418,7 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
                 {
                     auto mevt = reinterpret_cast<const clap_event_midi*>(evt);
 					const int size = gmpi::midi_1_0::status_type::ChannelPressure == (mevt->data[0] & 0xF0) ? 2 : 3;
-                    midiConverter.processMidi({ mevt->data, size }, evt->time);
+                    midiConverter.processMidi({ mevt->data, static_cast<size_t>(size) }, evt->time);
                 }
                 break;
 
@@ -452,7 +471,7 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
                         }
 
                         midiConverter.processMidi(
-                            { reversebuffer, message_length * 4 }
+                            { reversebuffer, static_cast<size_t>(message_length * 4) }
                             , static_cast<int>(evt->time)
                         );
                     }
@@ -508,11 +527,6 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
         plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator, process->transport->tsig_num);
         plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator, process->transport->tsig_denom);
         plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, 1.0 * process->transport->song_pos_beats / CLAP_BEATTIME_FACTOR);
-
-        //dataCopyForUI.tempo = process->transport->tempo;
-        //dataCopyForUI.tsDen = process->transport->tsig_denom;
-        //dataCopyForUI.tsNum = process->transport->tsig_num;
-        //dataCopyForUI.songpos = 1.0 * process->transport->song_pos_beats / CLAP_BEATTIME_FACTOR;
     }
 
     /*
@@ -763,22 +777,8 @@ void Processor_CLAP::paramsFlush(const clap_input_events *in, const clap_output_
 
 bool Processor_CLAP::stateSave(const clap_ostream *stream) noexcept
 {
-#if 0 // TODO
-    // Oh this is soooo bad. Please don't judge me. I'm just trying to get this
-    // together for launch day! If you are using this as an example for your plugins,
-    // you should write a less dumb serializer of course. On and I bet this might have
-    // a locale problem?
-    std::ostringstream oss;
-    auto cloc = std::locale("C");
-    oss.imbue(cloc);
-    oss << "STREAM-VERSION-1;";
-    for (const auto &[id, val] : paramToValue)
-    {
-        oss << id << "=" << std::setw(30) << std::setprecision(20) << *val << ";";
-    }
-//    _DBGCOUT << oss.str() << std::endl;
+    const auto st = plugin.getPresetUnsafe();// active_);
 
-    auto st = oss.str();
     auto c = st.c_str();
     auto s = st.length() + 1; // write the null terminator
     while (s > 0)
@@ -790,15 +790,11 @@ bool Processor_CLAP::stateSave(const clap_ostream *stream) noexcept
         c += r;
     }
 
-#endif
-
     return true;
 }
 
 bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
 {
-#if 0 // TODO
-    // Again, see the comment above on 'this is terrible'
     static constexpr uint32_t maxSize = 4096 * 8, chunkSize = 256;
     char buffer[maxSize];
     char *bp = &(buffer[0]);
@@ -824,6 +820,9 @@ bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
         buffer[totalRd] = 0;
 
     auto dat = std::string(buffer);
+    plugin.setPresetUnsafe(dat);
+
+#if 0 // TODO
 //    _DBGCOUT << dat << std::endl;
 
     std::vector<std::string> items;

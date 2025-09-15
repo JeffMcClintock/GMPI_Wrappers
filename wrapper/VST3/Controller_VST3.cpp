@@ -503,8 +503,8 @@ tresult Controller_VST3::getParameterInfo(int32 paramIndex, ParameterInfo& retur
 		returnInfo.stepCount = (std::max)(0, static_cast<int>(p.info->enum_entries.size()) - 1);
 	}
 
-	// Support for VSTs special bypass parameter. Make a bool param called "BYPASS" 
-	if (/*p.datatype_ == gmpi::PinDatatype::Bool &&*/ p.info->hostConnect == gmpi::hosting::HostControls::ProcessBypass) // >name_ == "BYPASS")
+	// Support for VSTs special bypass parameter.
+	if (p.info->hostConnect == gmpi::hosting::HostControls::ProcessBypass)
 	{
 		returnInfo.flags |= Steinberg::Vst::ParameterInfo::kIsBypass;
 	}

@@ -122,8 +122,8 @@ public:
      * the spec doesn't require this. Here as a simple synth we set up a single s
      * stereo output and a single midi / clap_note input.
      */
-    bool implementsAudioPorts() const noexcept override { return true; }
-    uint32_t audioPortsCount(bool isInput) const noexcept override { return isInput ? 0 : 1; }
+    bool implementsAudioPorts() const noexcept override;
+    uint32_t audioPortsCount(bool isInput) const noexcept override;
     bool audioPortsInfo(uint32_t index, bool isInput,
         clap_audio_port_info* info) const noexcept override;
 
