@@ -1,7 +1,6 @@
 #include <iostream>
 #include <dlfcn.h>
 #include "AU2_Wrapper.h"
-#include "Hosting/Bundle.h"
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/gmpi_factory.h"
 #include "GmpiSdkCommon.h"
