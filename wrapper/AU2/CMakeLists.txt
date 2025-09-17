@@ -46,32 +46,35 @@ ${gmpi_ui_folder}/backends/Bezier.h
 )
 ENDIF()
 
+set(AU_H "${AU_SDK}/include/AudioUnitSDK/")
+set(AU_S "${AU_SDK}/src/AudioUnitSDK/")
+
 set(au_sdk_srcs
-${AU_SDK}/src/AudioUnitSDK/AUBase.cpp
-${AU_SDK_H}/AudioUnitSDK/AUBase.h
-${AU_SDK_SRC}/AudioUnitSDK/AUBuffer.cpp
-${AU_SDK_H}/AudioUnitSDK/AUBuffer.h
-${AU_SDK_SRC}/AudioUnitSDK/AUBufferAllocator.cpp
-${AU_SDK_SRC}/AudioUnitSDK/AUEffectBase.cpp
-${AU_SDK_H}/AudioUnitSDK/AUEffectBase.h
-${AU_SDK_SRC}/AudioUnitSDK/AUInputElement.cpp
-${AU_SDK_H}/AudioUnitSDK/AUInputElement.h
-${AU_SDK_SRC}/AudioUnitSDK/AUMIDIBase.cpp
-${AU_SDK_H}/AudioUnitSDK/AUMIDIBase.h
-${AU_SDK_H}/AudioUnitSDK/AUMIDIUtility.h
-${AU_SDK_SRC}/AudioUnitSDK/AUOutputElement.cpp
-${AU_SDK_H}/AudioUnitSDK/AUOutputElement.h
-${AU_SDK_SRC}/AudioUnitSDK/AUPlugInDispatch.cpp
-${AU_SDK_H}/AudioUnitSDK/AUPlugInDispatch.h
-${AU_SDK_SRC}/AudioUnitSDK/AUScopeElement.cpp
-${AU_SDK_H}/AudioUnitSDK/AUScopeElement.h
-${AU_SDK_H}/AudioUnitSDK/AUSilentTimeout.h
-${AU_SDK_H}/AudioUnitSDK/AUUtility.h
-${AU_SDK_H}/AudioUnitSDK/AudioUnitSDK.h
-${AU_SDK_SRC}/AudioUnitSDK/ComponentBase.cpp
-${AU_SDK_H}/AudioUnitSDK/ComponentBase.h
-${AU_SDK_SRC}/AudioUnitSDK/MusicDeviceBase.cpp
-${AU_SDK_H}/AudioUnitSDK/MusicDeviceBase.h
+${AU_H}AUBase.h
+${AU_H}AUBuffer.h
+${AU_H}AUEffectBase.h
+${AU_H}AUInputElement.h
+${AU_H}AUMIDIBase.h
+${AU_H}AUMIDIUtility.h
+${AU_H}AUOutputElement.h
+${AU_H}AUPlugInDispatch.h
+${AU_H}AUScopeElement.h
+${AU_H}AUSilentTimeout.h
+${AU_H}AUUtility.h
+${AU_H}AudioUnitSDK.h
+${AU_H}ComponentBase.h
+${AU_H}MusicDeviceBase.h
+${AU_S}AUBase.cpp
+${AU_S}AUBuffer.cpp
+${AU_S}AUBufferAllocator.cpp
+${AU_S}AUEffectBase.cpp
+${AU_S}AUInputElement.cpp
+${AU_S}AUMIDIBase.cpp
+${AU_S}AUOutputElement.cpp
+${AU_S}AUPlugInDispatch.cpp
+${AU_S}AUScopeElement.cpp
+${AU_S}ComponentBase.cpp
+${AU_S}MusicDeviceBase.cpp
 )
 
 source_group(se_sdk FILES ${sdk_srcs})
