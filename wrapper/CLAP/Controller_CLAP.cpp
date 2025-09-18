@@ -32,15 +32,17 @@ bool Controller_CLAP::onTimer()
 	gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 
 	// parameter updates to the Processor
-	gmpi::hosting::my_msg_que_output_stream toProcessor(&message_que_ui_to_dsp);
-	if (pendingQueueClients.ServiceWaiters(
-		toProcessor,
-		message_que_ui_to_dsp.freeSpace(),
-		message_que_ui_to_dsp.freeSpace()
-	))
-	{
-		message_que_ui_to_dsp.Send();
-	}
+	//gmpi::hosting::my_msg_que_output_stream toProcessor(&message_que_ui_to_dsp);
+	//if (pendingQueueClients.ServiceWaiters(
+	//	toProcessor,
+	//	message_que_ui_to_dsp.freeSpace(),
+	//	message_que_ui_to_dsp.freeSpace()
+	//))
+	//{
+	//	message_que_ui_to_dsp.Send();
+	//}
+
+	pendingQueueClients.ServiceWaitersIncremental(&message_que_ui_to_dsp, 100000);
 
 	/*
 	if (!queueToDsp_.empty())
