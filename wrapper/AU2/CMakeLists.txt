@@ -15,34 +15,34 @@ AU2_Wrapper.h
 
 AudioUnitView.mm
 
-${gmpi_sdk_folder}/Hosting/parse_enum.h
-${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
-${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
-${gmpi_sdk_folder}/Hosting/controller_holder.h
-${gmpi_sdk_folder}/Hosting/controller_holder.cpp
-${gmpi_sdk_folder}/Hosting/processor_holder.h
-${gmpi_sdk_folder}/Hosting/processor_holder.cpp
-${gmpi_sdk_folder}/Hosting/message_queues.h
-${gmpi_sdk_folder}/Hosting/message_queues.cpp
-${gmpi_sdk_folder}/Hosting/gmpi_factory.h
-${gmpi_sdk_folder}/Hosting/gmpi_factory.cpp
+${GMPI_SDK}/Hosting/parse_enum.h
+${GMPI_SDK}/Hosting/xml_spec_reader.h
+${GMPI_SDK}/Hosting/xml_spec_reader.cpp
+${GMPI_SDK}/Hosting/controller_holder.h
+${GMPI_SDK}/Hosting/controller_holder.cpp
+${GMPI_SDK}/Hosting/processor_holder.h
+${GMPI_SDK}/Hosting/processor_holder.cpp
+${GMPI_SDK}/Hosting/message_queues.h
+${GMPI_SDK}/Hosting/message_queues.cpp
+${GMPI_SDK}/Hosting/gmpi_factory.h
+${GMPI_SDK}/Hosting/gmpi_factory.cpp
 
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 
-${gmpi_ui_folder}/backends/DrawingFrameCommon.h
-${gmpi_ui_folder}/backends/DrawingFrameCommon.cpp
-${gmpi_ui_folder}/helpers/Timer.h
-${gmpi_ui_folder}/helpers/Timer.cpp
+${GMPI_UI_SDK}/backends/DrawingFrameCommon.h
+${GMPI_UI_SDK}/backends/DrawingFrameCommon.cpp
+${GMPI_UI_SDK}/helpers/Timer.h
+${GMPI_UI_SDK}/helpers/Timer.cpp
 )
 
 IF(APPLE)
 set(srcs ${srcs}
-${gmpi_ui_folder}/backends/DrawingFrameMac.h
-${gmpi_ui_folder}/backends/DrawingFrameMac.mm
-${gmpi_ui_folder}/backends/CocoaGfx.h
-${gmpi_ui_folder}/backends/Gfx_base.h
-${gmpi_ui_folder}/backends/Bezier.h
+${GMPI_UI_SDK}/backends/DrawingFrameMac.h
+${GMPI_UI_SDK}/backends/DrawingFrameMac.mm
+${GMPI_UI_SDK}/backends/CocoaGfx.h
+${GMPI_UI_SDK}/backends/Gfx_base.h
+${GMPI_UI_SDK}/backends/Bezier.h
 )
 ENDIF()
 
@@ -109,10 +109,10 @@ add_library(${PROJECT_NAME} STATIC ${sdk_srcs} ${srcs} ${au_sdk_srcs})
 # Include paths ONLY for the AU wrapper library
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${AU_SDK_H}
-    ${gmpi_sdk_folder}
-    ${gmpi_sdk_folder}/Core
-    ${gmpi_ui_folder}
-    ${gmpi_ui_folder}/helpers
+    ${GMPI_SDK}
+    ${GMPI_SDK}/Core
+    ${GMPI_UI_SDK}
+    ${GMPI_UI_SDK}/helpers
     ${ADAPTORS_COMMON_FOLDER}
 )
 

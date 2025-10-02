@@ -13,17 +13,17 @@ if (MSVC)
 endif()
 
 set(srcs
-${gmpi_sdk_folder}/Hosting/parse_enum.h
-${gmpi_sdk_folder}/Hosting/xml_spec_reader.h
-${gmpi_sdk_folder}/Hosting/xml_spec_reader.cpp
-${gmpi_sdk_folder}/Hosting/controller_holder.h
-${gmpi_sdk_folder}/Hosting/controller_holder.cpp
-${gmpi_sdk_folder}/Hosting/processor_holder.h
-${gmpi_sdk_folder}/Hosting/processor_holder.cpp
-${gmpi_sdk_folder}/Hosting/message_queues.h
-${gmpi_sdk_folder}/Hosting/message_queues.cpp
-${gmpi_sdk_folder}/Hosting/gmpi_factory.h
-${gmpi_sdk_folder}/Hosting/gmpi_factory.cpp
+${GMPI_SDK}/Hosting/parse_enum.h
+${GMPI_SDK}/Hosting/xml_spec_reader.h
+${GMPI_SDK}/Hosting/xml_spec_reader.cpp
+${GMPI_SDK}/Hosting/controller_holder.h
+${GMPI_SDK}/Hosting/controller_holder.cpp
+${GMPI_SDK}/Hosting/processor_holder.h
+${GMPI_SDK}/Hosting/processor_holder.cpp
+${GMPI_SDK}/Hosting/message_queues.h
+${GMPI_SDK}/Hosting/message_queues.cpp
+${GMPI_SDK}/Hosting/gmpi_factory.h
+${GMPI_SDK}/Hosting/gmpi_factory.cpp
 
 Factory_Clap.h
 Factory_Clap.cpp
@@ -37,14 +37,14 @@ Editor_CLAP.cpp
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 
-${gmpi_ui_folder}/backends/DrawingFrameCommon.h
-${gmpi_ui_folder}/backends/DrawingFrameCommon.cpp
-${gmpi_ui_folder}/backends/DrawingFrameWin.h
-${gmpi_ui_folder}/backends/DrawingFrameWin.cpp
-${gmpi_ui_folder}/backends/DirectXGfx.h
-${gmpi_ui_folder}/backends/DirectXGfx.cpp
-${gmpi_ui_folder}/helpers/Timer.h
-${gmpi_ui_folder}/helpers/Timer.cpp
+${GMPI_UI_SDK}/backends/DrawingFrameCommon.h
+${GMPI_UI_SDK}/backends/DrawingFrameCommon.cpp
+${GMPI_UI_SDK}/backends/DrawingFrameWin.h
+${GMPI_UI_SDK}/backends/DrawingFrameWin.cpp
+${GMPI_UI_SDK}/backends/DirectXGfx.h
+${GMPI_UI_SDK}/backends/DirectXGfx.cpp
+${GMPI_UI_SDK}/helpers/Timer.h
+${GMPI_UI_SDK}/helpers/Timer.cpp
 )
 
 IF(WIN32)
@@ -59,10 +59,10 @@ if(APPLE)
 set(srcs ${srcs}
 #SEVSTGUIEditorMac.h
 #SEVSTGUIEditorMac.cpp
-${gmpi_ui_folder}/backends/DrawingFrameMac.mm
-${gmpi_ui_folder}/backends/CocoaGfx.h
-${gmpi_ui_folder}/backends/Gfx_base.h
-${gmpi_ui_folder}/backends/Bezier.h
+${GMPI_UI_SDK}/backends/DrawingFrameMac.mm
+${GMPI_UI_SDK}/backends/CocoaGfx.h
+${GMPI_UI_SDK}/backends/Gfx_base.h
+${GMPI_UI_SDK}/backends/Bezier.h
 #${VST3_SDK}/public.sdk/source/main/macmain.cpp
 )
 ENDIF()
@@ -70,10 +70,10 @@ ENDIF()
 include_directories(
 ${CLAP_SDK}/include
 ${CLAP_HELPERS_SDK}/include
-${gmpi_sdk_folder}
-${gmpi_sdk_folder}/Core
-${gmpi_ui_folder}
-${gmpi_ui_folder}/helpers
+${GMPI_SDK}
+${GMPI_SDK}/Core
+${GMPI_UI_SDK}
+${GMPI_UI_SDK}/helpers
 ${ADAPTORS_COMMON_FOLDER}
 )
 
