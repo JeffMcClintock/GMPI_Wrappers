@@ -67,10 +67,12 @@ ${VST3_SDK}/public.sdk/source/main/macmain.cpp
 ENDIF()
 
 set(vst_gui_minimal_srcs
+    ${VST3_SDK}/pluginterfaces/base/ustring.h
+    ${VST3_SDK}/pluginterfaces/base/ustring.cpp
     ${VST3_SDK}/public.sdk/source/common/pluginview.h
     ${VST3_SDK}/public.sdk/source/common/pluginview.cpp
     ${VST3_SDK}/public.sdk/source/common/commoniids.cpp
-    
+
     ${VST3_SDK}/public.sdk/source/vst/vstbus.h
     ${VST3_SDK}/public.sdk/source/vst/vstbus.cpp
     ${VST3_SDK}/public.sdk/source/vst/vstcomponentbase.h
@@ -87,6 +89,14 @@ set(vst_gui_minimal_srcs
     ${VST3_SDK}/public.sdk/source/vst/vstparameters.h
     ${VST3_SDK}/public.sdk/source/vst/vstparameters.cpp 
 )
+
+if(VST3_SDK_USE_MIDI_UMP)
+set(vst_gui_minimal_srcs ${vst_gui_minimal_srcs}
+    ${VST3_MIDI_UMP_SDK}/ivstmidiump.h
+    ${VST3_MIDI_UMP_SDK}/ivstumpevents.h
+    ${VST3_MIDI_UMP_SDK}/vstmidiumpiids.cpp
+)
+endif()
 
 include_directories(
 ${VST3_SDK}
@@ -139,14 +149,15 @@ TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREGRAPHICS_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${ACCELERATE_LIBRARY} )
 TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${QUARTZCORE_LIBRARY} )
 
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} base )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} pluginterfaces )
-
 if(CMAKE_HOST_WIN32)
 target_link_libraries(${PROJECT_NAME} Dwmapi dxguid d3d11 d2d1 dwrite windowscodecs)
 endif()
 
 target_compile_definitions (${PROJECT_NAME} PRIVATE -D_UNICODE -DUNICODE)
+
+if(VST3_SDK_USE_MIDI_UMP)
+target_compile_definitions (${PROJECT_NAME} PRIVATE VST3_USE_MIDI_EXTENSION)
+endif()
 
 if(APPLE)
 set_target_properties(${PROJECT_NAME} PROPERTIES BUNDLE TRUE)
@@ -164,9 +175,4 @@ include(SMTG_VST3_SDK)
 
 #---Add base libraries---------------------------
 set(VST_SDK TRUE) # used for Base module which provides only a subset of Base for VST-SDK
-add_subdirectory(${VST3_SDK}/pluginterfaces ${CMAKE_CURRENT_BINARY_DIR}/pluginterfaces)
-add_subdirectory(${VST3_SDK}/base           ${CMAKE_CURRENT_BINARY_DIR}/base)
-
 SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES FOLDER "wrappers")
-SET_TARGET_PROPERTIES(base PROPERTIES FOLDER "wrappers")
-SET_TARGET_PROPERTIES(pluginterfaces PROPERTIES FOLDER "wrappers")
