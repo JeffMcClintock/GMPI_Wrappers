@@ -69,6 +69,21 @@ ENDIF()
 set(vst_gui_minimal_srcs
     ${VST3_SDK}/pluginterfaces/base/ustring.h
     ${VST3_SDK}/pluginterfaces/base/ustring.cpp
+    ${VST3_SDK}/pluginterfaces/base/funknown.h
+    ${VST3_SDK}/pluginterfaces/base/funknown.cpp
+    ${VST3_SDK}/pluginterfaces/base/coreiids.cpp
+    ${VST3_SDK}/pluginterfaces/base/ipluginbase.h 
+    ${VST3_SDK}/base/source/baseiids.cpp
+    ${VST3_SDK}/base/source/fdebug.h
+    ${VST3_SDK}/base/source/fdebug.cpp
+    ${VST3_SDK}/base/source/fobject.h
+    ${VST3_SDK}/base/source/fobject.cpp
+    ${VST3_SDK}/base/source/fstring.h
+    ${VST3_SDK}/base/source/fstring.cpp
+    ${VST3_SDK}/base/source/updatehandler.h
+    ${VST3_SDK}/base/source/updatehandler.cpp
+    ${VST3_SDK}/base/thread/source/flock.cpp
+    
     ${VST3_SDK}/public.sdk/source/common/pluginview.h
     ${VST3_SDK}/public.sdk/source/common/pluginview.cpp
     ${VST3_SDK}/public.sdk/source/common/commoniids.cpp
