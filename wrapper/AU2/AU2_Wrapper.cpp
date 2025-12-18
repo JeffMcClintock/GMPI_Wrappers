@@ -92,7 +92,7 @@ AU2_Wrapper::AU2_Wrapper(AudioComponentInstance inInstance)
 
 	,midiConverter(
 		// provide a lambda to accept converted MIDI 2.0 messages
-		[this](const gmpi::midi::message_view& msg, int sampleOffset) {
+		[this](const gmpi::midi2::message_view& msg, int sampleOffset) {
             gmpi::api::Event ge
             {
                 {},									// next (populated later)

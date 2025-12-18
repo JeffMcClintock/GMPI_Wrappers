@@ -244,8 +244,8 @@ class AU2_Wrapper : public ausdk::AUBase, public ausdk::AUMIDIBase
 //	std::map<int, MpParameterAU*> tagToParameter;
 	UInt32 offLineRenderMode = 0;
 	gmpi::hosting::interThreadQue queueToDsp_;
-	gmpi::midi_2_0::MidiConverter2 midiConverter;
-//	gmpi::midi_2_0::MpeConverter mpeConverter;
+	gmpi::midi::MidiConverter2 midiConverter;
+//	gmpi::midi::MpeConverter mpeConverter;
 //    int userNotHoldingAControlCounter = 0;
     
 //	ProcessorStateMgr stateMgr;
