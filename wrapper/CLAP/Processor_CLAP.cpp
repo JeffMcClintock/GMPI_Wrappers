@@ -25,7 +25,7 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
     : clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
                             clap::helpers::CheckingLevel::Maximal>(desc, host)
     , info(pinfo)
-    , midiConverter([this](const gmpi::midi::message_view msg, int sampleOffset)
+    , midiConverter([this](const gmpi::midi2::message_view msg, int sampleOffset)
         {
             if (plugin.MidiInputPinIdx < 0) // no MIDI input pin.
                 return;
@@ -417,7 +417,7 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
                 case CLAP_EVENT_MIDI:
                 {
                     auto mevt = reinterpret_cast<const clap_event_midi*>(evt);
-					const int size = gmpi::midi_1_0::status_type::ChannelPressure == (mevt->data[0] & 0xF0) ? 2 : 3;
+					const int size = gmpi::midi1::status_type::ChannelPressure == (mevt->data[0] & 0xF0) ? 2 : 3;
                     midiConverter.processMidi({ mevt->data, static_cast<size_t>(size) }, evt->time);
                 }
                 break;

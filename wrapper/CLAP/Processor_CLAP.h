@@ -44,7 +44,7 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
     gmpi::hosting::gmpi_processor plugin;
 
     gmpi::hosting::pluginInfo& info;
-    gmpi::midi_2_0::MidiConverter2 midiConverter;
+    gmpi::midi::MidiConverter2 midiConverter;
 
     static constexpr int max_voices = 64;
     Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& info, const clap_host* host);

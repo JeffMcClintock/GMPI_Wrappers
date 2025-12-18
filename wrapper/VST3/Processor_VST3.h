@@ -121,7 +121,7 @@ protected:
 
 	// MIDI output
 	void MidiToHost(class MidiBuffer3* mb, timestamp_t SeStartClock, int numSamples);
-	gmpi::midi_2_0::MidiConverter2 midiConverter;
+	gmpi::midi::MidiConverter2 midiConverter;
 	float midi2NoteTune[256];
 	uint8_t midi2NoteToKey[256];
 	struct avoidRepeatedCCs

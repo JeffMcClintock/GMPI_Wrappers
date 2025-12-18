@@ -30,12 +30,12 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 , m_message_que_ui_to_dsp(0x500000)//AUDIO_MESSAGE_QUE_SIZE)
 , midiConverter(
 	// provide a lambda to accept converted MIDI 2.0 messages
-	[this](const gmpi::midi::message_view& msg, int offset)
+	[this](const gmpi::midi2::message_view& msg, int offset)
 	{
-		const auto header = gmpi::midi_2_0::decodeHeader(msg);
+		const auto header = gmpi::midi2::decodeHeader(msg);
 
 		// only 8-byte messages supported. only 16 channels supported
-		if (header.messageType != gmpi::midi_2_0::ChannelVoice64 || header.channel > 15)
+		if (header.messageType != gmpi::midi2::ChannelVoice64 || header.channel > 15)
 			return;
 
 		auto outputEvents = dataptr->outputEvents;
@@ -49,14 +49,14 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 		// Parse MIDI 2.0 into a VST3 event
 		switch (header.status)
 		{
-		case gmpi::midi_2_0::NoteOn:
+		case gmpi::midi2::NoteOn:
 		{
-			const auto note = gmpi::midi_2_0::decodeNote(msg);
+			const auto note = gmpi::midi2::decodeNote(msg);
 #if 0
 			uint8_t keyNumber = note.noteNumber & 0x7f; // clamp to range [0 - 127] 
 
 			// derive keynumber from pitch, since noteNumber may have no relation to pitch.
-			if (gmpi::midi_2_0::attribute_type::Pitch == note.attributeType)
+			if (gmpi::midi2::attribute_type::Pitch == note.attributeType)
 			{
 			}
 #endif
@@ -72,10 +72,10 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 		}
 		break;
 
-		case gmpi::midi_2_0::NoteOff:
+		case gmpi::midi2::NoteOff:
 		{
 			// TODO: !!! lookup nearest key number based on pitch, store it for note-off.
-			const auto note = gmpi::midi_2_0::decodeNote(msg);
+			const auto note = gmpi::midi2::decodeNote(msg);
 
 			event.type = Steinberg::Vst::Event::kNoteOffEvent;
 			event.noteOff.pitch = midi2NoteToKey[note.noteNumber];
@@ -88,12 +88,12 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 		}
 		break;
 
-		case gmpi::midi_2_0::ControlChange:
+		case gmpi::midi2::ControlChange:
 		{
-			const auto controller = gmpi::midi_2_0::decodeController(msg);
+			const auto controller = gmpi::midi2::decodeController(msg);
 			if (controller.type < 128)
 			{
-				const auto newQuantizedValue = gmpi::midi::utils::floatToU7(controller.value);
+				const auto newQuantizedValue = gmpi::midi_utils::floatToU7(controller.value);
 
 				// 'thin' repeated 7-bit values. Unless it apears to be on purpose (e.g. all notes off)
 				// Send exact (deliberate) repeats, but not 'close' (different but close unquantized) repeats
@@ -104,7 +104,7 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 
 					event.type = Steinberg::Vst::Event::kLegacyMIDICCOutEvent;
 					event.midiCCOut.controlNumber = controller.type;
-					event.midiCCOut.value = gmpi::midi::utils::floatToU7(controller.value);
+					event.midiCCOut.value = gmpi::midi_utils::floatToU7(controller.value);
 					event.midiCCOut.channel = header.channel & 0x0f;
 				}
 			}
@@ -112,37 +112,37 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 		break;
 
 		// track pitch changes
-		case gmpi::midi_2_0::PolyControlChange:
+		case gmpi::midi2::PolyControlChange:
 		{
-			const auto polyController = gmpi::midi_2_0::decodePolyController(msg);
+			const auto polyController = gmpi::midi2::decodePolyController(msg);
 
-			if (polyController.type == gmpi::midi_2_0::PolyPitch)
+			if (polyController.type == gmpi::midi2::PolyPitch)
 			{
-				const auto semitones = gmpi::midi_2_0::decodeNotePitch(msg);
+				const auto semitones = gmpi::midi2::decodeNotePitch(msg);
 				midi2NoteTune[polyController.noteNumber] = semitones;
 			}
 		}
 		break;
 
-		case gmpi::midi_2_0::ChannelPressue:
+		case gmpi::midi2::ChannelPressue:
 		{
-			const auto normalized = gmpi::midi_2_0::decodeController(msg).value;
+			const auto normalized = gmpi::midi2::decodeController(msg).value;
 
 			event.type = Steinberg::Vst::Event::kLegacyMIDICCOutEvent;
 			event.midiCCOut.controlNumber = Steinberg::Vst::kAfterTouch;
-			event.midiCCOut.value = gmpi::midi::utils::floatToU7(normalized);
+			event.midiCCOut.value = gmpi::midi_utils::floatToU7(normalized);
 			event.midiCCOut.channel = header.channel & 0x0f;
 		}
 		break;
 
-		case gmpi::midi_2_0::PitchBend:
+		case gmpi::midi2::PitchBend:
 		{
-			const auto normalized = gmpi::midi_2_0::decodeController(msg).value;
+			const auto normalized = gmpi::midi2::decodeController(msg).value;
 
 			event.type = Steinberg::Vst::Event::kLegacyMIDICCOutEvent;
 			event.midiCCOut.controlNumber = Steinberg::Vst::kPitchBend;
 			event.midiCCOut.channel = header.channel & 0x0f;
-			gmpi::midi::utils::normalizedToBipoler14bit(
+			gmpi::midi_utils::normalizedToBipoler14bit(
 				normalized
 				, (uint8_t&)event.midiCCOut.value
 				, (uint8_t&)event.midiCCOut.value2
@@ -150,16 +150,16 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 		}
 		break;
 
-		case gmpi::midi_2_0::PolyAfterTouch:
+		case gmpi::midi2::PolyAfterTouch:
 		{
-			const auto aftertouch = gmpi::midi_2_0::decodePolyController(msg);
+			const auto aftertouch = gmpi::midi2::decodePolyController(msg);
 
 #if 0
 			// plain CC
 			event.type = Steinberg::Vst::Event::kLegacyMIDICCOutEvent;
 			event.midiCCOut.controlNumber = kCtrlPolyPressure;
 			event.midiCCOut.value = aftertouch.noteNumber;
-			event.midiCCOut.value2 = gmpi::midi::utils::floatToU7(aftertouch.value);
+			event.midiCCOut.value2 = gmpi::midi_utils::floatToU7(aftertouch.value);
 #else
 			// VST3 poly pressure event
 			event.type = Steinberg::Vst::Event::kPolyPressureEvent;
@@ -171,7 +171,7 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 		}
 		break;
 
-		case gmpi::midi_2_0::System: // SYSTEM_EXCLUSIVE:
+		case gmpi::midi2::System: // SYSTEM_EXCLUSIVE:
 		{
 #if 0 // TODO
 			event.data.type = Steinberg::Vst::DataEvent::kMidiSysEx;
@@ -533,11 +533,11 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 							const auto channel = id / ccsPerChannel;
 							const auto cc = id % ccsPerChannel;
 
-							gmpi::midi_2_0::rawMessage64 msgout;
+							gmpi::midi::message64 msgout;
 
 							if(cc < 128 )
 							{
-								msgout = gmpi::midi_2_0::makeController(
+								msgout = gmpi::midi2::makeController(
 									static_cast<uint8_t>(cc)
 									, valueNormalized
 									, channel
@@ -549,7 +549,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 								{
 									case 128: // Channel Pressure.
 									{
-										msgout = gmpi::midi_2_0::makeChannelPressure(
+										msgout = gmpi::midi2::makeChannelPressure(
 											valueNormalized
 											, channel
 										);
@@ -559,7 +559,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 									case 129: // Bender.
 									{
 //										_RPTN(0, "C%2d BDR %f\n", channel, value);
-										msgout = gmpi::midi_2_0::makeBender(
+										msgout = gmpi::midi2::makeBender(
 											valueNormalized // use normalized bender
 											, channel
 										);
@@ -617,7 +617,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 					{
 						keyInfo.pitch2 = pitch;
 
-						const auto out = gmpi::midi_2_0::makeNotePitchMessage(
+						const auto out = gmpi::midi2::makeNotePitchMessage(
 							keyInfo.MidiKeyNumber,
 							keyInfo.pitch2,
 							keyInfo.channel
@@ -629,9 +629,9 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 					// TODO : DON"T SEND UNLESS WE HAVE TO (MAYBE RESET THEM AUTOMATICALLY IN PM on note on
 					// reset note expression controllers.
 					{
-						for (auto controllerId : { gmpi::midi_2_0::PolyVolume, gmpi::midi_2_0::PolyPan, gmpi::midi_2_0::PolySoundController5 })
+						for (auto controllerId : { gmpi::midi2::PolyVolume, gmpi::midi2::PolyPan, gmpi::midi2::PolySoundController5 })
 						{
-							const auto msg = gmpi::midi_2_0::makePolyController(
+							const auto msg = gmpi::midi2::makePolyController(
 								keyInfo.MidiKeyNumber,
 								controllerId,
 								0.0f,
@@ -642,7 +642,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 						}
 						// per-note bender
 						{
-							const auto msg = gmpi::midi_2_0::makePolyBender(
+							const auto msg = gmpi::midi2::makePolyBender(
 								keyInfo.MidiKeyNumber,
 								0.5f,
 								keyInfo.channel
@@ -655,7 +655,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 					{
 						// _RPTN(0, "C%2d NON %3d\n", e.noteOn.channel, e.noteOn.pitch);
 
-						const auto out = gmpi::midi_2_0::makeNoteOnMessage(
+						const auto out = gmpi::midi2::makeNoteOnMessage(
 							keyInfo.MidiKeyNumber,
 							e.noteOn.velocity,
 							keyInfo.channel
@@ -684,7 +684,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 
 				if (auto keyInfo = findKey(e.polyPressure.channel, e.polyPressure.noteId); keyInfo)
 				{
-					const auto out = gmpi::midi_2_0::makePolyPressure(
+					const auto out = gmpi::midi2::makePolyPressure(
 						keyInfo->MidiKeyNumber,
 						e.polyPressure.pressure,
 						keyInfo->channel
@@ -720,7 +720,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 //					_RPTN(0, "makePolyBender %f => %f semitones, %f normal\n", e.noteExpressionValue.value, semitones, normalized);
 
 					// Send MIDI HD-Protocol Note Expression message.
-					const auto msg = gmpi::midi_2_0::makePolyBender(
+					const auto msg = gmpi::midi2::makePolyBender(
 						keyInfo->MidiKeyNumber,
 						static_cast<float>(normalized),
 						channel
@@ -739,21 +739,21 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 					switch (e.noteExpressionValue.typeId)
 					{
 					case kVolumeTypeID:
-						controllerId = gmpi::midi_2_0::PolyVolume;
+						controllerId = gmpi::midi2::PolyVolume;
 						break;
 					case kPanTypeID:
-						controllerId = gmpi::midi_2_0::PolyPan;
+						controllerId = gmpi::midi2::PolyPan;
 						break;
 						/*
 											case kVibratoTypeID:
-												controllerId = gmpi::midi_2_0::PolySoundController8; // Vibrato Depth
+												controllerId = gmpi::midi2::PolySoundController8; // Vibrato Depth
 												break;
 											case kExpressionTypeID:
-												controllerId = gmpi::midi_2_0::PolyExpression;
+												controllerId = gmpi::midi2::PolyExpression;
 												break;
 						*/
 					case kBrightnessTypeID:
-						controllerId = gmpi::midi_2_0::PolySoundController5; // Brightness. MPE Vertical (Y)
+						controllerId = gmpi::midi2::PolySoundController5; // Brightness. MPE Vertical (Y)
 						break;
 
 					default:
@@ -769,7 +769,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 						const auto safeValue = (std::min)(1.0, (std::max)(0.0, e.noteExpressionValue.value));
 
 						// Send MIDI HD-Protocol Note Expression message.
-						const auto msg = gmpi::midi_2_0::makePolyController(
+						const auto msg = gmpi::midi2::makePolyController(
 							keyInfo->MidiKeyNumber,
 							controllerId,
 							safeValue
@@ -790,7 +790,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 					const uint8_t* src = e.data.bytes + 1; // skip leading F0
 					while (remain > 0)
 					{
-						const auto msg = gmpi::midi_2_0::makeSysex(src, remain, isFirst);
+						const auto msg = gmpi::midi2::makeSysex(src, remain, isFirst);
 						MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
 					}
 				}
@@ -1032,7 +1032,7 @@ void Processor_VST3::DoNoteOff(int channel, int32_t noteId, float velocity, int 
 	{
 		keyInfo->held = false;
 
-		const auto out = gmpi::midi_2_0::makeNoteOffMessage(
+		const auto out = gmpi::midi2::makeNoteOffMessage(
 			keyInfo->MidiKeyNumber,
 			velocity,
 			keyInfo->channel
