@@ -1,4 +1,3 @@
-#pragma once
 #include "./Factory_Clap.h"
 #include "Processor_CLAP.h"
 #include "Hosting/gmpi_factory.h"

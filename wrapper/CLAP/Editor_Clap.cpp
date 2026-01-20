@@ -9,7 +9,7 @@
 
 #include "./Factory_Clap.h"
 #include "Hosting/gmpi_factory.h"
-#include "Editor_CLAP.h"
+#include "Editor_Clap.h"
 #include "Processor_CLAP.h"
 
 #if __APPLE__

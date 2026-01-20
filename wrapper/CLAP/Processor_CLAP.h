@@ -93,7 +93,7 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
 #endif
     bool implementsParams() const noexcept override { return true; }
     bool isValidParamId(clap_id paramId) const noexcept override;
-    uint32_t paramsCount() const noexcept override { return plugin.nativeParams.size(); }
+    uint32_t paramsCount() const noexcept override { return static_cast<uint32_t>(plugin.nativeParams.size()); }
     bool paramsInfo(uint32_t paramIndex, clap_param_info* info) const noexcept override;
     bool paramsValue(clap_id paramId, double* value) noexcept override;
 
