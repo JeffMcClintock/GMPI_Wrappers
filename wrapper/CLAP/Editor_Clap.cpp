@@ -1,8 +1,8 @@
 #ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
+#undef  WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#undef  NOMINMAX
+#define NOMINMAX
 #include "Windows.h"
 #include "backends/DrawingFrameWin.h"
 #endif
