@@ -1,3 +1,5 @@
+# This cmake does not build on it's own, it's meant to be consumed by other projects, e.g. GMPI_Plugins repo
+
 cmake_minimum_required(VERSION 3.30)
 # macOS 12 SDK introduced MIDI 2.0
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum MacOS deployment version")
