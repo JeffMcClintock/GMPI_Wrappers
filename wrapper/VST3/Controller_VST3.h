@@ -113,6 +113,11 @@ class Controller_VST3 :
 public:
 	gmpi::hosting::gmpi_controller_holder gmpiController;
 
+	// Persistent owner of the plugin's <Controller/> subtype. The plugin uses
+	// this controller to set up shared state (e.g. via host->setParameter)
+	// before the editor opens. Lives as long as Controller_VST3.
+	gmpi::shared_ptr<gmpi::api::IController> sePluginController;
+
 	Controller_VST3(gmpi::hosting::pluginInfo& pinfo);
 	~Controller_VST3();
 

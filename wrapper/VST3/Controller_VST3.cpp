@@ -309,6 +309,26 @@ tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 
 	isInitialised = true;
 
+	// Instantiate the plugin's <Controller/> subtype (if it has one). This is
+	// where plugins can stash persistent state — e.g. construct an app object
+	// and call host->setParameter to publish a pointer to it via a Blob param,
+	// so subsequent editor instances can find it via initUi.
+	{
+		auto info = gmpi::hosting::factory::getInstance().getPluginInfo();
+		if (info)
+		{
+			auto controllerUnknown = gmpi::hosting::factory::getInstance().createInstance(info->id.c_str(), gmpi::api::PluginSubtype::Controller);
+			if (controllerUnknown)
+			{
+				sePluginController = controllerUnknown.as<gmpi::api::IController>();
+				if (sePluginController)
+				{
+					sePluginController->initialize(static_cast<gmpi::api::IControllerHost*>(&gmpiController), 0);
+				}
+			}
+		}
+	}
+
 #if 0
 
 	// Can only init controllers after both VST controller initialised AND controller is connected to processor.
