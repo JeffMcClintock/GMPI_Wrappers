@@ -178,7 +178,7 @@ LRESULT CALLBACK Editor_CLAPWindowProc(
     WPARAM wParam,
     LPARAM lParam)
 {
-    auto drawingFrame = (gmpi::hosting::DxDrawingFrameBase*)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+    auto drawingFrame = (gmpi::hosting::DxDrawingFrameHwnd*)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
     if (drawingFrame)
     {
         return drawingFrame->WindowProc(hwnd, message, wParam, lParam);
