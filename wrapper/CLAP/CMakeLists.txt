@@ -31,8 +31,8 @@ Processor_CLAP.h
 Processor_CLAP.cpp
 Controller_CLAP.h
 Controller_CLAP.cpp
-Editor_CLAP.h
-Editor_CLAP.cpp
+Editor_Clap.h
+Editor_Clap.cpp
 
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
 ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
