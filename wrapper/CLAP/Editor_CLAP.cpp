@@ -7,9 +7,9 @@
 #include "backends/DrawingFrameWin.h"
 #endif
 
-#include "./Factory_Clap.h"
+#include "./Factory_CLAP.h"
 #include "Hosting/gmpi_factory.h"
-#include "Editor_Clap.h"
+#include "Editor_CLAP.h"
 #include "Processor_CLAP.h"
 
 #if __APPLE__

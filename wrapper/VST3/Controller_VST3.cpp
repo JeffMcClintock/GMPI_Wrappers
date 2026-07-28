@@ -15,7 +15,7 @@
 
 #ifdef _WIN32
 #include "SEVSTGUIEditorWin.h"
-#else
+#elif defined(__APPLE__)
 #include "SEVSTGUIEditorMac.h"
 #endif
 
@@ -409,8 +409,10 @@ IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 	const int height{ 200 };
 #ifdef _WIN32
 	return new SEVSTGUIEditorWin(*info, editor, this, width, height);
-#else
+#elif defined(__APPLE__)
 	return new SEVSTGUIEditorMac(*info, editor, this, width, height);
+#else
+	return {}; // Linux: no native GUI backend yet, run headless.
 #endif
 // todo init all params and pins			initializeGui(&helper)
 }

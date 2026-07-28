@@ -66,6 +66,13 @@ ${VST3_SDK}/public.sdk/source/main/macmain.cpp
 )
 ENDIF()
 
+if(UNIX AND NOT APPLE)
+# Linux: headless plugin (no native editor yet)
+set(srcs ${srcs}
+${VST3_SDK}/public.sdk/source/main/linuxmain.cpp
+)
+endif()
+
 set(vst_gui_minimal_srcs
     ${VST3_SDK}/pluginterfaces/base/ustring.h
     ${VST3_SDK}/pluginterfaces/base/ustring.cpp

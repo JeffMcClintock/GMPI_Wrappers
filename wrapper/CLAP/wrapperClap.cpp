@@ -1,6 +1,6 @@
 #include <iostream>
 #include <cstring>
-#include "Factory_Clap.h"
+#include "Factory_CLAP.h"
 
 namespace sst::clap_saw_demo::pluginentry
 {

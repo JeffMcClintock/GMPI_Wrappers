@@ -1,4 +1,4 @@
-#include "./Factory_Clap.h"
+#include "./Factory_CLAP.h"
 #include "Processor_CLAP.h"
 #include "Hosting/gmpi_factory.h"
 
