@@ -76,6 +76,8 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::removed ()
         controller->gmpiController.unRegisterGui(pluginParameters_GMPI.get());
     }
 
+    drawingframe.close();
+
 	return Steinberg::kResultTrue;
 }
 
