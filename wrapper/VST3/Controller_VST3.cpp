@@ -337,7 +337,7 @@ tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 		initSemControllers();
 #endif
 
-	const int timerPeriodMs = 35;
+	const int timerPeriodMs = 15; // ~60Hz, same as the drawing frame's tick. (16ms tends to miss v-sync)
 	startTimer(timerPeriodMs);
 
 	return kResultTrue;

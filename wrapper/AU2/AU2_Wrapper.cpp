@@ -404,7 +404,6 @@ void AU2_Wrapper::PostConstructor()
     }
 #endif
         
-	const int timerPeriodMs = 35;
 	startTimer(timerPeriodMs); // Service DSP Queue.
 }
 

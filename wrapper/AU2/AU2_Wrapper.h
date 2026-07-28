@@ -224,7 +224,7 @@ class AU2_Wrapper : public ausdk::AUBase, public ausdk::AUMIDIBase
 , public gmpi::api::IProcessorHost, public gmpi::TimerClient
 {
 	friend class MpParameterAU;
-    static const int timerPeriodMs = 35;
+    static const int timerPeriodMs = 15; // ~60Hz, same as the drawing frame's tick. (16ms tends to miss v-sync)
 	gmpi::hosting::gmpi_processor plugin;
 	gmpi::hosting::gmpi_controller_holder gmpiController;
 

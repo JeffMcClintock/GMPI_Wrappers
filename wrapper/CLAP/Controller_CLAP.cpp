@@ -16,7 +16,7 @@ Controller_CLAP::Controller_CLAP() :
 		};
 
 
-	const int timerPeriodMs = 35;
+	const int timerPeriodMs = 15; // ~60Hz, same as the drawing frame's tick. (16ms tends to miss v-sync)
 	startTimer(timerPeriodMs);
 }
 
