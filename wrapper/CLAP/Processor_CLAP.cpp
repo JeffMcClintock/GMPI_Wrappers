@@ -495,8 +495,10 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
                             , evt->time
                             , p->info->id
                             , plugin.nativeParams[inID]->real2Normalized(v->value)
+							, true // send to editor
                         );
                     }
+
 #if HAS_GUI
                     if (editor)
                     {
