@@ -88,6 +88,15 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::onSize(Steinberg::ViewRect* new
     return Steinberg::kResultTrue;
 }
 
+// Resizability is INFERRED, not declared: measure the client against two very
+// different offers and see whether it changes its mind. A resizable client
+// echoes back whatever it is given, so the answers differ; a fixed-size one
+// returns its constant both times.
+//
+// That inference is why measure() must not clamp. A client that answered
+// min(preferred, available) would return 0x0 for the first probe and its
+// preferred size for the second, look "resizable" here, and then refuse every
+// size the host actually tried in checkSizeConstraint.
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::canResize()
 {
     if (pluginGraphics_GMPI)
