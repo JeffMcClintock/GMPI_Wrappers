@@ -55,4 +55,21 @@ SMTG_EXPORT_SYMBOL bool ExitDll()
 		return false;
 	return true;
 }
+
+#if SMTG_OS_LINUX
+// Linux hosts call ModuleEntry/ModuleExit rather than InitDll/ExitDll, and pass
+// the dlopen handle in. These have to live here, in the plugin module itself -
+// the SDK's linuxmain.cpp is in the VST3_Wrapper static library, where nothing
+// references it, so the linker never pulls that object in and the symbols end
+// up missing from the .so entirely.
+SMTG_EXPORT_SYMBOL bool ModuleEntry(void* sharedLibraryHandle)
+{
+	return InitDll();
+}
+
+SMTG_EXPORT_SYMBOL bool ModuleExit(void)
+{
+	return ExitDll();
+}
+#endif
 }

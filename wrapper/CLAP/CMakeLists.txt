@@ -127,7 +127,8 @@ set_target_properties(${PROJECT_NAME} PROPERTIES BUNDLE TRUE)
 set_target_properties(${PROJECT_NAME} PROPERTIES BUNDLE_EXTENSION CLAP)
 endif()
 
-# required by Linux build?
-#set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# required by Linux build: this static lib gets linked into the .clap shared
+# module, so its objects must be position-independent (same as VST3_Wrapper).
+set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES FOLDER "wrappers")

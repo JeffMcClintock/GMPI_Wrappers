@@ -67,10 +67,10 @@ ${VST3_SDK}/public.sdk/source/main/macmain.cpp
 ENDIF()
 
 if(UNIX AND NOT APPLE)
-# Linux: headless plugin (no native editor yet)
-set(srcs ${srcs}
-${VST3_SDK}/public.sdk/source/main/linuxmain.cpp
-)
+# Linux: no linuxmain.cpp here. It defines ModuleEntry/ModuleExit, which nothing
+# in this static library references, so the linker would never pull the object
+# in. Those entry points are defined in wrapperVst3.cpp instead, which
+# gmpi_plugin.cmake compiles straight into each plugin module.
 endif()
 
 set(vst_gui_minimal_srcs
