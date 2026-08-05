@@ -194,6 +194,11 @@ void SEVSTGUIEditorWayland::resolvePopupParent()
     if (!waylandFrame || !display)
         return;
 
+    // Dialogs of ours must be children of the host's toplevel, or a modal
+    // question can fall behind the DAW window - which the user experiences as a
+    // hang, with no way to answer it.
+    drawingframe.setParentToplevel(waylandFrame->getParentToplevel(display));
+
     ViewRect parentSize{};
     if (auto* xdg = waylandFrame->getParentSurface(parentSize, display))
     {
