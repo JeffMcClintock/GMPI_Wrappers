@@ -50,14 +50,17 @@ HOST_PID=$!
 # the editor has settled.
 for _ in $(seq 1 40); do [ -f "$OUT.before.ppm" ] && break; sleep 0.1; done
 
-if [ -x "$XDOTOOL" ]; then
+# Only when asked. A no-flag run must be READ-ONLY: DrawingDemo advances a page
+# on click, so a drag nobody asked for silently changed what was captured, and
+# the report still said "input not checked".
+if [ "$EXPECT_INPUT" = "--expect-input" ] && [ -x "$XDOTOOL" ]; then
     export DISPLAY=$DISP
     "$XDOTOOL" mousemove 100 100 sleep 0.2 mousedown 1 sleep 0.2 >/dev/null 2>&1
     for y in 95 90 85 80 70 60 50 40; do
         "$XDOTOOL" mousemove 100 $y sleep 0.05 >/dev/null 2>&1
     done
     "$XDOTOOL" mouseup 1 >/dev/null 2>&1
-else
+elif [ "$EXPECT_INPUT" = "--expect-input" ]; then
     echo "note: no xdotool - painting checked, input NOT checked"
 fi
 

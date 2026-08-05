@@ -1,5 +1,7 @@
 #include "SEVSTGUIEditorWayland.h"
 #include "Controller_VST3.h"
+
+#include <algorithm>
 #include "MyVstPluginFactory.h"
 
 #include "pluginterfaces/vst/ivsthostapplication.h"
@@ -119,18 +121,22 @@ SEVSTGUIEditorWayland::SEVSTGUIEditorWayland(gmpi::hosting::pluginInfo const& in
 
     if (auto drawingClient = peditor.as<gmpi::api::IDrawingClient>(); drawingClient)
     {
-        // Same reasoning as the X11 editor: a resizable client returns whatever
-        // size it was offered, so offering 99999 yields a 99999-pixel view.
-        constexpr float kOfferedSize = 4096.f;
+        // Offer ZERO to learn the client's MINIMUM. That is the idiom canResize()
+        // already uses, and it is the only offer that gets a straight answer: a
+        // resizable client returns whatever it is given, so offering a large
+        // number just hands back the large number. (The Windows editor offers
+        // 99999 and would size the view to 99999 pixels if the DAW let it.)
+        //
+        // Then take whichever is larger, the default or that minimum. A client
+        // with no opinion keeps the default; one that needs more room - the
+        // DrawingDemo's colour page needs a pixel per 8-bit code, or its ramps
+        // resample and banding cannot be read - gets what it asked for.
+        const gmpi::drawing::Size availableSize{ 0.0f, 0.0f };
+        gmpi::drawing::Size minimumSize{};
+        drawingClient->measure(&availableSize, &minimumSize);
 
-        gmpi::drawing::Size availableSize{ kOfferedSize, kOfferedSize };
-        gmpi::drawing::Size desiredSize{ availableSize };
-        drawingClient->measure(&availableSize, &desiredSize);
-
-        if (desiredSize.width > 0.f && desiredSize.width < kOfferedSize)
-            width = static_cast<int>(Dpi * desiredSize.width);
-        if (desiredSize.height > 0.f && desiredSize.height < kOfferedSize)
-            height = static_cast<int>(Dpi * desiredSize.height);
+        width  = (std::max)(width,  static_cast<int>(Dpi * minimumSize.width));
+        height = (std::max)(height, static_cast<int>(Dpi * minimumSize.height));
     }
 }
 
