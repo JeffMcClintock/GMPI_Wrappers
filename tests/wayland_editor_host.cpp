@@ -223,8 +223,16 @@ public:
     //--- IWaylandFrame ---
     wl_surface* PLUGIN_API getWaylandSurface(wl_display*) override { return g_wl.surface; }
 
+    int parentSurfaceQueries = 0;
+
     xdg_surface* PLUGIN_API getParentSurface(ViewRect& parentSize, wl_display*) override
     {
+        // Counted: this is the plugin asking for something to anchor popups to.
+        // Without it a context menu has no xdg_surface and cannot open at all,
+        // so "did the plugin ask" is worth reporting separately from "did it
+        // draw".
+        ++parentSurfaceQueries;
+
         // Our xdg_surface IS the plugin's parent surface, so the offset is zero.
         parentSize = { 0, 0, g_wl.width, g_wl.height };
         return g_wl.xdgSurface;
@@ -455,6 +463,7 @@ int main(int argc, char** argv)
     }
     std::printf("attached: ok (%zu fd handlers, %zu timers)\n",
                 frame.eventHandlers.size(), frame.timers.size());
+    std::printf("IWaylandFrame::getParentSurface queries: %d\n", frame.parentSurfaceQueries);
 
     if (frame.eventHandlers.empty() || frame.timers.empty())
     {

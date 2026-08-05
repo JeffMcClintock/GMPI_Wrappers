@@ -34,6 +34,21 @@ void wireTextStack(gmpi::cpugfx::Factory& factory)
     factory.imageDecoder = gmpi::drawing::decodeImageFile;
 }
 
+// Menus draw their own labels - X11 and Wayland each supply a grabbing window
+// and nothing else - so the frame needs a text format of its own. Built once
+// per module, after the text engine is in place.
+gmpi::drawing::api::ITextFormat* menuFont(gmpi::cpugfx::Factory& factory)
+{
+    static gmpi::drawing::TextFormat format = [&factory]
+    {
+        gmpi::drawing::Factory facade;
+        *gmpi::drawing::AccessPtr::put(facade) = &factory;
+        const std::string_view family{ "sans-serif" };
+        return facade.createTextFormat(14.0f, std::span{ &family, 1 });
+    }();
+    return gmpi::drawing::AccessPtr::get(format);
+}
+
 } // anonymous namespace
 
 SEVSTGUIEditorLinux::SEVSTGUIEditorLinux(gmpi::hosting::pluginInfo const& info,
@@ -43,6 +58,7 @@ SEVSTGUIEditorLinux::SEVSTGUIEditorLinux(gmpi::hosting::pluginInfo const& info,
     : VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
     wireTextStack(drawingframe.drawingFactory());
+    drawingframe.setMenuFont(menuFont(drawingframe.drawingFactory()));
 
     // Before any setHost call: the plugin resolves IEditorHost during setHost,
     // and the frame can only forward that once it knows where to.
