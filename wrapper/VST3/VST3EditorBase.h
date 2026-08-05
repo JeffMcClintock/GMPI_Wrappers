@@ -52,6 +52,50 @@ public:
 };
 #endif
 
+// The availableSize handed to IDrawingClient::measure when asking "how big
+// would you like to be?". Effectively unbounded: there is no real window yet.
+inline constexpr float kUnboundedMeasure = 99999.f;
+
+// Ask a client for its preferred size, in DIPs, updating width/height only if
+// it actually expressed a preference.
+//
+// measure() answers "given at most this much room, how much do you want?", so
+// against an unbounded offer there are two legitimate answers:
+//
+//   fixed-size client  -> its size. Use it.
+//   resizable client   -> the offer, echoed straight back, meaning "anything".
+//                         canResize() below depends on exactly that behaviour,
+//                         and it is what PluginEditor::measure does by default.
+//
+// The second is not a size. Taking it literally asks for a 99999 x 99999 window;
+// DXGI refuses to create a swap chain that large and the frame dies inside
+// CreateSwapPanel, with a stack that mentions only graphics and never reveals
+// the offending number. So an unbounded answer keeps the caller's default, and
+// anything absurd is treated the same way rather than trusted.
+inline void measurePreferredSize(gmpi::api::IDrawingClient* client, float dpi, int& width, int& height)
+{
+	if (!client)
+		return;
+
+	const gmpi::drawing::Size availableSize{ kUnboundedMeasure, kUnboundedMeasure };
+	gmpi::drawing::Size desiredSize{ static_cast<float>(width), static_cast<float>(height) };
+
+	if (client->measure(&availableSize, &desiredSize) != gmpi::ReturnCode::Ok)
+		return;
+
+	// Below 1 DIP is not a size either — a zero-size window breaks the same
+	// swap-chain call from the other direction.
+	const bool expressedPreference =
+		   desiredSize.width  >= 1.0f && desiredSize.width  < kUnboundedMeasure
+		&& desiredSize.height >= 1.0f && desiredSize.height < kUnboundedMeasure;
+
+	if (!expressedPreference)
+		return; // keep the caller's default
+
+	width  = static_cast<int>(dpi * desiredSize.width);
+	height = static_cast<int>(dpi * desiredSize.height);
+}
+
 class VST3EditorBase : public Steinberg::FObject, public Steinberg::IPlugView
 {
 	friend class ParameterHelper;

@@ -23,12 +23,7 @@ SEVSTGUIEditorWin::SEVSTGUIEditorWin(gmpi::hosting::pluginInfo const& info, gmpi
 
     if (auto drawingClient = peditor.as<gmpi::api::IDrawingClient>(); drawingClient)
     {
-        gmpi::drawing::Size desiredSize{ 100.f, 100.f };
-        gmpi::drawing::Size availableSize{ 99999.f, 99999.f };
-        drawingClient->measure(&availableSize, &desiredSize);
-
-        width = static_cast<int>(Dpi * desiredSize.width);
-        height = static_cast<int>(Dpi * desiredSize.height);
+        measurePreferredSize(drawingClient.get(), Dpi, width, height);
     }
 }
 

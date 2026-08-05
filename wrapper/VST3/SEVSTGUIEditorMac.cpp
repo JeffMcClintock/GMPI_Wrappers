@@ -17,13 +17,10 @@ SEVSTGUIEditorMac::SEVSTGUIEditorMac(gmpi::hosting::pluginInfo const& info, gmpi
 
 Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::attached (void* parent, Steinberg::FIDString type)
 {
-    const gmpi::drawing::Size availableSize{ 99999.f, 99999.f };//static_cast<float>(width), static_cast<float>(height) };
-    gmpi::drawing::Size desiredSize{ 100.f, 100.f };
-    pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
+    // Cocoa works in points, so no DPI factor here (unlike the Win32 editor).
+    measurePreferredSize(pluginGraphics_GMPI.get(), 1.0f, width, height);
 
-    width = static_cast<int>(desiredSize.width);
-    height = static_cast<int>(desiredSize.height);
-    
+
     nsView = createNativeView(parent, (class IUnknown*) static_cast<gmpi::api::IEditorHost*>(&controller->gmpiController), (class IUnknown*) pluginGraphics_GMPI.get(), width, height);
     
     initPlugin();
