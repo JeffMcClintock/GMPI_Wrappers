@@ -8,12 +8,20 @@
 #include "helpers/DecodeImage.h"
 #include "helpers/FontProvider.h"
 
-// The SDK DECLAREs these two class IIDs in iwaylandframe.h but DEFINEs them
-// nowhere - unlike every other interface, there is no DEF_CLASS_IID for them in
-// any of the SDK's *iids.cpp. Without this the module links (a shared object may
-// carry undefined symbols) and then fails to dlopen in the host, with nothing in
-// our own build to say why. `nm -DC --undefined-only` on the .so is how to spot
-// it if it ever comes back.
+// These two IIDs are declared in iwaylandframe.h and are NOT in any of the
+// SDK's central *iids.cpp - not coreiids, commoniids, vstinitiids or baseiids -
+// so linking those, as a plugin normally does for every other interface, does
+// not supply them. Each module defines its own instead; the SDK does the same
+// in vstgui4/plugin-bindings/vst3editor.cpp (plugin side) and in the editorhost
+// sample's wayland/window.cpp (host side).
+//
+// Miss it and the module still LINKS - a shared object may carry undefined
+// symbols - then fails to dlopen in the host with nothing in our build to say
+// why. `nm -DC --undefined-only` on the built .so is how to catch it.
+//
+// Corollary: if this wrapper is ever built into a module that also compiles
+// vst3editor.cpp, these become duplicate definitions. Delete one, do not
+// silence the linker.
 namespace Steinberg {
 DEF_CLASS_IID (IWaylandHost)
 DEF_CLASS_IID (IWaylandFrame)

@@ -50,8 +50,9 @@
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivsthostapplication.h"
 
-// See the note in SEVSTGUIEditorWayland.cpp: the SDK declares these IIDs and
-// defines them nowhere, so every module that names them must define its own.
+// See the note in SEVSTGUIEditorWayland.cpp: these IIDs are in none of the
+// SDK's central *iids.cpp, so every module that names them defines its own.
+// The SDK's editorhost sample does exactly this in wayland/window.cpp.
 namespace Steinberg {
 DEF_CLASS_IID (IWaylandHost)
 DEF_CLASS_IID (IWaylandFrame)
