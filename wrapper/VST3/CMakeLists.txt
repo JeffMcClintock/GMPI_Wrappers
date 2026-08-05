@@ -71,6 +71,21 @@ if(UNIX AND NOT APPLE)
 # in this static library references, so the linker would never pull the object
 # in. Those entry points are defined in wrapperVst3.cpp instead, which
 # gmpi_plugin.cmake compiles straight into each plugin module.
+#
+# The editor embeds via X11 - the only mechanism VST3 defines for Linux, and
+# what a Wayland host reaches us through as well (XWayland). The CPU renderer
+# needs the same text/image stack the Wayland editor links.
+set(srcs ${srcs}
+SEVSTGUIEditorLinux.h
+SEVSTGUIEditorLinux.cpp
+${GMPI_UI_SDK}/backends/DrawingFrameX11.h
+${GMPI_UI_SDK}/backends/DrawingFrameX11.cpp
+${GMPI_UI_SDK}/backends/CpuGfx.h
+${GMPI_UI_SDK}/backends/CpuEncode.h
+${GMPI_UI_SDK}/helpers/CpuTextEngine.h
+${GMPI_UI_SDK}/helpers/FontProvider.h
+${GMPI_UI_SDK}/helpers/DecodeImage.h
+)
 endif()
 
 set(vst_gui_minimal_srcs
@@ -173,6 +188,38 @@ TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${QUARTZCORE_LIBRARY} )
 
 if(CMAKE_HOST_WIN32)
 target_link_libraries(${PROJECT_NAME} Dwmapi dxguid d3d11 d2d1 dwrite windowscodecs)
+endif()
+
+if(UNIX AND NOT APPLE)
+    # X11 + MIT-SHM for the embedded window, then the pieces the CPU renderer
+    # has no code of its own for: fontconfig to find faces, freetype to
+    # rasterise, harfbuzz to shape, libpng for image decode. The helper headers
+    # select their implementation with __has_include, so a missing include path
+    # here does not fail the build - it silently compiles a plugin that draws no
+    # text. PUBLIC so each plugin module inherits them.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GMPI_X11 REQUIRED x11 xext)
+    pkg_check_modules(GMPI_FONTCONFIG REQUIRED fontconfig)
+    pkg_check_modules(GMPI_FREETYPE REQUIRED freetype2)
+    pkg_check_modules(GMPI_HARFBUZZ REQUIRED harfbuzz)
+    pkg_check_modules(GMPI_LIBPNG REQUIRED libpng)
+
+    target_include_directories(${PROJECT_NAME} PUBLIC
+        ${GMPI_X11_INCLUDE_DIRS}
+        ${GMPI_FONTCONFIG_INCLUDE_DIRS}
+        ${GMPI_FREETYPE_INCLUDE_DIRS}
+        ${GMPI_HARFBUZZ_INCLUDE_DIRS}
+        ${GMPI_LIBPNG_INCLUDE_DIRS}
+    )
+    # Plain signature deliberately: the macOS framework links above use it, and
+    # CMake refuses to mix plain and keyword forms on one target.
+    target_link_libraries(${PROJECT_NAME}
+        ${GMPI_X11_LIBRARIES}
+        ${GMPI_FONTCONFIG_LIBRARIES}
+        ${GMPI_FREETYPE_LIBRARIES}
+        ${GMPI_HARFBUZZ_LIBRARIES}
+        ${GMPI_LIBPNG_LIBRARIES}
+    )
 endif()
 
 target_compile_definitions (${PROJECT_NAME} PRIVATE -D_UNICODE -DUNICODE)

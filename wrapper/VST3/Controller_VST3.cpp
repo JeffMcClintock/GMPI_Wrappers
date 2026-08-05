@@ -17,6 +17,8 @@
 #include "SEVSTGUIEditorWin.h"
 #elif defined(__APPLE__)
 #include "SEVSTGUIEditorMac.h"
+#else
+#include "SEVSTGUIEditorLinux.h"
 #endif
 
 using namespace Steinberg;
@@ -412,7 +414,7 @@ IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 #elif defined(__APPLE__)
 	return new SEVSTGUIEditorMac(*info, editor, this, width, height);
 #else
-	return {}; // Linux: no native GUI backend yet, run headless.
+	return new SEVSTGUIEditorLinux(*info, editor, this, width, height);
 #endif
 // todo init all params and pins			initializeGui(&helper)
 }

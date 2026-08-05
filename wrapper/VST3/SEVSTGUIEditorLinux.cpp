@@ -1,0 +1,237 @@
+#include "SEVSTGUIEditorLinux.h"
+#include "Controller_VST3.h"
+
+#include "helpers/CpuTextEngine.h"
+#include "helpers/DecodeImage.h"
+#include "helpers/FontProvider.h"
+
+using namespace Steinberg;
+
+namespace wrapper
+{
+namespace
+{
+
+// The host's run loop granularity for us. 16ms keeps meters and automation
+// moving at roughly display rate without pinning a core; the timer only
+// repaints when something actually invalidated.
+constexpr Steinberg::uint64 kTimerIntervalMs = 16;
+
+// The CPU backend contains no font, shaping or image-decode code, so every host
+// of it must supply them. One engine for the whole module: it caches rasterised
+// glyphs, and several plugin windows in one DAW should share that cache.
+void wireTextStack(gmpi::cpugfx::Factory& factory)
+{
+    static gmpi::drawing::CpuTextEngine textEngine{ gmpi::drawing::findFont };
+    static bool once = [&]
+    {
+        textEngine.imageDecoder = gmpi::drawing::decodeImageMemory;
+        return true;
+    }();
+    (void)once;
+
+    factory.textEngine   = &textEngine;
+    factory.imageDecoder = gmpi::drawing::decodeImageFile;
+}
+
+} // anonymous namespace
+
+SEVSTGUIEditorLinux::SEVSTGUIEditorLinux(gmpi::hosting::pluginInfo const& info,
+                                         gmpi::shared_ptr<gmpi::api::IEditor>& peditor,
+                                         wrapper::Controller_VST3* pcontroller,
+                                         int pwidth, int pheight)
+    : VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
+{
+    wireTextStack(drawingframe.drawingFactory());
+
+    // Before any setHost call: the plugin resolves IEditorHost during setHost,
+    // and the frame can only forward that once it knows where to.
+    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&pcontroller->gmpiController));
+
+    if (pluginParameters_GMPI)
+    {
+        pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
+    }
+
+    if (auto drawingClient = peditor.as<gmpi::api::IDrawingClient>(); drawingClient)
+    {
+        // Ask what the editor wants, but only believe an answer that is a real
+        // preferred size. A resizable client returns whatever it was offered, so
+        // offering it 99999 (as the Windows editor does) yields a 99999-pixel
+        // view - which a DAW will happily try to open. Offer a sane ceiling and
+        // treat "took all of it" as "has no opinion", keeping the default.
+        constexpr float kOfferedSize = 4096.f;
+
+        gmpi::drawing::Size availableSize{ kOfferedSize, kOfferedSize };
+        gmpi::drawing::Size desiredSize{ availableSize };
+        drawingClient->measure(&availableSize, &desiredSize);
+
+        if (desiredSize.width > 0.f && desiredSize.width < kOfferedSize)
+            width = static_cast<int>(Dpi * desiredSize.width);
+        if (desiredSize.height > 0.f && desiredSize.height < kOfferedSize)
+            height = static_cast<int>(Dpi * desiredSize.height);
+    }
+}
+
+SEVSTGUIEditorLinux::~SEVSTGUIEditorLinux()
+{
+    if (pluginParameters_GMPI)
+    {
+        controller->gmpiController.unRegisterGui(pluginParameters_GMPI.get());
+    }
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::queryInterface(const TUID iid, void** obj)
+{
+    QUERY_INTERFACE(iid, obj, Linux::IEventHandler::iid, Linux::IEventHandler)
+    QUERY_INTERFACE(iid, obj, Linux::ITimerHandler::iid, Linux::ITimerHandler)
+    return VST3EditorBase::queryInterface(iid, obj);
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::isPlatformTypeSupported(FIDString type)
+{
+    // Only X11. Claiming otherwise gets us handed a window id we cannot use,
+    // which is worse than the host reporting no editor.
+    if (type && std::strcmp(type, kPlatformTypeX11EmbedWindowID) == 0)
+        return kResultTrue;
+
+    return kResultFalse;
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::setFrame(IPlugFrame* frame)
+{
+    // This is the only route to the host's run loop, and it arrives BEFORE
+    // attached(). A host that supplies no IRunLoop leaves the editor static -
+    // it will draw once and never respond, which is why the failure is worth
+    // distinguishing from success rather than silently ignoring.
+    runLoop = {};
+
+    if (frame)
+    {
+        Linux::IRunLoop* loop{};
+        if (frame->queryInterface(Linux::IRunLoop::iid, reinterpret_cast<void**>(&loop)) == kResultOk && loop)
+        {
+            runLoop = owned(loop);
+        }
+    }
+
+    return kResultTrue;
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::attached(void* parent, FIDString type)
+{
+    if (isPlatformTypeSupported(type) != kResultTrue)
+        return kResultFalse;
+
+    if (pluginGraphics_GMPI)
+    {
+        drawingframe.attachClient(pluginGraphics_GMPI.get());
+
+        // VST3 coordinates on Linux are physical pixels, so the view size is
+        // handed straight through with no DPI conversion.
+        if (!drawingframe.open(reinterpret_cast<uintptr_t>(parent), width, height))
+            return kResultFalse;
+    }
+
+    if (pluginParameters_GMPI)
+    {
+        pluginParameters_GMPI->initialize();
+        controller->gmpiController.initUi(pluginParameters_GMPI.get());
+    }
+
+    initPlugin();
+
+    if (runLoop && drawingframe.isOpen())
+    {
+        runLoop->registerEventHandler(static_cast<Linux::IEventHandler*>(this),
+                                      drawingframe.connectionFd());
+        runLoop->registerTimer(static_cast<Linux::ITimerHandler*>(this), kTimerIntervalMs);
+        registeredWithRunLoop = true;
+    }
+
+    return kResultTrue;
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::removed()
+{
+    // Unregister BEFORE closing: the run loop holds our fd, and closing the X
+    // connection first leaves it polling a descriptor that may already have been
+    // reused by something else in the host process.
+    if (registeredWithRunLoop && runLoop)
+    {
+        runLoop->unregisterTimer(static_cast<Linux::ITimerHandler*>(this));
+        runLoop->unregisterEventHandler(static_cast<Linux::IEventHandler*>(this));
+    }
+    registeredWithRunLoop = false;
+
+    if (pluginParameters_GMPI)
+    {
+        controller->gmpiController.unRegisterGui(pluginParameters_GMPI.get());
+    }
+
+    drawingframe.close();
+
+    return kResultTrue;
+}
+
+void PLUGIN_API SEVSTGUIEditorLinux::onFDIsSet(Linux::FileDescriptor /*fd*/)
+{
+    drawingframe.processEvents();
+}
+
+void PLUGIN_API SEVSTGUIEditorLinux::onTimer()
+{
+    // Two jobs. processEvents() because some hosts register our fd but poll it
+    // lazily, and onTimer() to flush invalidations that came from automation
+    // rather than from input.
+    drawingframe.processEvents();
+    drawingframe.onTimer();
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::getSize(ViewRect* size)
+{
+    *size = { 0, 0, width, height };
+    return kResultTrue;
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::onSize(ViewRect* newSize)
+{
+    width  = newSize->right - newSize->left;
+    height = newSize->bottom - newSize->top;
+    drawingframe.reSize(width, height);
+    return kResultTrue;
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::canResize()
+{
+    if (pluginGraphics_GMPI)
+    {
+        const gmpi::drawing::Size availableSize1{ 0.0f, 0.0f };
+        const gmpi::drawing::Size availableSize2{ 10000.0f, 10000.0f };
+        gmpi::drawing::Size desiredSize1{ availableSize1 };
+        gmpi::drawing::Size desiredSize2{ availableSize1 };
+        pluginGraphics_GMPI->measure(&availableSize1, &desiredSize1);
+        pluginGraphics_GMPI->measure(&availableSize2, &desiredSize2);
+
+        if (desiredSize1.width != desiredSize2.width || desiredSize1.height != desiredSize2.height)
+            return kResultTrue;
+    }
+    return kResultFalse;
+}
+
+tresult PLUGIN_API SEVSTGUIEditorLinux::checkSizeConstraint(ViewRect* rect)
+{
+    if (pluginGraphics_GMPI)
+    {
+        const gmpi::drawing::Size availableSize{ static_cast<float>(rect->right - rect->left) / Dpi,
+                                                 static_cast<float>(rect->bottom - rect->top) / Dpi };
+        gmpi::drawing::Size desiredSize{ availableSize };
+        pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
+
+        if (availableSize.width == desiredSize.width && availableSize.height == desiredSize.height)
+            return kResultTrue;
+    }
+    return kResultFalse;
+}
+
+}
