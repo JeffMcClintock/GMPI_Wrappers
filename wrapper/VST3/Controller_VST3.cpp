@@ -19,6 +19,9 @@
 #include "SEVSTGUIEditorMac.h"
 #else
 #include "SEVSTGUIEditorLinux.h"
+#if GMPI_VST3_WAYLAND
+#include "SEVSTGUIEditorWayland.h"
+#endif
 #endif
 
 using namespace Steinberg;
@@ -414,6 +417,15 @@ IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 #elif defined(__APPLE__)
 	return new SEVSTGUIEditorMac(*info, editor, this, width, height);
 #else
+#if GMPI_VST3_WAYLAND
+	// Wayland first when the host offers it (VST3 3.8.0+), X11 otherwise. The
+	// probe is for IWaylandHost, not for WAYLAND_DISPLAY: a host running under
+	// Wayland may still embed its plugins through XWayland, and only the host
+	// knows which it does.
+	if (SEVSTGUIEditorWayland::hostSupportsWayland())
+		return new SEVSTGUIEditorWayland(*info, editor, this, width, height);
+#endif
+
 	return new SEVSTGUIEditorLinux(*info, editor, this, width, height);
 #endif
 // todo init all params and pins			initializeGui(&helper)

@@ -38,6 +38,13 @@ public:
 	/** Receives information about host*/
 	virtual Steinberg::tresult PLUGIN_API setHostContext (Steinberg::FUnknown* context);
 
+	/** The host context from setHostContext, or null if the host never set one.
+	 *  On Linux this is the ONLY route to IWaylandHost: it is created through
+	 *  IHostApplication::createInstance, and is needed before any view exists,
+	 *  which is exactly why the specification has the host deliver
+	 *  IHostApplication this early. */
+	static Steinberg::FUnknown* getHostContext();
+
 /*
 	DECLARE_FUNKNOWN_METHODS
 */

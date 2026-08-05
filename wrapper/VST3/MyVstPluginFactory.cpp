@@ -370,10 +370,24 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 	return kResultOk;
 }
 	
+namespace
+{
+// Borrowed, not owned. The host guarantees this outlives the module, and the
+// factory is a singleton with no defined teardown point at which we could
+// safely release it.
+Steinberg::FUnknown* g_hostContext{};
+}
+
 /** Receives information about host*/
 tresult MyVstPluginFactory::setHostContext (FUnknown* context)
 {
-	return kNotImplemented;
+	g_hostContext = context;
+	return kResultOk;
+}
+
+FUnknown* MyVstPluginFactory::getHostContext()
+{
+	return g_hostContext;
 }
 
 /** Create a new class instance. */

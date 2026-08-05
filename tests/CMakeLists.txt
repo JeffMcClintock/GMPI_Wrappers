@@ -58,3 +58,70 @@ target_link_libraries(x11_editor_host PRIVATE
 )
 
 set_target_properties(x11_editor_host PROPERTIES FOLDER "wrappers")
+
+# ---------------------------------------------------------------------------
+# wayland_editor_host - the same idea for the VST3 3.8.0 Wayland path. Needs the
+# host to implement IWaylandHost / IWaylandFrame / Linux::IRunLoop, which is
+# most of what this file is. Only built when the wrapper itself has Wayland.
+# ---------------------------------------------------------------------------
+if(GMPI_VST3_WAYLAND)
+    pkg_check_modules(TEST_WL REQUIRED wayland-client)
+
+    # Generate our own xdg-shell binding rather than reaching into the VST3
+    # wrapper's build directory: a custom command's output belongs to the
+    # directory that declared it.
+    pkg_get_variable(TEST_WL_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+    find_program(TEST_WAYLAND_SCANNER wayland-scanner REQUIRED)
+    set(TEST_WL_GEN ${CMAKE_CURRENT_BINARY_DIR}/wl-gen)
+    file(MAKE_DIRECTORY ${TEST_WL_GEN})
+
+    add_custom_command(
+        OUTPUT ${TEST_WL_GEN}/xdg-shell-client-protocol.h ${TEST_WL_GEN}/xdg-shell-protocol.c
+        COMMAND ${TEST_WAYLAND_SCANNER} client-header
+                ${TEST_WL_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml
+                ${TEST_WL_GEN}/xdg-shell-client-protocol.h
+        COMMAND ${TEST_WAYLAND_SCANNER} private-code
+                ${TEST_WL_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml
+                ${TEST_WL_GEN}/xdg-shell-protocol.c
+        DEPENDS ${TEST_WL_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml
+        COMMENT "wayland-scanner xdg-shell (tests)"
+        VERBATIM
+    )
+
+    add_executable(wayland_editor_host
+        wayland_editor_host.cpp
+        ${TEST_WL_GEN}/xdg-shell-protocol.c
+        ${VST3_SDK}/public.sdk/source/vst/hosting/module.cpp
+        ${VST3_SDK}/public.sdk/source/vst/hosting/module_linux.cpp
+        ${VST3_SDK}/public.sdk/source/vst/hosting/hostclasses.cpp
+        ${VST3_SDK}/public.sdk/source/vst/hosting/plugprovider.cpp
+        ${VST3_SDK}/public.sdk/source/vst/hosting/pluginterfacesupport.cpp
+        ${VST3_SDK}/public.sdk/source/vst/hosting/connectionproxy.cpp
+        ${VST3_SDK}/public.sdk/source/common/threadchecker_linux.cpp
+        ${VST3_SDK}/public.sdk/source/vst/utility/stringconvert.cpp
+        ${VST3_SDK}/public.sdk/source/common/commonstringconvert.cpp
+        ${VST3_SDK}/public.sdk/source/common/commoniids.cpp
+        ${VST3_SDK}/public.sdk/source/vst/vstinitiids.cpp
+
+        ${VST3_SDK}/pluginterfaces/base/funknown.cpp
+        ${VST3_SDK}/pluginterfaces/base/coreiids.cpp
+        ${VST3_SDK}/pluginterfaces/base/ustring.cpp
+        ${VST3_SDK}/base/source/baseiids.cpp
+        ${VST3_SDK}/base/source/fdebug.cpp
+        ${VST3_SDK}/base/source/fobject.cpp
+        ${VST3_SDK}/base/source/fstring.cpp
+        ${VST3_SDK}/base/source/updatehandler.cpp
+        ${VST3_SDK}/base/thread/source/flock.cpp
+    )
+
+    target_include_directories(wayland_editor_host PRIVATE
+        ${VST3_SDK}
+        ${TEST_WL_GEN}
+        ${TEST_WL_INCLUDE_DIRS}
+    )
+    target_link_libraries(wayland_editor_host PRIVATE
+        ${TEST_WL_LIBRARIES}
+        ${CMAKE_DL_LIBS}
+    )
+    set_target_properties(wayland_editor_host PROPERTIES FOLDER "wrappers")
+endif()

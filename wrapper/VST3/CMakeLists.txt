@@ -72,9 +72,10 @@ if(UNIX AND NOT APPLE)
 # in. Those entry points are defined in wrapperVst3.cpp instead, which
 # gmpi_plugin.cmake compiles straight into each plugin module.
 #
-# The editor embeds via X11 - the only mechanism VST3 defines for Linux, and
-# what a Wayland host reaches us through as well (XWayland). The CPU renderer
-# needs the same text/image stack the Wayland editor links.
+# The X11 editor. Until VST3 3.8.0 this was the only Linux embedding the
+# specification defined, and it is still what a host reaches us through when it
+# offers no Wayland (including XWayland sessions). The CPU renderer needs the
+# same text/image stack the standalone Wayland editor links.
 set(srcs ${srcs}
 SEVSTGUIEditorLinux.h
 SEVSTGUIEditorLinux.cpp
@@ -86,6 +87,65 @@ ${GMPI_UI_SDK}/helpers/CpuTextEngine.h
 ${GMPI_UI_SDK}/helpers/FontProvider.h
 ${GMPI_UI_SDK}/helpers/DecodeImage.h
 )
+
+# Wayland (VST3 3.8.0's kPlatformTypeWaylandSurfaceID). Optional: a host that
+# predates 3.8.0, or a build machine without the Wayland development packages,
+# gets the X11 editor and nothing else changes.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GMPI_WL      wayland-client)
+pkg_check_modules(GMPI_XKB     xkbcommon)
+pkg_check_modules(GMPI_DECOR   libdecor-0)
+# The Wayland frame's file dialog goes through the desktop portal over D-Bus;
+# Wayland has no file chooser of its own.
+pkg_check_modules(GMPI_DBUS    dbus-1)
+find_program(WAYLAND_SCANNER wayland-scanner)
+
+if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND GMPI_DBUS_FOUND AND WAYLAND_SCANNER)
+    set(GMPI_VST3_WAYLAND TRUE)
+    # The tests directory is a sibling added by wrapper/CMakeLists.txt, so it
+    # only sees what we push up.
+    set(GMPI_VST3_WAYLAND TRUE PARENT_SCOPE)
+
+    # Protocol bindings are generated, not shipped: wayland-scanner emits a
+    # header plus a C file of message signatures per protocol.
+    pkg_get_variable(WL_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+    set(WL_GEN ${CMAKE_CURRENT_BINARY_DIR}/wl-gen)
+    file(MAKE_DIRECTORY ${WL_GEN})
+
+    set(WL_PROTOCOL_PATHS
+        stable/xdg-shell/xdg-shell
+        stable/viewporter/viewporter
+        staging/fractional-scale/fractional-scale-v1
+        staging/cursor-shape/cursor-shape-v1
+        unstable/tablet/tablet-unstable-v2          # cursor-shape-v1 references it
+        unstable/xdg-foreign/xdg-foreign-unstable-v2
+    )
+
+    set(WL_PROTOCOL_SOURCES "")
+    foreach(proto ${WL_PROTOCOL_PATHS})
+        get_filename_component(name ${proto} NAME)
+        set(xml ${WL_PROTOCOLS_DIR}/${proto}.xml)
+        add_custom_command(
+            OUTPUT ${WL_GEN}/${name}-client-protocol.h ${WL_GEN}/${name}-protocol.c
+            COMMAND ${WAYLAND_SCANNER} client-header ${xml} ${WL_GEN}/${name}-client-protocol.h
+            COMMAND ${WAYLAND_SCANNER} private-code  ${xml} ${WL_GEN}/${name}-protocol.c
+            DEPENDS ${xml}
+            COMMENT "wayland-scanner ${name}"
+            VERBATIM
+        )
+        list(APPEND WL_PROTOCOL_SOURCES ${WL_GEN}/${name}-protocol.c)
+    endforeach()
+
+    set(srcs ${srcs}
+        SEVSTGUIEditorWayland.h
+        SEVSTGUIEditorWayland.cpp
+        ${GMPI_UI_SDK}/backends/DrawingFrameWayland.h
+        ${WL_PROTOCOL_SOURCES}
+    )
+else()
+    message(STATUS "VST3 wrapper: Wayland support off (need wayland-client, "
+                   "xkbcommon, libdecor-0, dbus-1 and wayland-scanner); X11 editor only.")
+endif()
 endif()
 
 set(vst_gui_minimal_srcs
@@ -211,6 +271,23 @@ if(UNIX AND NOT APPLE)
         ${GMPI_HARFBUZZ_INCLUDE_DIRS}
         ${GMPI_LIBPNG_INCLUDE_DIRS}
     )
+
+    if(GMPI_VST3_WAYLAND)
+        target_include_directories(${PROJECT_NAME} PUBLIC
+            ${WL_GEN}                       # generated *-client-protocol.h
+            ${GMPI_WL_INCLUDE_DIRS}
+            ${GMPI_XKB_INCLUDE_DIRS}
+            ${GMPI_DECOR_INCLUDE_DIRS}
+            ${GMPI_DBUS_INCLUDE_DIRS}
+        )
+        target_link_libraries(${PROJECT_NAME}
+            ${GMPI_WL_LIBRARIES}
+            ${GMPI_XKB_LIBRARIES}
+            ${GMPI_DECOR_LIBRARIES}
+            ${GMPI_DBUS_LIBRARIES}
+        )
+        target_compile_definitions(${PROJECT_NAME} PUBLIC GMPI_VST3_WAYLAND=1)
+    endif()
     # Plain signature deliberately: the macOS framework links above use it, and
     # CMake refuses to mix plain and keyword forms on one target.
     target_link_libraries(${PROJECT_NAME}

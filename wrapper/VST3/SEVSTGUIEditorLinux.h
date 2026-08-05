@@ -6,10 +6,10 @@
 // Two things make this different from the Windows and macOS editors, and both
 // come from the VST3 specification rather than from us:
 //
-//  * The only Linux embedding VST3 defines is kPlatformTypeX11EmbedWindowID -
-//    an X11 Window id. There is NO Wayland platform type in 3.7.14 or earlier,
-//    so a Wayland-native host reaches its plugins through XWayland. See
-//    docs/vst3-linux-editor.md for what a Wayland extension would need.
+//  * This embeds via kPlatformTypeX11EmbedWindowID, an X11 Window id. VST3
+//    3.8.0 added a Wayland platform type as well - see SEVSTGUIEditorWayland,
+//    which Controller_VST3 prefers when the host offers IWaylandHost. X11
+//    remains the path for older hosts and for XWayland sessions.
 //
 //  * A Linux plugin may not run an event loop. The host owns it, and lends the
 //    plugin a Steinberg::Linux::IRunLoop (queried off IPlugFrame) to register a
