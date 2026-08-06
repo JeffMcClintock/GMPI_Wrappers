@@ -95,12 +95,9 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GMPI_WL      wayland-client)
 pkg_check_modules(GMPI_XKB     xkbcommon)
 pkg_check_modules(GMPI_DECOR   libdecor-0)
-# The Wayland frame's file dialog goes through the desktop portal over D-Bus;
-# Wayland has no file chooser of its own.
-pkg_check_modules(GMPI_DBUS    dbus-1)
 find_program(WAYLAND_SCANNER wayland-scanner)
 
-if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND GMPI_DBUS_FOUND AND WAYLAND_SCANNER)
+if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND WAYLAND_SCANNER)
     set(GMPI_VST3_WAYLAND TRUE)
     # The tests directory is a sibling added by wrapper/CMakeLists.txt, so it
     # only sees what we push up.
@@ -144,7 +141,7 @@ if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND GMPI_DBUS_FOUND AND
     )
 else()
     message(STATUS "VST3 wrapper: Wayland support off (need wayland-client, "
-                   "xkbcommon, libdecor-0, dbus-1 and wayland-scanner); X11 editor only.")
+                   "xkbcommon, libdecor-0 and wayland-scanner); X11 editor only.")
 endif()
 endif()
 
@@ -263,6 +260,9 @@ if(UNIX AND NOT APPLE)
     pkg_check_modules(GMPI_FREETYPE REQUIRED freetype2)
     pkg_check_modules(GMPI_HARFBUZZ REQUIRED harfbuzz)
     pkg_check_modules(GMPI_LIBPNG REQUIRED libpng)
+    # Not Wayland-only: the X11 frame's file chooser goes through the same XDG
+    # desktop portal, which is D-Bus.
+    pkg_check_modules(GMPI_DBUS REQUIRED dbus-1)
 
     target_include_directories(${PROJECT_NAME} PUBLIC
         ${GMPI_X11_INCLUDE_DIRS}
@@ -270,6 +270,7 @@ if(UNIX AND NOT APPLE)
         ${GMPI_FREETYPE_INCLUDE_DIRS}
         ${GMPI_HARFBUZZ_INCLUDE_DIRS}
         ${GMPI_LIBPNG_INCLUDE_DIRS}
+        ${GMPI_DBUS_INCLUDE_DIRS}
     )
 
     if(GMPI_VST3_WAYLAND)
@@ -278,13 +279,11 @@ if(UNIX AND NOT APPLE)
             ${GMPI_WL_INCLUDE_DIRS}
             ${GMPI_XKB_INCLUDE_DIRS}
             ${GMPI_DECOR_INCLUDE_DIRS}
-            ${GMPI_DBUS_INCLUDE_DIRS}
         )
         target_link_libraries(${PROJECT_NAME}
             ${GMPI_WL_LIBRARIES}
             ${GMPI_XKB_LIBRARIES}
             ${GMPI_DECOR_LIBRARIES}
-            ${GMPI_DBUS_LIBRARIES}
         )
         target_compile_definitions(${PROJECT_NAME} PUBLIC GMPI_VST3_WAYLAND=1)
     endif()
@@ -296,6 +295,7 @@ if(UNIX AND NOT APPLE)
         ${GMPI_FREETYPE_LIBRARIES}
         ${GMPI_HARFBUZZ_LIBRARIES}
         ${GMPI_LIBPNG_LIBRARIES}
+        ${GMPI_DBUS_LIBRARIES}
     )
 endif()
 
