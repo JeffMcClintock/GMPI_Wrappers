@@ -88,7 +88,7 @@ ${GMPI_UI_SDK}/helpers/FontProvider.h
 ${GMPI_UI_SDK}/helpers/DecodeImage.h
 )
 
-# Wayland (VST3 3.8.0's kPlatformTypeWaylandSurfaceID). Optional: a host that
+# Wayland (VST3 3.8.0's kPlatformTypeWaylandSurfaceID). Optional: an SDK that
 # predates 3.8.0, or a build machine without the Wayland development packages,
 # gets the X11 editor and nothing else changes.
 find_package(PkgConfig REQUIRED)
@@ -97,7 +97,18 @@ pkg_check_modules(GMPI_XKB     xkbcommon)
 pkg_check_modules(GMPI_DECOR   libdecor-0)
 find_program(WAYLAND_SCANNER wayland-scanner)
 
-if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND WAYLAND_SCANNER)
+# The SDK half of that promise. iwaylandframe.h arrived in 3.8.0 and is the one
+# header SEVSTGUIEditorWayland cannot do without, so its presence is the test -
+# cheaper to trust than a version string, since the SDK may be a local override
+# at any commit. Without it the Wayland packages alone would switch the editor
+# on and the include would fail.
+set(GMPI_VST3_SDK_HAS_WAYLAND FALSE)
+if(EXISTS "${VST3_SDK}/pluginterfaces/gui/iwaylandframe.h")
+    set(GMPI_VST3_SDK_HAS_WAYLAND TRUE)
+endif()
+
+if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND WAYLAND_SCANNER
+   AND GMPI_VST3_SDK_HAS_WAYLAND)
     set(GMPI_VST3_WAYLAND TRUE)
     # The tests directory is a sibling added by wrapper/CMakeLists.txt, so it
     # only sees what we push up.
@@ -141,7 +152,8 @@ if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND WAYLAND_SCANNER)
     )
 else()
     message(STATUS "VST3 wrapper: Wayland support off (need wayland-client, "
-                   "xkbcommon, libdecor-0 and wayland-scanner); X11 editor only.")
+                   "xkbcommon, libdecor-0, wayland-scanner and a VST3 SDK of "
+                   "3.8.0 or later); X11 editor only.")
 endif()
 endif()
 
