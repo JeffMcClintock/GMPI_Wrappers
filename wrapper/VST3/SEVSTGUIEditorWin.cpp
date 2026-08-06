@@ -128,6 +128,16 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorWin::checkSizeConstraint(Steinberg::
         {
             return Steinberg::kResultTrue;
         }
+
+        // The view will not take the size offered. The VST3 contract is to write
+        // back the nearest size it *will* take -- returning kResultFalse with the
+        // rect untouched tells the host nothing, and a host that ignores the
+        // return value then calls onSize with a number the view never agreed to.
+        // That is how a 2178 x 32672 rect once reached the swap chain.
+        rect->right  = rect->left + static_cast<Steinberg::int32>(desiredSize.width  * Dpi + 0.5f);
+        rect->bottom = rect->top  + static_cast<Steinberg::int32>(desiredSize.height * Dpi + 0.5f);
+
+        return Steinberg::kResultTrue;
     }
     return Steinberg::kResultFalse;
 }
