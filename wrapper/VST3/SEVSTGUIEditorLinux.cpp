@@ -73,22 +73,11 @@ SEVSTGUIEditorLinux::SEVSTGUIEditorLinux(gmpi::hosting::pluginInfo const& info,
 
     if (auto drawingClient = peditor.as<gmpi::api::IDrawingClient>(); drawingClient)
     {
-        // Offer ZERO to learn the client's MINIMUM. That is the idiom canResize()
-        // already uses, and it is the only offer that gets a straight answer: a
-        // resizable client returns whatever it is given, so offering a large
-        // number just hands back the large number. (The Windows editor offers
-        // 99999 and would size the view to 99999 pixels if the DAW let it.)
-        //
-        // Then take whichever is larger, the default or that minimum. A client
-        // with no opinion keeps the default; one that needs more room - the
-        // DrawingDemo's colour page needs a pixel per 8-bit code, or its ramps
-        // resample and banding cannot be read - gets what it asked for.
-        const gmpi::drawing::Size availableSize{ 0.0f, 0.0f };
-        gmpi::drawing::Size minimumSize{};
-        drawingClient->measure(&availableSize, &minimumSize);
-
-        width  = (std::max)(width,  static_cast<int>(Dpi * minimumSize.width));
-        height = (std::max)(height, static_cast<int>(Dpi * minimumSize.height));
+        // Shared with the Windows and macOS editors - see VST3EditorBase.h. It
+        // offers an unbounded size and ignores an echo of it, which is how a
+        // resizable client says "anything"; only a real preference moves the
+        // default.
+        measurePreferredSize(drawingClient.get(), Dpi, width, height);
     }
 }
 
