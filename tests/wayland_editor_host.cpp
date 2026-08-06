@@ -29,6 +29,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
@@ -452,6 +453,20 @@ int main(int argc, char** argv)
     ViewRect size{};
     view->getSize(&size);
     std::printf("view size: %dx%d\n", size.right - size.left, size.bottom - size.top);
+
+    // Grow the host window to the view, as a real host does. Without this the
+    // plugin's subsurface OVERHANGS the parent, and clicks over the parent's
+    // own area never reach the plugin - which reads as "that button does
+    // nothing" and is entirely the host's fault.
+    if (size.right - size.left > g_wl.width || size.bottom - size.top > g_wl.height)
+    {
+        g_wl.width  = (std::max)(g_wl.width,  size.right - size.left);
+        g_wl.height = (std::max)(g_wl.height, size.bottom - size.top);
+        paintHostWindow();
+        wl_display_roundtrip(g_wl.display);
+        std::printf("host window resized to view: %dx%d\n", g_wl.width, g_wl.height);
+        std::fflush(stdout);
+    }
 
     Frame frame;
     view->setFrame(&frame);
