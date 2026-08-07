@@ -13,6 +13,13 @@ project(gmpi_wrapper_tests)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Everything below this point was written for Linux and pkg-config's it
+# unconditionally, so the whole directory used to be un-configurable anywhere
+# else. Guard it by platform rather than by hand, so a Windows or macOS build
+# with -DGMPI_WRAPPERS_BUILD_TESTS=ON gets the tests that apply to it instead of
+# a pkg_check_modules failure.
+if(UNIX AND NOT APPLE)
+
 # x11_editor_host - loads a .vst3 bundle, opens its editor in a real X11 window,
 # drives the Linux run loop, and reports whether anything was drawn. The
 # Steinberg validator never calls attached(), so nothing else in the toolchain
@@ -124,4 +131,23 @@ if(GMPI_VST3_WAYLAND)
         ${CMAKE_DL_LIBS}
     )
     set_target_properties(wayland_editor_host PROPERTIES FOLDER "wrappers")
+endif()
+
+endif() # UNIX AND NOT APPLE
+
+# ---------------------------------------------------------------------------
+# win_editor_resize_host - the regression test for the editor-resize crash.
+# Attaches the editor in a real HWND and calls onSize with the oversized rect a
+# host once passed, which used to dereference a released D2D device and kill the
+# host process. See the file's own header for the full story.
+#
+# No SDK sources: ClassName_iid is header-only, so pluginterfaces headers plus
+# user32 is the entire dependency. That is why this target does not carry the
+# long source list the X11 one needs.
+# ---------------------------------------------------------------------------
+if(WIN32)
+    add_executable(win_editor_resize_host win_editor_resize_host.cpp)
+    target_include_directories(win_editor_resize_host PRIVATE ${VST3_SDK})
+    target_link_libraries(win_editor_resize_host PRIVATE user32)
+    set_target_properties(win_editor_resize_host PROPERTIES FOLDER "wrappers")
 endif()
