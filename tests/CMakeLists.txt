@@ -151,3 +151,26 @@ if(WIN32)
     target_link_libraries(win_editor_resize_host PRIVATE user32)
     set_target_properties(win_editor_resize_host PROPERTIES FOLDER "wrappers")
 endif()
+
+# ---------------------------------------------------------------------------
+# mac_editor_resize_host - the same regression test on the Cocoa backend (P7).
+#
+# Same minimal-dependency trick as the Windows one: pluginterfaces headers plus
+# system frameworks, no SDK hosting sources. The bundle is loaded through
+# CFBundle rather than dlopen, so CoreFoundation is a real dependency and not
+# just a convenience.
+#
+# Built as a plain executable, not a .app bundle: it needs a window server
+# connection, which NSApplicationActivationPolicyRegular gets it, but it does
+# not need an Info.plist or a bundle identifier to open an NSWindow.
+# ---------------------------------------------------------------------------
+if(APPLE)
+    add_executable(mac_editor_resize_host mac_editor_resize_host.mm)
+    target_include_directories(mac_editor_resize_host PRIVATE ${VST3_SDK})
+    target_link_libraries(mac_editor_resize_host PRIVATE
+        "-framework AppKit"
+        "-framework CoreFoundation"
+        "-framework CoreGraphics"
+    )
+    set_target_properties(mac_editor_resize_host PROPERTIES FOLDER "wrappers")
+endif()
