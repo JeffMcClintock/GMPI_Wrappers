@@ -6,6 +6,9 @@
 void* createNativeView(void* parent, class IUnknown* parameterHost, class IUnknown* controller, int width, int height);
 void gmpi_onCloseNativeView(void* ptr);
 void resizeNativeView(void* view, int width, int height);
+// Bounds an extent to what DrawingFrameMac.mm will actually honour. Declared here for
+// the same reason as the three above: no Objective-C headers on this side.
+void gmpi_clampEditorSize(int* width, int* height);
 
 namespace wrapper
 {
@@ -80,14 +83,40 @@ Steinberg::tresult PLUGIN_API SEVSTGUIEditorMac::checkSizeConstraint(Steinberg::
 {
     if (pluginGraphics_GMPI)
     {
-        const gmpi::drawing::Size availableSize{ static_cast<float>(rect->right - rect->left), static_cast<float>(rect->bottom - rect->top) };
+        // Bound before measuring. A resizable client measures to whatever it is offered,
+        // so without this the answer to "may I use 2178 x 32672?" was an affirmative
+        // kResultTrue -- the wrapper approving a size nothing behind it would honour.
+        int offeredWidth  = rect->right  - rect->left;
+        int offeredHeight = rect->bottom - rect->top;
+        gmpi_clampEditorSize(&offeredWidth, &offeredHeight);
+
+        const gmpi::drawing::Size availableSize{ static_cast<float>(offeredWidth), static_cast<float>(offeredHeight) };
         gmpi::drawing::Size desiredSize{ availableSize };
         pluginGraphics_GMPI->measure(&availableSize, &desiredSize);
 
-        if (availableSize.width == desiredSize.width && availableSize.height == desiredSize.height)
+        // ...and again after, because measure is the client's answer and a fixed-size
+        // client can name any size it likes regardless of what it was offered.
+        int acceptedWidth  = static_cast<int>(desiredSize.width  + 0.5f);
+        int acceptedHeight = static_cast<int>(desiredSize.height + 0.5f);
+        gmpi_clampEditorSize(&acceptedWidth, &acceptedHeight);
+
+        if (acceptedWidth == rect->right - rect->left && acceptedHeight == rect->bottom - rect->top)
         {
             return Steinberg::kResultTrue;
         }
+
+        // The view will not take the size offered. The VST3 contract is to write back
+        // the nearest size it *will* take -- returning kResultFalse with the rect
+        // untouched tells the host nothing, and a host that ignores the return value
+        // then calls onSize with a number the view never agreed to. Same fix as the
+        // Windows sibling (P4b); it was left undone here until there was a bound to
+        // write back to, which is what gmpi_clampEditorSize now provides.
+        //
+        // Cocoa works in points, so unlike SEVSTGUIEditorWin there is no DPI factor.
+        rect->right  = rect->left + acceptedWidth;
+        rect->bottom = rect->top  + acceptedHeight;
+
+        return Steinberg::kResultTrue;
     }
     return Steinberg::kResultFalse;
 }
