@@ -20,22 +20,63 @@ if(NOT UNIX OR APPLE)
     return()
 endif()
 
+# This target's dependencies are DISCOVERED, not REQUIRED, and a missing one
+# skips the target rather than failing the configure.
+#
+# The parent's add_subdirectory() promises "safe to add unconditionally", and
+# with REQUIRED probes that promise was false: on a Linux box without the
+# pipewire SDK the whole tree stopped configuring, so nothing at all could be
+# built -- no VST3, no CLAP, no plugin of any kind -- over an optional bare-app
+# target that, today, nothing links. Windows and macOS never saw it because the
+# early-out above returns before these lines.
+#
+# A hard dependency is the right call for something a product ships; this is a
+# developer convenience with no consumers yet, so the cost of stopping every
+# other target is far larger than the cost of quietly not building it. See
+# TideSynth issue #53.
+#
+# Set GMPI_STANDALONE_STRICT=ON to turn the skip back into a hard error --
+# for CI, or for a developer who means to build this and wants to be told why
+# it is not happening rather than reading configure output for it.
+option(GMPI_STANDALONE_STRICT
+    "Fail the configure if Standalone_Wrapper's dependencies are missing, rather than skipping it" OFF)
+
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(WL         REQUIRED wayland-client)
-pkg_check_modules(XKB        REQUIRED xkbcommon)
-pkg_check_modules(DECOR      REQUIRED libdecor-0)
-pkg_check_modules(DBUS       REQUIRED dbus-1)
-pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
-pkg_check_modules(HARFBUZZ   REQUIRED harfbuzz)
-pkg_check_modules(FREETYPE   REQUIRED freetype2)
-pkg_check_modules(ALSA       REQUIRED alsa)
-pkg_check_modules(PIPEWIRE   REQUIRED libpipewire-0.3)
+
+set(_standalone_missing "")
+
+# name <-> pkg-config module. Probed without REQUIRED so a miss is recoverable.
+foreach(dep
+    "WL:wayland-client"
+    "XKB:xkbcommon"
+    "DECOR:libdecor-0"
+    "DBUS:dbus-1"
+    "FONTCONFIG:fontconfig"
+    "HARFBUZZ:harfbuzz"
+    "FREETYPE:freetype2"
+    "ALSA:alsa"
+    "PIPEWIRE:libpipewire-0.3"
+)
+    string(REPLACE ":" ";" _pair ${dep})
+    list(GET _pair 0 _prefix)
+    list(GET _pair 1 _module)
+    # Deliberately not QUIET: the per-module "Found X, version Y" lines are how
+    # you tell "absent" from "present but too old", and the summary below only
+    # names what was missing.
+    pkg_check_modules(${_prefix} ${_module})
+    if(NOT ${_prefix}_FOUND)
+        list(APPEND _standalone_missing ${_module})
+    endif()
+endforeach()
 
 # Wayland protocol bindings are generated, not shipped: wayland-scanner emits a
 # header plus a C file of message signatures for each protocol the backend
 # binds. The set is dictated by backends/DrawingFrameWayland.h.
 pkg_get_variable(WL_PROTOCOLS_DIR wayland-protocols pkgdatadir)
-find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+find_program(WAYLAND_SCANNER wayland-scanner)
+if(NOT WAYLAND_SCANNER)
+    list(APPEND _standalone_missing "wayland-scanner")
+endif()
 
 # fractional-scale-v1 and cursor-shape-v1 are staging protocols that landed in
 # wayland-protocols 1.31 and 1.32; a distro older than that (Ubuntu 22.04 ships
@@ -44,9 +85,6 @@ find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 # first, so an old build host can be topped up without replacing its packages.
 set(GMPI_WAYLAND_PROTOCOLS_DIR "" CACHE PATH
     "Extra wayland-protocols tree searched before the system one")
-
-set(WL_GEN ${CMAKE_CURRENT_BINARY_DIR}/wl-gen)
-file(MAKE_DIRECTORY ${WL_GEN})
 
 set(WL_PROTOCOL_PATHS
     stable/xdg-shell/xdg-shell
@@ -57,10 +95,12 @@ set(WL_PROTOCOL_PATHS
     unstable/xdg-foreign/xdg-foreign-unstable-v2
 )
 
-set(WL_PROTOCOL_SOURCES "")
+# Resolve every protocol XML BEFORE generating anything, so a missing one joins
+# the same missing-dependency list as the pkg-config modules and is reported in
+# one message. Resolving and generating in a single loop would emit custom
+# commands for the protocols found so far and only then discover the gap.
+set(_wl_protocol_xml "")
 foreach(proto ${WL_PROTOCOL_PATHS})
-    get_filename_component(name ${proto} NAME)
-
     set(xml "")
     foreach(dir ${GMPI_WAYLAND_PROTOCOLS_DIR} ${WL_PROTOCOLS_DIR})
         if(EXISTS "${dir}/${proto}.xml")
@@ -69,15 +109,50 @@ foreach(proto ${WL_PROTOCOL_PATHS})
         endif()
     endforeach()
 
-    # Fail HERE, naming the file. Left to the generator it surfaces as
-    # "No rule to make target '<path>.xml'" at build time, which reads like a
-    # broken CMakeLists rather than a missing package.
+    # Named individually rather than as "wayland-protocols", because the usual
+    # cause is a distro too old for the staging protocols rather than the
+    # package being absent -- Ubuntu 22.04 ships 1.25 and has neither
+    # fractional-scale-v1 nor cursor-shape-v1. Naming the file is what tells
+    # those two cases apart, and GMPI_WAYLAND_PROTOCOLS_DIR is the fix for the
+    # first without touching system packages.
     if(NOT xml)
-        message(FATAL_ERROR
-            "Standalone_Wrapper: ${proto}.xml not found in ${WL_PROTOCOLS_DIR}. "
-            "wayland-protocols 1.32 or later is required (or set "
-            "GMPI_WAYLAND_PROTOCOLS_DIR to a tree that has it).")
+        list(APPEND _standalone_missing "${proto}.xml (wayland-protocols >= 1.32)")
+    else()
+        list(APPEND _wl_protocol_xml ${xml})
     endif()
+endforeach()
+
+# The single gate. Everything above only probed; nothing below runs unless the
+# whole set is present.
+if(_standalone_missing)
+    list(JOIN _standalone_missing "\n    " _standalone_missing_pretty)
+    if(GMPI_STANDALONE_STRICT)
+        message(FATAL_ERROR
+            "Standalone_Wrapper: GMPI_STANDALONE_STRICT is ON and these dependencies are missing:\n"
+            "    ${_standalone_missing_pretty}\n"
+            "On Debian/Ubuntu: sudo apt install libwayland-dev libxkbcommon-dev libdecor-0-dev "
+            "libdbus-1-dev libfontconfig-1-dev libharfbuzz-dev libfreetype-dev libasound2-dev "
+            "libpipewire-0.3-dev wayland-protocols")
+    endif()
+    message(STATUS
+        "Standalone_Wrapper: skipped -- missing:\n"
+        "    ${_standalone_missing_pretty}\n"
+        "  Every other target still builds. To build the standalone host: "
+        "sudo apt install libpipewire-0.3-dev libasound2-dev wayland-protocols "
+        "(and see the list above). Set GMPI_STANDALONE_STRICT=ON to make this fatal.")
+    return()
+endif()
+
+set(WL_GEN ${CMAKE_CURRENT_BINARY_DIR}/wl-gen)
+file(MAKE_DIRECTORY ${WL_GEN})
+
+set(WL_PROTOCOL_SOURCES "")
+foreach(xml ${_wl_protocol_xml})
+    # NAME then strip .xml, rather than NAME_WE: NAME_WE removes the *longest*
+    # extension, so a protocol whose filename contained another dot would come
+    # out truncated. None does today; this does not depend on that staying true.
+    get_filename_component(name ${xml} NAME)
+    string(REGEX REPLACE "\\.xml$" "" name ${name})
 
     add_custom_command(
         OUTPUT ${WL_GEN}/${name}-client-protocol.h ${WL_GEN}/${name}-protocol.c
