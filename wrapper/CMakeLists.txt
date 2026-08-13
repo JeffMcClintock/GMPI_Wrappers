@@ -9,6 +9,10 @@ if(APPLE)
 add_subdirectory(AU2)
 endif()
 
+# The bare app that wraps one plugin. Returns immediately on platforms whose
+# shell is not written yet, so this is safe to add unconditionally.
+add_subdirectory(Standalone)
+
 # Off by default - consumers of this directory should not grow a test binary
 # unless they ask for it.
 option(GMPI_WRAPPERS_BUILD_TESTS "Build the wrappers' host-side tests" OFF)
