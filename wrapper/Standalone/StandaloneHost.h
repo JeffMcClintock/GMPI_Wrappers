@@ -32,7 +32,7 @@
 // IDrawingClient and the rest of the client/host contract live in gmpi_ui, not
 // in the GMPI core: the plugin's editor is a drawing client, so even this
 // window-free half of the app needs those declarations.
-#include "Drawing.h"
+#include "GmpiUiDrawing.h"
 #include "helpers/NativeUi.h"
 #include "helpers/Timer.h"
 

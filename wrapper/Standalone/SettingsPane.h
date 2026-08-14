@@ -24,7 +24,7 @@
 #include <vector>
 
 #include "AudioMidiDevices.h"
-#include "Drawing.h"
+#include "GmpiUiDrawing.h"
 #include "GmpiApiCommon.h"
 #include "GmpiSdkCommon.h"
 #include "experimental/forms.h"

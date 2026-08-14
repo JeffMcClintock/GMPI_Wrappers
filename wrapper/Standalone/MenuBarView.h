@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-#include "Drawing.h"
+#include "GmpiUiDrawing.h"
 #include "GmpiApiCommon.h"
 #include "GmpiSdkCommon.h"
 #include "helpers/NativeUi.h"

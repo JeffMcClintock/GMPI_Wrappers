@@ -35,7 +35,7 @@
 #include "../StandaloneHost.h"
 #include "../StandaloneSettings.h"
 
-#include "Drawing.h"
+#include "GmpiUiDrawing.h"
 #include "backends/DrawingFrameWayland.h"
 #include "helpers/CpuTextEngine.h"
 #include "helpers/DecodeImage.h"
