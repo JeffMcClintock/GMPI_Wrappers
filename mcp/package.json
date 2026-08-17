@@ -2,7 +2,7 @@
   "name": "@gmpi/standalone-mcp",
   "version": "0.1.0",
   "description": "Model Context Protocol server that drives a RUNNING GMPI standalone plugin app — read and set parameters, inject MIDI, click and drag its GUI, screenshot it, and render its audio offline.",
-  "license": "MIT",
+  "license": "ISC",
   "author": "Jeff McClintock",
   "type": "module",
   "bin": {

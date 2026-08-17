@@ -108,7 +108,5 @@ npm run build && node test/smoke.mjs
 
 ## License
 
-This package declares MIT in its `package.json`, matching its sibling
-[`@synthedit/mcp`](https://www.npmjs.com/package/@synthedit/mcp). Note that
-GMPI_Wrappers itself carries no LICENSE file yet, unlike GMPI and gmpi_ui —
-worth settling before publishing this to npm.
+ISC — see [LICENSE](../LICENSE) at the repo root, the same terms GMPI,
+gmpi_ui and GMPI_Adaptors carry.
