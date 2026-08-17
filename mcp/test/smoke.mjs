@@ -76,6 +76,18 @@ if (target) {
   const norm = await callTool("gmpi_set_param", { id: target.id, value: 1, normalised: true });
   check("normalised write hits the maximum", Math.abs(norm.parameter.value - target.maximum) < 1e-3,
         `${norm.parameter.value} vs max ${target.maximum}`);
+
+  // Put it back to the plugin author's DEFAULT, not to whatever it happened to
+  // be on entry. Both matter:
+  //
+  //   * without any restore, the plugin is left pinned at maximum and the
+  //     audio checks below render at 10x, reporting clipping the TEST caused;
+  //   * restoring the incoming value is no better, because that may itself be
+  //     degenerate - a previous session leaving a gain at 0 makes "render is
+  //     audible" fail against a perfectly healthy plugin.
+  //
+  // The default is the one value guaranteed to be a working configuration.
+  await callTool("gmpi_set_param", { id: target.id, value: target.default ?? target.value });
 }
 
 console.log("\nscreenshot");
@@ -84,18 +96,29 @@ const shot = await callTool("gmpi_screenshot", { path: shotPath });
 check("screenshot ok", shot.ok === true);
 check("png is non-trivial", shot.ok && statSync(shotPath).size > 1000, shot.ok ? `${statSync(shotPath).size} bytes` : "");
 
-console.log("\naudio (offline render)");
+// An INSTRUMENT is excited by a note; an EFFECT by a signal on its inputs.
+// Getting this wrong does not fail loudly - it just renders silence and every
+// audio assertion below collapses into "nothing happened", so the test has to
+// know which kind of plugin it is looking at.
+const isEffect = info.audioInputs > 0;
+const excite = isEffect ? { input: "tone", inputLevel: 0.5 } : { note: 60, hold: 0.5 };
+console.log(`\naudio (offline render) — ${isEffect ? "effect: 440Hz tone in" : "instrument: MIDI note in"}`);
+
 const loudPath = join(tmpdir(), `gmpi-smoke-loud-${process.pid}.wav`);
 const quietPath = join(tmpdir(), `gmpi-smoke-quiet-${process.pid}.wav`);
 
-const loud = await callTool("gmpi_render_audio", { path: loudPath, seconds: 1, note: 60, hold: 0.5 });
+const loud = await callTool("gmpi_render_audio", { path: loudPath, seconds: 1, ...excite });
+// The control case: no excitation at all should produce nothing. If this is
+// NOT silent, something is self-oscillating and every measurement above it is
+// suspect.
 const quiet = await callTool("gmpi_render_audio", { path: quietPath, seconds: 0.25 });
 
 if (loud.error?.includes("no audio outputs")) {
   check("plugin has no audio outputs (render skipped)", true, loud.error);
 } else {
-  check("render with a note is audible", loud.ok && loud.silent === false, `peak ${loud.peak}`);
-  check("render without a note is silent", quiet.ok && quiet.silent === true, `peak ${quiet.peak}`);
+  const what = isEffect ? "a tone" : "a note";
+  check(`render with ${what} is audible`, loud.ok && loud.silent === false, `peak ${loud.peak}`);
+  check(`render without ${what} is silent`, quiet.ok && quiet.silent === true, `peak ${quiet.peak}`);
   check("render did not clip", loud.clippedSamples === 0, `${loud.clippedSamples} clipped`);
 }
 
@@ -118,7 +141,8 @@ if (!loud.error) {
     const at = async (v) => {
       await callTool("gmpi_set_param", { id: p.id, value: v });
       const r = await callTool("gmpi_render_audio",
-        { path: join(tmpdir(), `gmpi-sweep-${process.pid}.wav`), seconds: 0.3, note: 60, hold: 0.25 });
+        { path: join(tmpdir(), `gmpi-sweep-${process.pid}.wav`), seconds: 0.3,
+          ...(isEffect ? excite : { note: 60, hold: 0.25 }) });
       return r.peak;
     };
     const lo = await at(p.minimum);
