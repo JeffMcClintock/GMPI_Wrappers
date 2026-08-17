@@ -1,5 +1,19 @@
 #pragma once
 
+// The command channel into the RUNNING standalone app.
+//
+// INCLUDE THIS ONE on every platform: it selects the transport. Windows uses a
+// named pipe (IpcServerWin.h); everything else uses the unix-domain socket
+// below. Both present the same gmpi::standalone::mcp::IpcServer - same start /
+// stop / mainThreadQueue / channelName - so the per-platform main() differs
+// only in the line that prints where it published.
+
+#if defined(_WIN32)
+
+#include "IpcServerWin.h"
+
+#else
+
 // A unix-domain-socket command channel into the RUNNING standalone app.
 //
 // The Linux counterpart of SynthEdit2/EditorIpcServer.{h,cpp} (Windows named
@@ -246,8 +260,10 @@ public:
     bool running() const { return running_; }
 
     /// e.g. "/run/user/1000/gmpi-standalone/gmpi-standalone.10673".
-    /// Empty until start() succeeds.
-    const std::string& socketPath() const { return socketPath_; }
+    /// Empty until start() succeeds. Named for what it IS to a caller - the
+    /// address this app published - rather than for the transport, so the two
+    /// implementations can be swapped without the app noticing.
+    const std::string& channelName() const { return socketPath_; }
 
 private:
     /// Connections served at once. Small: this is a command channel, not a
@@ -446,3 +462,5 @@ private:
 } // namespace mcp
 } // namespace standalone
 } // namespace gmpi
+
+#endif // !_WIN32

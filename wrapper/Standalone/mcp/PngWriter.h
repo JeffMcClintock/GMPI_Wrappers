@@ -12,14 +12,31 @@
 //
 // libpng rather than a hand-rolled encoder because the Standalone wrapper
 // already links it (see the `png` entry in its target_link_libraries) for
-// gmpi_ui's image decoding.
+// gmpi_ui's image decoding. Windows has no libpng in this build and needs
+// none: WIC is already linked for the Direct2D backend's image loading, so the
+// Windows half below encodes through that instead. One writePng, two encoders,
+// identical input - see the format note on the function itself.
 
 #include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+// Both guards before windows.h: NOMINMAX because the min/max macros turn
+// every std::min/std::max in a file that includes this one into a syntax
+// error, and LEAN_AND_MEAN because nothing here wants the shell, RPC or
+// winsock headers. Spelled with #undef first, the way gmpi_ui's own headers
+// do, so it does not matter who got here first.
+#undef  WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#undef  NOMINMAX
+#define NOMINMAX
+#include <windows.h>
+#include <wincodec.h>
+#else
 #include <png.h>
+#endif
 
 namespace gmpi
 {
@@ -37,6 +54,8 @@ namespace mcp
 /// the comment on ShmBuffer spells out that there is no alpha for the
 /// compositor to blend - and an alpha channel carrying undefined padding shows
 /// up as a fully transparent PNG in any viewer that honours it.
+#if !defined(_WIN32)
+
 inline bool writePng(const std::string& path,
                      const uint8_t* pixels,
                      int width,
@@ -118,6 +137,112 @@ inline bool writePng(const std::string& path,
 
     return ok;
 }
+
+#else // _WIN32
+
+/// The same contract, encoded through WIC.
+///
+/// The source rows are still BGRX8888 - the Windows frame grabber converts the
+/// swap chain into exactly the layout the Wayland compositor hands us, so the
+/// dispatcher above this and the MCP client above that see one pixel format on
+/// every platform.
+///
+/// 24bpp BGR rather than 32bpp: the X byte is padding, and asking WIC to write
+/// it as alpha produces a PNG that viewers honouring the channel render as
+/// fully transparent. Same reasoning as the libpng path's PNG_COLOR_TYPE_RGB.
+inline bool writePng(const std::string& path,
+                     const uint8_t* pixels,
+                     int width,
+                     int height,
+                     int stride,
+                     std::string& errorOut)
+{
+    if (!pixels || width <= 0 || height <= 0)
+    {
+        errorOut = "no pixels to write (the window may not have been drawn yet)";
+        return false;
+    }
+
+    // COM is already initialised on the thread that runs commands (the app's UI
+    // thread, an STA). CoCreateInstance would fail cleanly if it were not, and
+    // that failure is reported rather than papered over with a local init.
+    IWICImagingFactory* factory{};
+    if (FAILED(::CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                  __uuidof(IWICImagingFactory),
+                                  reinterpret_cast<void**>(&factory))) || !factory)
+    {
+        errorOut = "the imaging component could not be created";
+        return false;
+    }
+
+    const int outStride = width * 3;
+    std::vector<uint8_t> rows(static_cast<size_t>(outStride) * height);
+
+    for (int y = 0; y < height; ++y)
+    {
+        const uint8_t* src = pixels + static_cast<size_t>(y) * static_cast<size_t>(stride);
+        uint8_t* dst = rows.data() + static_cast<size_t>(y) * outStride;
+
+        for (int x = 0; x < width; ++x)
+        {
+            // 24bppBGR wants B,G,R in memory order, which is what the source
+            // already holds minus its padding byte.
+            dst[x * 3 + 0] = src[x * 4 + 0];
+            dst[x * 3 + 1] = src[x * 4 + 1];
+            dst[x * 3 + 2] = src[x * 4 + 2];
+        }
+    }
+
+    IWICStream* stream{};
+    IWICBitmapEncoder* encoder{};
+    IWICBitmapFrameEncode* frame{};
+    IPropertyBag2* props{};
+
+    bool ok = false;
+
+    const std::wstring wide = [&path]
+    {
+        const int size = ::MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), nullptr, 0);
+        std::wstring out(static_cast<size_t>(size), 0);
+        ::MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), out.data(), size);
+        return out;
+    }();
+
+    if (SUCCEEDED(factory->CreateStream(&stream))
+        && SUCCEEDED(stream->InitializeFromFilename(wide.c_str(), GENERIC_WRITE))
+        && SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder))
+        && SUCCEEDED(encoder->Initialize(stream, WICBitmapEncoderNoCache))
+        && SUCCEEDED(encoder->CreateNewFrame(&frame, &props))
+        && SUCCEEDED(frame->Initialize(props)))
+    {
+        WICPixelFormatGUID format = GUID_WICPixelFormat24bppBGR;
+
+        ok = SUCCEEDED(frame->SetSize(static_cast<UINT>(width), static_cast<UINT>(height)))
+          && SUCCEEDED(frame->SetPixelFormat(&format))
+          // The encoder is free to refuse the requested format and pick its
+          // own; writing regardless would silently mis-order every channel.
+          && format == GUID_WICPixelFormat24bppBGR
+          && SUCCEEDED(frame->WritePixels(static_cast<UINT>(height),
+                                          static_cast<UINT>(outStride),
+                                          static_cast<UINT>(rows.size()),
+                                          rows.data()))
+          && SUCCEEDED(frame->Commit())
+          && SUCCEEDED(encoder->Commit());
+    }
+
+    if (props)   props->Release();
+    if (frame)   frame->Release();
+    if (encoder) encoder->Release();
+    if (stream)  stream->Release();
+    factory->Release();
+
+    if (!ok)
+        errorOut = "could not write '" + path + "'";
+
+    return ok;
+}
+
+#endif // _WIN32
 
 } // namespace mcp
 } // namespace standalone

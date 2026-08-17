@@ -82,6 +82,30 @@ set(standalone_include_dirs
 set(standalone_libs "")
 set(standalone_library_dirs "")
 
+# The command channel: an IPC endpoint that drives the plugin this app is
+# hosting, so a test or an MCP server can exercise the running instance. ON
+# because it is the only way a plugin's GUI is testable at all - see
+# CommandChannel.h, which carries the same default so a translation unit
+# compiled outside this build behaves identically.
+#
+# OFF removes the code rather than merely declining to start it: mcp/ is not
+# added to the source list below, so a vendor who does not want a local IPC
+# endpoint in a signed product has nothing left to audit.
+option(GMPI_STANDALONE_COMMAND_CHANNEL
+    "Build the standalone app's command channel (IPC for tests and the MCP server)" ON)
+
+# The portable half of the channel. The transport is per-platform and is added
+# by the arms below; everything here is the same code on both.
+set(standalone_mcp_srcs
+    mcp/MainThreadQueue.h
+    mcp/IpcServer.h
+    mcp/TextUtil.h
+    mcp/PngWriter.h
+    mcp/WavWriter.h
+    mcp/CommandDispatcher.h
+    mcp/CommandDispatcher.cpp
+)
+
 # ---------------------------------------------------------------------------
 # Windows: Direct2D, WASAPI, winmm.
 # ---------------------------------------------------------------------------
@@ -106,13 +130,17 @@ if(WIN32)
         ${GMPI_UI_SDK}/backends/DirectXGfx.cpp
     )
 
-    # No mcp/ here. The command channel is a unix socket (mcp/IpcServer.h), and
-    # the Windows equivalent is a named pipe nobody has written yet - see this
-    # directory's README. Everything except the transport is portable, so
-    # adding it later is a file, not a redesign.
+    if(GMPI_STANDALONE_COMMAND_CHANNEL)
+        list(APPEND standalone_srcs
+            ${standalone_mcp_srcs}
+            mcp/IpcServerWin.h            # the transport: a named pipe
+            windows/FrameCapture.h        # --screenshot: swap-chain readback
+            windows/FrameCapture.cpp
+        )
+    endif()
 
     list(APPEND standalone_libs
-        d3d11 d2d1 dwrite windowscodecs   # the drawing backend
+        d3d11 d2d1 dwrite windowscodecs   # the drawing backend, and WIC for PNG
         Dwmapi dxguid                     # window metrics, and the D3D/D2D IIDs
         ole32                             # COM, for WASAPI's device enumeration
         avrt                              # MMCSS "Pro Audio" thread scheduling
@@ -282,19 +310,14 @@ list(APPEND standalone_srcs
     linux/MidiDriverAlsa.h
     linux/MidiDriverAlsa.cpp
 
-    # The command channel: a unix socket that drives this app's plugin, so a
-    # test or an MCP server can exercise the running instance. Everything
-    # except the socket itself is portable, and only IpcServer.h is POSIX.
-    mcp/MainThreadQueue.h
-    mcp/IpcServer.h
-    mcp/TextUtil.h
-    mcp/PngWriter.h
-    mcp/WavWriter.h
-    mcp/CommandDispatcher.h
-    mcp/CommandDispatcher.cpp
-
     ${WL_PROTOCOL_SOURCES}
 )
+
+# The command channel's transport here is the unix socket inside IpcServer.h
+# itself, so there is no extra file to add - only the shared half.
+if(GMPI_STANDALONE_COMMAND_CHANNEL)
+    list(APPEND standalone_srcs ${standalone_mcp_srcs})
+endif()
 
 list(APPEND standalone_include_dirs
     ${WL_GEN}
@@ -362,6 +385,13 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     $<$<CONFIG:Release>:NDEBUG>
     $<$<CONFIG:RelWithDebInfo>:NDEBUG>
 )
+
+# PUBLIC: the executable compiles the platform's main() itself, and that is
+# where the channel is started and stopped. Always defined explicitly, to 0 as
+# well as to 1, so the two halves of the app cannot disagree about it - the
+# default in CommandChannel.h is for translation units built outside CMake.
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+    GMPI_STANDALONE_COMMAND_CHANNEL=$<IF:$<BOOL:${GMPI_STANDALONE_COMMAND_CHANNEL}>,1,0>)
 
 if(WIN32)
     # PUBLIC: the executable compiles windows/MainWin32.cpp itself, and it calls

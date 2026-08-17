@@ -33,7 +33,7 @@ bundles. `GMPI-plugins/plugins/SawDemo` (a synth: MIDI in, stereo out) and
 | | Window | Audio | MIDI in | Command channel |
 | --- | --- | --- | --- | --- |
 | Linux | Wayland (gmpi_ui's own backend, CPU rendering) | PipeWire | ALSA sequencer | unix socket |
-| Windows | Win32 + Direct2D (gmpi_ui's `DrawingFrame`, the one the VST3 wrapper embeds) | WASAPI, shared mode | winmm | not written |
+| Windows | Win32 + Direct2D (gmpi_ui's `DrawingFrame`, the one the VST3 wrapper embeds) | WASAPI, shared mode | winmm | named pipe |
 | macOS | not written | not written | not written | not written |
 
 `gmpi_plugin()` drops `STANDALONE` from the format list on the platforms that
@@ -41,11 +41,12 @@ have no shell, with a `message(STATUS)` saying so, and this directory's
 `CMakeLists.txt` returns immediately. A cross-platform project can therefore
 list `STANDALONE` unconditionally.
 
-The Windows app has no command channel yet. Everything above the transport is
-portable — the dispatcher, the verbs, the main-thread queue — but the transport
-itself is a unix socket, and the Windows equivalent is a named pipe
-(`SE16/SynthEdit2/EditorIpcServer.*` is the proven one to copy). Until then
-`mcp/` is compiled only into the Linux build.
+The command channel is compiled in by **default** and can be switched off with
+the CMake option `GMPI_STANDALONE_COMMAND_CHANNEL=OFF` (or
+`-DGMPI_STANDALONE_COMMAND_CHANNEL=0` straight to the compiler). Off removes
+the code rather than merely declining to start it — `mcp/` is not compiled at
+all — so a vendor who does not want a local IPC endpoint in a signed product
+has nothing left to audit. See `CommandChannel.h`.
 
 ## Layout
 
@@ -71,6 +72,7 @@ Per platform:
 | `windows/ToplevelWindow.*` | the overlapped window gmpi_ui's `DrawingFrame` lives inside |
 | `windows/AudioDriverWasapi.*` | render + capture streams, device enumeration |
 | `windows/MidiDriverWin.*` | winmm input, including sysex |
+| `windows/FrameCapture.*` | `--screenshot`: reads the window back out of the swap chain |
 
 `compat/it_enum_list.h` is a shim, not a component — see the comment at the top
 of it.
@@ -153,28 +155,30 @@ the staging protocols the backend binds.
   the next frame — re-opening an audio device inside a click's event dispatch
   would join the driver's threads with the compositor waiting on us.
 
-## The command channel (Linux only)
+## The command channel
 
-Every Linux standalone opens a unix socket that drives the plugin it is hosting —
+Every standalone opens an IPC endpoint that drives the plugin it is hosting —
 read and set parameters, inject MIDI, click and drag the GUI, screenshot the
 window, render audio offline. It exists to make plugin testing scriptable: the
 thing being driven is the app the user actually has open, not a headless second
 copy of it.
 
-On startup the app prints where it published:
+**Discovery is a directory listing** on both platforms — no registry, config
+file or port to keep in sync. The leaf name carries the pid, because that is
+the only identifier available before connecting.
 
-```text
-command channel: /run/user/1000/gmpi-standalone/gmpi-standalone.10673
-```
+| | Published at | Access |
+| --- | --- | --- |
+| Linux | `$XDG_RUNTIME_DIR/gmpi-standalone/gmpi-standalone.<pid>`, falling back to `/tmp/gmpi-standalone.<uid>/` | the socket is mode 0700 in a directory whose ownership is checked |
+| Windows | `\\.\pipe\gmpi-standalone.<pid>` — the pipe namespace enumerates like any other directory | the pipe's default DACL, plus `PIPE_REJECT_REMOTE_CLIENTS` |
 
-The socket is mode 0700 under `$XDG_RUNTIME_DIR` (falling back to
-`/tmp/gmpi-standalone.<uid>`), named for the pid, so **a directory listing is
-the discovery mechanism** — no registry, config file or port to keep in sync.
-`GMPI_STANDALONE_IPC_DIR` overrides it, for tests. Failing to open the channel
-is never fatal; the app just says so and runs normally.
+`GMPI_STANDALONE_IPC_DIR` overrides the Linux location, for tests; Windows has
+one namespace and needs no equivalent. Failing to open the channel is never
+fatal — the app runs normally without one.
 
 The grammar is SynthEditCL's: newline-framed shell-style verb lines in, one
-JSON object per line out. Anything that speaks a socket can drive it —
+JSON object per line out, so anything that speaks a socket or a pipe can drive
+it —
 
 ```bash
 printf -- '--info\n--set-param 7 30\n--screenshot /tmp/a.png\n' \
@@ -182,14 +186,21 @@ printf -- '--info\n--set-param 7 30\n--screenshot /tmp/a.png\n' \
 ```
 
 — and [../../mcp/](../../mcp/) wraps the same verbs as MCP tools for an AI
-agent.
+agent. Node's `net.createConnection` takes a pipe path as happily as a socket
+path, so the MCP server differs between the two only in which directory it
+lists.
 
 ### Two things it can do that the desktop cannot
 
-- **Screenshot itself.** Every Wayland screenshot route goes through the
-  compositor, and GNOME refuses both `org.gnome.Shell.Screenshot` and the
-  xdg-desktop-portal one to an unattended caller. The app renders and reads its
-  own shm buffer instead, so this works from a script and over ssh.
+- **Screenshot itself**, with no compositor, portal or permission involved. On
+  Linux that matters because every desktop route to a screenshot goes through
+  the compositor, and GNOME refuses both `org.gnome.Shell.Screenshot` and the
+  xdg-desktop-portal one to an unattended caller; the app reads its own shm
+  buffer instead. Windows has no such restriction, but reading the swap chain
+  back (`windows/FrameCapture.*`) still beats `PrintWindow` from outside: it
+  captures the client area exactly, at real pixel dimensions, without the
+  caller having to be DPI-aware to get an unclipped image. Both platforms emit
+  the same BGRX8888 buffer, so one PNG writer and one MCP client serve both.
 - **Render audio offline**, on a processor of its own primed with the current
   parameter values — faster than realtime, without disturbing what is playing,
   and even when no audio device would open. The result reports peak, rms and

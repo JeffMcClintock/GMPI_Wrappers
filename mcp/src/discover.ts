@@ -4,6 +4,13 @@
 // else, so there is no registry, config file or port to keep in sync. Same
 // design as SynthEdit's live transport, and the leaf name carries the pid for
 // the same reason: it is the only identifier available before connecting.
+//
+// Windows keeps that shape exactly: its named pipes live in a namespace that
+// readdir enumerates like any other directory, so the only per-platform thing
+// here is WHICH directory to list. What comes back is still `<PREFIX><pid>`,
+// and net.createConnection takes the resulting `\\.\pipe\...` path as happily
+// as it takes a unix socket, so nothing downstream of this file knows which
+// transport it is talking to.
 
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -13,9 +20,16 @@ const PREFIX = "gmpi-standalone.";
 export interface RunningApp {
   /** OS process id of the app. */
   pid: number;
-  /** Full path of the unix socket to connect to. */
+  /** What to hand net.createConnection: a unix socket path, or a pipe name. */
   path: string;
 }
+
+/**
+ * The Windows named-pipe namespace. A real directory as far as readdir is
+ * concerned, and the only place a pipe can be published, so there is nothing
+ * to search and no environment variable to consult.
+ */
+const WINDOWS_PIPE_DIR = "\\\\.\\pipe\\";
 
 /**
  * The directories a standalone may publish its command channel in, in the same
@@ -29,6 +43,8 @@ export interface RunningApp {
 export function channelDirs(): string[] {
   const override = process.env.GMPI_STANDALONE_IPC_DIR;
   if (override) return [override];
+
+  if (process.platform === "win32") return [WINDOWS_PIPE_DIR];
 
   const dirs: string[] = [];
   const uid = process.getuid?.();
@@ -62,7 +78,14 @@ export function channelDirs(): string[] {
  *
  * /proc is the cheap answer on Linux. kill(pid, 0) is the portable one, and it
  * is only consulted as a fallback because it cannot distinguish "not running"
- * from "running as another user" without inspecting errno.
+ * from "running as another user" without inspecting errno. Windows has no
+ * /proc and lands on that fallback, where it works.
+ *
+ * On Windows the check is belt-and-braces rather than load-bearing: a named
+ * pipe is a kernel object that evaporates with its last handle, so it cannot
+ * outlive the app the way a socket FILE does. It is kept because it costs
+ * nothing and because a channel that appears in the listing but refuses the
+ * connection is worth pruning either way.
  */
 function pidAlive(pid: number): boolean {
   if (existsSync(`/proc/${pid}`)) return true;
