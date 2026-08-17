@@ -9,26 +9,128 @@ project(Standalone_Wrapper)
 # this library (a main() inside a static archive is never pulled in, because
 # nothing references it).
 #
-# Linux only for now. The portable half compiles anywhere, but without a
-# platform shell there is no window and no main, so a Standalone target on
-# Windows or macOS would configure and then fail to link. Better to say so.
+# Linux and Windows. The file is arranged as a portable source list plus one
+# platform arm that appends the shell, its drivers and its dependencies; the
+# add_library and the target_* calls at the bottom are shared. macOS returns
+# early - the portable half compiles there, but without a window and a main
+# there is nothing to link.
+#
+# The two arms are not symmetrical, and the reason is worth stating: on Linux
+# every dependency is a package that may be absent, so that arm probes for
+# thirteen of them and can decline; on Windows they all ship with the OS, so
+# there is nothing to probe and nothing that can decline.
 
 set(CMAKE_CXX_STANDARD 20)
 
-if(NOT UNIX OR APPLE)
-    message(STATUS "Standalone_Wrapper: skipped (only the Linux/Wayland shell is written)")
+if(APPLE OR NOT (WIN32 OR UNIX))
+    message(STATUS "Standalone_Wrapper: skipped (no shell written for this platform)")
     return()
 endif()
 
-# This target's dependencies are DISCOVERED, not REQUIRED, and a missing one
-# skips the target rather than failing the configure.
+# ---------------------------------------------------------------------------
+# The portable half. Compiles identically on every platform that gets this far.
+# ---------------------------------------------------------------------------
+
+set(standalone_srcs
+    # Host-side scaffolding, shared with the VST3/CLAP/AU wrappers.
+    ${GMPI_SDK}/Hosting/parse_enum.h
+    ${GMPI_SDK}/Hosting/xml_spec_reader.h
+    ${GMPI_SDK}/Hosting/xml_spec_reader.cpp
+    ${GMPI_SDK}/Hosting/controller_holder.h
+    ${GMPI_SDK}/Hosting/controller_holder.cpp
+    ${GMPI_SDK}/Hosting/processor_holder.h
+    ${GMPI_SDK}/Hosting/processor_holder.cpp
+    ${GMPI_SDK}/Hosting/message_queues.h
+    ${GMPI_SDK}/Hosting/message_queues.cpp
+    ${GMPI_SDK}/Hosting/gmpi_factory.h
+    ${GMPI_SDK}/Hosting/gmpi_factory.cpp
+
+    ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
+    ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
+
+    # Portable half of the app.
+    AudioMidiDevices.h
+    StandaloneHost.h
+    StandaloneHost.cpp
+    StandaloneSettings.h
+    StandaloneSettings.cpp
+    AppLayout.h
+    AppLayout.cpp
+    MenuBarView.h
+    MenuBarView.cpp
+    SettingsPane.h
+    SettingsPane.cpp
+
+    # gmpi_ui pieces the shell draws with. Header-only apart from these.
+    ${GMPI_UI_SDK}/helpers/Timer.h
+    ${GMPI_UI_SDK}/helpers/Timer.cpp
+    ${GMPI_UI_SDK}/experimental/builders.cpp
+    ${GMPI_UI_SDK}/experimental/forms.cpp
+    ${GMPI_UI_SDK}/experimental/grid.cpp
+    ${GMPI_UI_SDK}/experimental/primatives.cpp
+    ${GMPI_UI_SDK}/experimental/ui_facades.cpp
+)
+
+set(standalone_include_dirs
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${GMPI_SDK}
+    ${GMPI_SDK}/Core
+    ${GMPI_UI_SDK}
+    ${ADAPTORS_COMMON_FOLDER}
+)
+
+set(standalone_libs "")
+set(standalone_library_dirs "")
+
+# ---------------------------------------------------------------------------
+# Windows: Direct2D, WASAPI, winmm.
+# ---------------------------------------------------------------------------
+
+if(WIN32)
+    list(APPEND standalone_srcs
+        windows/ToplevelWindow.h
+        windows/ToplevelWindow.cpp
+        windows/AudioDriverWasapi.h
+        windows/AudioDriverWasapi.cpp
+        windows/MidiDriverWin.h
+        windows/MidiDriverWin.cpp
+
+        # The Direct2D editor frame, which is the same one the GMPI VST3
+        # wrapper embeds in a DAW. windows/ToplevelWindow only supplies the
+        # overlapped window it lives inside.
+        ${GMPI_UI_SDK}/backends/DrawingFrameCommon.h
+        ${GMPI_UI_SDK}/backends/DrawingFrameCommon.cpp
+        ${GMPI_UI_SDK}/backends/DrawingFrameWin.h
+        ${GMPI_UI_SDK}/backends/DrawingFrameWin.cpp
+        ${GMPI_UI_SDK}/backends/DirectXGfx.h
+        ${GMPI_UI_SDK}/backends/DirectXGfx.cpp
+    )
+
+    # No mcp/ here. The command channel is a unix socket (mcp/IpcServer.h), and
+    # the Windows equivalent is a named pipe nobody has written yet - see this
+    # directory's README. Everything except the transport is portable, so
+    # adding it later is a file, not a redesign.
+
+    list(APPEND standalone_libs
+        d3d11 d2d1 dwrite windowscodecs   # the drawing backend
+        Dwmapi dxguid                     # window metrics, and the D3D/D2D IIDs
+        ole32                             # COM, for WASAPI's device enumeration
+        avrt                              # MMCSS "Pro Audio" thread scheduling
+        winmm                             # MIDI input
+    )
+endif()
+
+# ---------------------------------------------------------------------------
+# Linux: Wayland, PipeWire, ALSA.
+#
+# This arm's dependencies are DISCOVERED, not REQUIRED, and a missing one skips
+# the target rather than failing the configure.
 #
 # The parent's add_subdirectory() promises "safe to add unconditionally", and
 # with REQUIRED probes that promise was false: on a Linux box without the
 # pipewire SDK the whole tree stopped configuring, so nothing at all could be
 # built -- no VST3, no CLAP, no plugin of any kind -- over an optional bare-app
-# target that, today, nothing links. Windows and macOS never saw it because the
-# early-out above returns before these lines.
+# target that, today, nothing links.
 #
 # A hard dependency is the right call for something a product ships; this is a
 # developer convenience with no consumers yet, so the cost of stopping every
@@ -38,6 +140,9 @@ endif()
 # Set GMPI_STANDALONE_STRICT=ON to turn the skip back into a hard error --
 # for CI, or for a developer who means to build this and wants to be told why
 # it is not happening rather than reading configure output for it.
+# ---------------------------------------------------------------------------
+
+if(UNIX AND NOT APPLE)
 option(GMPI_STANDALONE_STRICT
     "Fail the configure if Standalone_Wrapper's dependencies are missing, rather than skipping it" OFF)
 
@@ -170,36 +275,7 @@ foreach(xml ${_wl_protocol_xml})
     list(APPEND WL_PROTOCOL_SOURCES ${WL_GEN}/${name}-protocol.c)
 endforeach()
 
-set(srcs
-    # Host-side scaffolding, shared with the VST3/CLAP/AU wrappers.
-    ${GMPI_SDK}/Hosting/parse_enum.h
-    ${GMPI_SDK}/Hosting/xml_spec_reader.h
-    ${GMPI_SDK}/Hosting/xml_spec_reader.cpp
-    ${GMPI_SDK}/Hosting/controller_holder.h
-    ${GMPI_SDK}/Hosting/controller_holder.cpp
-    ${GMPI_SDK}/Hosting/processor_holder.h
-    ${GMPI_SDK}/Hosting/processor_holder.cpp
-    ${GMPI_SDK}/Hosting/message_queues.h
-    ${GMPI_SDK}/Hosting/message_queues.cpp
-    ${GMPI_SDK}/Hosting/gmpi_factory.h
-    ${GMPI_SDK}/Hosting/gmpi_factory.cpp
-
-    ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
-    ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
-
-    # Portable half of the app.
-    AudioMidiDevices.h
-    StandaloneHost.h
-    StandaloneHost.cpp
-    StandaloneSettings.h
-    StandaloneSettings.cpp
-    AppLayout.h
-    AppLayout.cpp
-    MenuBarView.h
-    MenuBarView.cpp
-    SettingsPane.h
-    SettingsPane.cpp
-
+list(APPEND standalone_srcs
     # Linux shell (the entry point itself is added to the executable).
     linux/AudioDriverPipeWire.h
     linux/AudioDriverPipeWire.cpp
@@ -217,30 +293,11 @@ set(srcs
     mcp/CommandDispatcher.h
     mcp/CommandDispatcher.cpp
 
-    # gmpi_ui pieces the shell draws with. Header-only apart from these.
-    ${GMPI_UI_SDK}/helpers/Timer.h
-    ${GMPI_UI_SDK}/helpers/Timer.cpp
-    ${GMPI_UI_SDK}/experimental/builders.cpp
-    ${GMPI_UI_SDK}/experimental/forms.cpp
-    ${GMPI_UI_SDK}/experimental/grid.cpp
-    ${GMPI_UI_SDK}/experimental/primatives.cpp
-    ${GMPI_UI_SDK}/experimental/ui_facades.cpp
-
     ${WL_PROTOCOL_SOURCES}
 )
 
-add_library(${PROJECT_NAME} STATIC ${srcs})
-
-# PUBLIC so the executable that links this gets the generated protocol headers
-# and the SDK include paths without repeating them - it compiles MainWayland.cpp
-# itself, which includes backends/DrawingFrameWayland.h.
-target_include_directories(${PROJECT_NAME} PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+list(APPEND standalone_include_dirs
     ${WL_GEN}
-    ${GMPI_SDK}
-    ${GMPI_SDK}/Core
-    ${GMPI_UI_SDK}
-    ${ADAPTORS_COMMON_FOLDER}
     ${WL_INCLUDE_DIRS}
     ${XKB_INCLUDE_DIRS}
     ${DECOR_INCLUDE_DIRS}
@@ -253,19 +310,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ${PNG_INCLUDE_DIRS}
 )
 
-# PRIVATE, not PUBLIC: compat/ holds a shim for a SynthEdit SDK header that
-# gmpi_ui's widget set includes (see compat/it_enum_list.h). Only the
-# translation units compiled here need it, and leaking it to consumers could
-# shadow the real thing in a project that has both.
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compat)
-
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    $<$<CONFIG:Debug>:_DEBUG>
-    $<$<CONFIG:Release>:NDEBUG>
-    $<$<CONFIG:RelWithDebInfo>:NDEBUG>
-)
-
-target_link_libraries(${PROJECT_NAME} PUBLIC
+list(APPEND standalone_libs
     ${WL_LIBRARIES}
     ${XKB_LIBRARIES}
     ${DECOR_LIBRARIES}
@@ -281,7 +326,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
 # Directories the pkg-config modules were found in. Needed when the libraries
 # live outside the linker's default path, which is the case for any user-local
 # prefix (see the WSL note in the repo's build docs).
-target_link_directories(${PROJECT_NAME} PUBLIC
+list(APPEND standalone_library_dirs
     ${WL_LIBRARY_DIRS}
     ${XKB_LIBRARY_DIRS}
     ${DECOR_LIBRARY_DIRS}
@@ -293,5 +338,41 @@ target_link_directories(${PROJECT_NAME} PUBLIC
     ${PIPEWIRE_LIBRARY_DIRS}
     ${PNG_LIBRARY_DIRS}
 )
+endif() # UNIX AND NOT APPLE
+
+# ---------------------------------------------------------------------------
+# The target.
+# ---------------------------------------------------------------------------
+
+add_library(${PROJECT_NAME} STATIC ${standalone_srcs})
+
+# PUBLIC so the executable that links this gets the SDK include paths (and, on
+# Linux, the generated protocol headers) without repeating them - it compiles
+# the platform's main() itself, which includes both.
+target_include_directories(${PROJECT_NAME} PUBLIC ${standalone_include_dirs})
+
+# PRIVATE, not PUBLIC: compat/ holds a shim for a SynthEdit SDK header that
+# gmpi_ui's widget set includes (see compat/it_enum_list.h). Only the
+# translation units compiled here need it, and leaking it to consumers could
+# shadow the real thing in a project that has both.
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compat)
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    $<$<CONFIG:Debug>:_DEBUG>
+    $<$<CONFIG:Release>:NDEBUG>
+    $<$<CONFIG:RelWithDebInfo>:NDEBUG>
+)
+
+if(WIN32)
+    # PUBLIC: the executable compiles windows/MainWin32.cpp itself, and it calls
+    # the same wide-character entry points this library does.
+    target_compile_definitions(${PROJECT_NAME} PUBLIC UNICODE _UNICODE)
+endif()
+
+target_link_libraries(${PROJECT_NAME} PUBLIC ${standalone_libs})
+
+if(standalone_library_dirs)
+    target_link_directories(${PROJECT_NAME} PUBLIC ${standalone_library_dirs})
+endif()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES FOLDER "wrappers")
