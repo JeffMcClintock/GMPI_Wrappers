@@ -95,6 +95,39 @@ gmpi::ReturnCode AppLayout::setHost(gmpi::api::IUnknown* host)
     inputHost_   = u.as<gmpi::api::IInputHost>();
     dialogHost_  = u.as<gmpi::api::IDialogHost>();
 
+    // Re-offer every child its host, now that ours resolves.
+    //
+    // ChildHost answers IDrawingHost/IInputHost/IDialogHost itself and forwards
+    // everything else to drawingHost_ - notably IEditorHost, which is where a
+    // plugin's parameter pins get the host they WRITE through. Until the lines
+    // above, drawingHost_ was null and that forward returned NoSupport, so a
+    // child attached earlier cached a null host in every pin (PinBase::host,
+    // bound once in PluginEditorBase::setHost) and the first knob drag
+    // dereferenced it.
+    //
+    // That is the ordinary order rather than a corner case: the app builds its
+    // pages first (addPage -> attach -> the child's setHost) and only then
+    // hands the finished layout to the frame, which is what calls us. Reading
+    // values worked the whole time - that direction is host->pin and needs no
+    // host pointer - so the gap only showed up as a segfault the moment
+    // anything dragged a control.
+    //
+    // Guarded on drawingHost_ so that setHost(nullptr) at teardown does not
+    // re-bind children to a ChildHost whose forwarding is already dead; the
+    // destructor severs them explicitly. A client's setHost is idempotent (it
+    // re-queries and reassigns), so calling it a second time is safe.
+    if (drawingHost_)
+    {
+        if (menuBar_.graphic)
+            menuBar_.graphic->setHost(static_cast<gmpi::api::IDrawingHost*>(&menuBar_.host));
+
+        for (auto& page : pages_)
+        {
+            if (page->graphic)
+                page->graphic->setHost(static_cast<gmpi::api::IDrawingHost*>(&page->host));
+        }
+    }
+
     return gmpi::ReturnCode::Ok;
 }
 

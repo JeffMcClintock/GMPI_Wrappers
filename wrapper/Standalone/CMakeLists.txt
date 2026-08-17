@@ -56,6 +56,11 @@ foreach(dep
     "FREETYPE:freetype2"
     "ALSA:alsa"
     "PIPEWIRE:libpipewire-0.3"
+    # Was linked as a bare `png` and reached through /usr/include/png.h, which
+    # is a Debian-ism: the canonical header lives in libpng16/, and pkg-config
+    # is what knows the current soname. Probed properly now that the command
+    # channel's screenshot verb includes <png.h> directly.
+    "PNG:libpng"
 )
     string(REPLACE ":" ";" _pair ${dep})
     list(GET _pair 0 _prefix)
@@ -201,6 +206,17 @@ set(srcs
     linux/MidiDriverAlsa.h
     linux/MidiDriverAlsa.cpp
 
+    # The command channel: a unix socket that drives this app's plugin, so a
+    # test or an MCP server can exercise the running instance. Everything
+    # except the socket itself is portable, and only IpcServer.h is POSIX.
+    mcp/MainThreadQueue.h
+    mcp/IpcServer.h
+    mcp/TextUtil.h
+    mcp/PngWriter.h
+    mcp/WavWriter.h
+    mcp/CommandDispatcher.h
+    mcp/CommandDispatcher.cpp
+
     # gmpi_ui pieces the shell draws with. Header-only apart from these.
     ${GMPI_UI_SDK}/helpers/Timer.h
     ${GMPI_UI_SDK}/helpers/Timer.cpp
@@ -234,6 +250,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ${FREETYPE_INCLUDE_DIRS}
     ${ALSA_INCLUDE_DIRS}
     ${PIPEWIRE_INCLUDE_DIRS}
+    ${PNG_INCLUDE_DIRS}
 )
 
 # PRIVATE, not PUBLIC: compat/ holds a shim for a SynthEdit SDK header that
@@ -258,7 +275,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     ${FREETYPE_LIBRARIES}
     ${ALSA_LIBRARIES}
     ${PIPEWIRE_LIBRARIES}
-    png
+    ${PNG_LIBRARIES}
 )
 
 # Directories the pkg-config modules were found in. Needed when the libraries
@@ -274,6 +291,7 @@ target_link_directories(${PROJECT_NAME} PUBLIC
     ${FREETYPE_LIBRARY_DIRS}
     ${ALSA_LIBRARY_DIRS}
     ${PIPEWIRE_LIBRARY_DIRS}
+    ${PNG_LIBRARY_DIRS}
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES FOLDER "wrappers")
