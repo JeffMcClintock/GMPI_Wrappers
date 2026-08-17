@@ -244,7 +244,7 @@ window, render audio offline. It exists to make plugin testing scriptable: the
 thing being driven is the app the user actually has open, not a headless second
 copy of it.
 
-**Discovery is a directory listing** on both platforms — no registry, config
+**Discovery is a directory listing** on every platform — no registry, config
 file or port to keep in sync. The leaf name carries the pid, because that is
 the only identifier available before connecting.
 
@@ -269,13 +269,22 @@ JSON object per line out, so anything that speaks a socket or a pipe can drive
 it —
 
 ```bash
+# The app prints its address at startup ("command channel: ..."). To find a
+# running one instead, this glob covers every unix case: $XDG_RUNTIME_DIR where
+# a desktop session set one, and /tmp/gmpi-standalone.<uid> otherwise — which
+# is always the case on macOS, since it has no XDG_RUNTIME_DIR at all.
+channel=$(ls -t "${XDG_RUNTIME_DIR:-/tmp}"/gmpi-standalone*/gmpi-standalone.* | head -1)
+
 printf -- '--info\n--set-param 7 30\n--screenshot /tmp/a.png\n' \
-  | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/gmpi-standalone/gmpi-standalone.10673
+  | socat - UNIX-CONNECT:"$channel"
 ```
+
+Windows takes the same lines over its pipe, and needs no discovery step to get
+there: the name is just the pid.
 
 — and [../../mcp/](../../mcp/) wraps the same verbs as MCP tools for an AI
 agent. Node's `net.createConnection` takes a pipe path as happily as a socket
-path, so the MCP server differs between the two only in which directory it
+path, so the MCP server differs across the three only in which directory it
 lists.
 
 ### Two things it can do that the desktop cannot
