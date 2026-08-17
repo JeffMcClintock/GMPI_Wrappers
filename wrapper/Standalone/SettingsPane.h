@@ -6,11 +6,16 @@
 // from the shared widget set (combo boxes, tick boxes, labels), so it renders
 // through whichever backend the shell is using with no toolkit anywhere.
 //
-// Instant apply, no OK/Cancel. The widget set has no button, and every control
-// here writes exactly one setting through the back-channel the widgets already
-// provide (validateAndSave). A combo commits once per SELECTION, not per
-// keystroke, so choosing a sample rate restarts the device exactly as often as
-// an OK button would have.
+// Instant apply, no OK/Cancel. Every control here writes exactly one setting
+// through the back-channel the widgets already provide (validateAndSave), and
+// a combo commits once per SELECTION rather than per keystroke - so choosing a
+// sample rate restarts the device exactly as often as an OK button would have.
+//
+// The one button on the page is Close, and it commits nothing: closing the
+// window instead of pressing it loses nothing either. It is here because a
+// settings screen you dismiss is the shape people expect, and the alternative -
+// a second menu item to switch back - made the menu a radio pair, which is not
+// how anyone looks for the way out of a settings page.
 //
 // The apply is DEFERRED to the next timer tick rather than done in the
 // callback. validateAndSave runs inside input dispatch - underneath a popup
@@ -19,6 +24,7 @@
 // finish handling a click. One flag and a tick later, nothing is on the stack
 // that minds.
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -54,6 +60,18 @@ public:
     // changed since the last tick; does nothing when nothing changed.
     void pumpDeferred();
 
+    // What the page's Close button does. Set by the shell, because only it
+    // knows what "closed" means - here, showing the plugin's editor again.
+    //
+    // Leave it unset and no Close button is drawn at all, which is the right
+    // answer for a plugin with no GUI: there is no other page to return to,
+    // and a button that dismisses onto nothing is worse than no button.
+    //
+    // Set it BEFORE the page is first shown. The form is rebuilt from Body()
+    // whenever it is marked dirty, and whether the button exists is decided
+    // there.
+    void setOnClose(std::function<void()> onClose) { onClose_ = std::move(onClose); }
+
     void Body() override;
 
     // Form's base arrange/render neither lay out nor clear - a Form subclass
@@ -70,6 +88,8 @@ private:
 
     StandaloneHost& host_;
     Settings& settings_;
+
+    std::function<void()> onClose_;
 
     bool formIsDirty_ = true;
     gmpi::ui::ThemeMode lastRenderedTheme_ = gmpi::ui::ThemeMode::Dark;

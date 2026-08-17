@@ -377,6 +377,26 @@ void SettingsPane::Body()
             y += kGap;
         }
     }
+
+    // Close, bottom right - where a dialog's dismiss button goes, and the
+    // shape a settings screen is expected to have. There is no OK/Cancel pair
+    // to sit beside it: every control here has already applied itself (see the
+    // note at the top of the header), so this button dismisses the page rather
+    // than committing anything, and nothing is lost by closing the window
+    // instead of pressing it.
+    //
+    // Only when the shell gave us somewhere to go back to. A plugin with no
+    // GUI has no other page, and a Close button that closes onto nothing would
+    // be a dead control.
+    if (onClose_)
+    {
+        constexpr float kButtonW = 90.0f;
+
+        y += kGap;
+        Button close("Close", { right - kButtonW, y, right, y + kRowH });
+        close.view->onClick = [this] { onClose_(); };
+        y += kRowH + kGap;
+    }
 }
 
 } // namespace standalone
