@@ -62,7 +62,14 @@ std::string parameterJson(gmpi::hosting::GmpiParameter& param)
     if (gmpi::hosting::is_scalar(param.info->datatype))
     {
         obj.num("value", param.valueReal())
-           .num("normalised", param.normalisedValue());
+           .num("normalised", param.normalisedValue())
+           // The plugin author's sensible state, which "whatever it happens to
+           // be right now" is not: anything wanting to put the plugin back
+           // into a working configuration - a test between cases, a caller
+           // undoing an experiment - needs a known-good value to return to,
+           // and the current one may be the degenerate result of the last
+           // thing that ran.
+           .num("default", atof(param.info->default_value_s.c_str()));
     }
     else
     {
@@ -567,6 +574,16 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
     int channel    = 1;
     WavFormat format = WavFormat::Int16;
 
+    // What to feed the plugin's audio INPUTS. Silence by default, which is
+    // right for an instrument and useless for an effect: gain times silence is
+    // silence, so a render of a filter or a compressor came back
+    // silent:true and told you nothing at all.
+    enum class InputSignal { Silence, Tone, Noise } inputSignal = InputSignal::Silence;
+    double inputFreq  = 440.0;
+    double inputLevel = 0.5;    // amplitude, not dB: -6 dBFS, enough headroom
+                                // that a plugin with gain above 1 still shows
+                                // its shape before it clips.
+
     for (size_t i = 2; i < args.size(); ++i)
     {
         const std::string& flag = args[i];
@@ -616,6 +633,21 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
             if (!needNumber(channel, [](const std::string& s, int& v) { return parseInt(s, v); }))
                 return errorLine("render-audio", "--channel needs a number");
         }
+        else if (flag == "--input-tone")
+        {
+            inputSignal = InputSignal::Tone;
+            if (!needNumber(inputFreq, [](const std::string& s, double& d) { return parseDouble(s, d); }))
+                return errorLine("render-audio", "--input-tone needs a frequency in Hz");
+        }
+        else if (flag == "--input-noise")
+        {
+            inputSignal = InputSignal::Noise;
+        }
+        else if (flag == "--input-level")
+        {
+            if (!needNumber(inputLevel, [](const std::string& s, double& d) { return parseDouble(s, d); }))
+                return errorLine("render-audio", "--input-level needs a number");
+        }
         else if (flag == "--format")
         {
             if (!hasValue)
@@ -646,9 +678,20 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
     if (channel < 1 || channel > 16)
         return errorLine("render-audio", "--channel must be 1-16");
 
+    if (!(inputLevel >= 0.0) || inputLevel > 1.0)
+        return errorLine("render-audio", "--input-level must be between 0 and 1");
+    if (inputSignal == InputSignal::Tone && !(inputFreq > 0.0 && inputFreq < sampleRate * 0.5))
+        return errorLine("render-audio", "--input-tone must be above 0 and below half the sample rate");
+
     const int outChannels = context.host->audioOutputCount();
     if (outChannels <= 0)
         return errorLine("render-audio", "this plugin has no audio outputs");
+
+    // Refused rather than quietly ignored: a caller who asked for a test tone
+    // and got back silent:true would reasonably conclude the plugin ate it,
+    // when in fact there was nowhere to put it.
+    if (inputSignal != InputSignal::Silence && context.host->audioInputCount() <= 0)
+        return errorLine("render-audio", "this plugin has no audio inputs, so there is nothing to feed a test signal into");
 
     if (hold < 0.0)
         hold = seconds * 0.5;   // half on, half releasing: shows the tail too
@@ -677,6 +720,51 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
     const int inChannels = context.host->audioInputCount();
     std::vector<std::vector<float>> inputs(static_cast<size_t>(std::max(0, inChannels)),
                                            std::vector<float>(static_cast<size_t>(blockSize), 0.0f));
+
+    // Fills the input pins for one block. Silence leaves the buffers alone -
+    // they start zeroed and nothing writes to them.
+    //
+    // Both generators are DETERMINISTIC, which is the whole value of rendering
+    // offline: the noise uses a fixed-seed LCG rather than rand(), so two runs
+    // of the same command produce byte-identical files and a regression is a
+    // real change rather than a different roll. Phase is carried across blocks
+    // so the tone has no discontinuity at block boundaries - a click there
+    // would show up as broadband content and quietly ruin any spectral check.
+    double tonePhase = 0.0;
+    uint32_t noiseState = 0x12345678u;
+    const double phaseStep = 2.0 * 3.14159265358979323846 * inputFreq / sampleRate;
+
+    auto fillInputs = [&](int frames)
+    {
+        if (inputSignal == InputSignal::Silence || inputs.empty())
+            return;
+
+        for (int i = 0; i < frames; ++i)
+        {
+            float sample = 0.0f;
+
+            if (inputSignal == InputSignal::Tone)
+            {
+                sample = static_cast<float>(std::sin(tonePhase) * inputLevel);
+                tonePhase += phaseStep;
+                if (tonePhase > 2.0 * 3.14159265358979323846)
+                    tonePhase -= 2.0 * 3.14159265358979323846;
+            }
+            else
+            {
+                noiseState = noiseState * 1664525u + 1013904223u;   // Numerical Recipes LCG
+                const double unit = static_cast<double>(noiseState >> 8) / 16777216.0;   // [0,1)
+                sample = static_cast<float>((unit * 2.0 - 1.0) * inputLevel);
+            }
+
+            // Same signal to every input channel. A stereo effect fed a
+            // correlated pair is the ordinary case for a level test; anything
+            // needing decorrelated channels wants a WAV input, which this is
+            // not pretending to be.
+            for (auto& channelData : inputs)
+                channelData[static_cast<size_t>(i)] = sample;
+        }
+    };
 
     // MIDI 1.0 bytes -> UMP events on the processor's MIDI pin, the same
     // conversion the live path uses. The sample offset is within the block.
@@ -808,6 +896,8 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
             }
         }
 
+        fillInputs(frames);
+
         // Stale output is worse than silence here: a plugin that writes nothing
         // this block (a synth with no active voice) would otherwise repeat the
         // previous block forever and render as a loud buzz.
@@ -842,6 +932,14 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
         .num("rms", stats.rms)
         .num("clippedSamples", static_cast<double>(stats.clippedSamples))
         .num("parametersPrimed", primed)
+        .str("input", inputSignal == InputSignal::Tone  ? "tone"
+                    : inputSignal == InputSignal::Noise ? "noise"
+                                                        : "silence")
+        // Echoed so a gain check is arithmetic rather than guesswork: feed
+        // 0.5, read the peak back, and the ratio IS the gain the plugin
+        // applied.
+        .num("inputLevel", inputSignal == InputSignal::Silence ? 0.0 : inputLevel)
+        .num("inputChannels", inChannels)
         .boolean("silent", stats.peak < 1e-6)
         .boolean("notePlayed", wantsNote)
         .done();

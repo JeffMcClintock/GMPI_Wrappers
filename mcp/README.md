@@ -74,6 +74,10 @@ headlessly, from a script, and over ssh.
 
 **`gmpi_render_audio` answers "did it make the right sound" without reading the
 file.** The result carries `peak`, `rms`, `clippedSamples` and a `silent` flag.
+Excite an instrument with `note`, an effect with `input: "tone"` / `"noise"` —
+an effect fed the default silence outputs silence and tells you nothing. Since
+the result echoes `inputLevel`, a gain check is arithmetic: feed 0.5, read the
+peak, and the ratio is the gain applied.
 It runs on its own processor instance primed with the current parameter values,
 so it neither disturbs nor is disturbed by whatever the app is playing, and it
 works even when no audio device is open. Being deterministic, it is a
