@@ -30,22 +30,22 @@ bundles. `GMPI-plugins/plugins/SawDemo` (a synth: MIDI in, stereo out) and
 
 ## Platform status
 
-| | Window | Audio | MIDI in |
-| --- | --- | --- | --- |
-| Linux | Wayland (gmpi_ui's own backend, CPU rendering) | PipeWire | ALSA sequencer |
-| Windows | not written | not written | not written |
-| macOS | not written | not written | not written |
+| | Window | Audio | MIDI in | Command channel |
+| --- | --- | --- | --- | --- |
+| Linux | Wayland (gmpi_ui's own backend, CPU rendering) | PipeWire | ALSA sequencer | unix socket |
+| Windows | Win32 + Direct2D (gmpi_ui's `DrawingFrame`, the one the VST3 wrapper embeds) | WASAPI, shared mode | winmm | not written |
+| macOS | not written | not written | not written | not written |
 
 `gmpi_plugin()` drops `STANDALONE` from the format list on the platforms that
 have no shell, with a `message(STATUS)` saying so, and this directory's
 `CMakeLists.txt` returns immediately. A cross-platform project can therefore
 list `STANDALONE` unconditionally.
 
-`Standalone.cpp`, `Standalone.sln` and the `.vcxproj` in this folder are an
-older Visual Studio template that predates all of this. It refers to headers
-that no longer exist (`MainView.h`, `Drawingframe_win32.h`), is in no
-CMakeLists, and hosts no plugin. It is left alone here rather than deleted, but
-it is not the Windows shell and should be replaced by one.
+The Windows app has no command channel yet. Everything above the transport is
+portable — the dispatcher, the verbs, the main-thread queue — but the transport
+itself is a unix socket, and the Windows equivalent is a named pipe
+(`SE16/SynthEdit2/EditorIpcServer.*` is the proven one to copy). Until then
+`mcp/` is compiled only into the Linux build.
 
 ## Layout
 
@@ -67,16 +67,58 @@ Per platform:
 | `linux/MainWayland.cpp` | the entry point: connection, window, event loop |
 | `linux/AudioDriverPipeWire.*` | playback + capture streams, device enumeration |
 | `linux/MidiDriverAlsa.*` | sequencer input |
+| `windows/MainWin32.cpp` | the entry point: DPI awareness, COM, the message loop |
+| `windows/ToplevelWindow.*` | the overlapped window gmpi_ui's `DrawingFrame` lives inside |
+| `windows/AudioDriverWasapi.*` | render + capture streams, device enumeration |
+| `windows/MidiDriverWin.*` | winmm input, including sysex |
 
 `compat/it_enum_list.h` is a shim, not a component — see the comment at the top
 of it.
 
-Both audio and MIDI drivers are adapted from SynthEdit's Wayland editor
+The Linux drivers are adapted from SynthEdit's Wayland editor
 (`SE16/SynthEditWayland/IO_PipeWire.*` and `MidiDriverAlsa.*`), which is where
 the stream setup, the negotiation wait, the capture ring buffer and the
 non-blocking sequencer handle were worked out. What changed is the far end:
 they call an `AudioCallback` instead of driving `UIoManager`, so this wrapper
 depends on GMPI and gmpi_ui only, never on SynthEditLib.
+
+## The Windows shell
+
+Much thinner than the Linux one, because gmpi_ui already ships the hard half.
+`gmpi::hosting::DrawingFrame` is the Direct2D editor frame the GMPI **VST3
+wrapper** embeds in a DAW: swap chain, render loop, mouse and keyboard
+dispatch, tooltips, and native popup menus, text edits and file dialogs. What
+it cannot do is exist on its own — `open()` takes a parent and creates a
+`WS_CHILD` window inside it — so `windows/ToplevelWindow.*` supplies exactly
+that missing parent and nothing else.
+
+A consequence worth stating: the plugin sees the identical arrangement it sees
+in a DAW. Its editor is in a child HWND owned by someone else, at a DPI it must
+read from the window rather than assume. Anything that only worked because the
+frame happened to be top-level would be a bug this shell would have hidden.
+
+The menu bar is **drawn**, not a native `HMENU`, so the app's chrome matches the
+Linux one. The drop-downs themselves are native: `MenuBarView` opens them
+through `IDialogHost::createPopupMenu`, which on Windows is `TrackPopupMenu`.
+
+Two WASAPI details that surprise people:
+
+- **The buffer size in settings is a request, not a setting.** In shared mode
+  the engine owns the buffer and hands back its own size — asking for 512
+  frames typically yields 1056. `getBufferFrames()` reports what was granted,
+  and `StandaloneHost` starts the processor against that, so the status line on
+  the settings page reads e.g. `Running: 48000 Hz, 1056 frames`.
+- **A non-native sample rate goes through the engine's resampler**
+  (`AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM`) rather than reclocking the device,
+  which is what lets a plugin be auditioned at the rate its presets were made
+  at. A device that refuses those flags falls back to its own mix format, and
+  the rate actually running is again reported rather than assumed.
+
+COM apartments are the other thing to keep straight: every WASAPI object is
+created **on the thread that uses it**, each device thread being an MTA of its
+own. `open()` starts the render thread and waits for it to report back rather
+than activating an `IAudioClient` on the UI thread (an STA, because the window
+needs OLE) and calling it from elsewhere.
 
 ## Building on Linux
 
@@ -111,9 +153,9 @@ the staging protocols the backend binds.
   the next frame — re-opening an audio device inside a click's event dispatch
   would join the driver's threads with the compositor waiting on us.
 
-## The command channel
+## The command channel (Linux only)
 
-Every standalone opens a unix socket that drives the plugin it is hosting —
+Every Linux standalone opens a unix socket that drives the plugin it is hosting —
 read and set parameters, inject MIDI, click and drag the GUI, screenshot the
 window, render audio offline. It exists to make plugin testing scriptable: the
 thing being driven is the app the user actually has open, not a headless second
