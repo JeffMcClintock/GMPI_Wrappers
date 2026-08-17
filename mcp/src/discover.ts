@@ -78,8 +78,8 @@ export function channelDirs(): string[] {
  *
  * /proc is the cheap answer on Linux. kill(pid, 0) is the portable one, and it
  * is only consulted as a fallback because it cannot distinguish "not running"
- * from "running as another user" without inspecting errno. Windows has no
- * /proc and lands on that fallback, where it works.
+ * from "running as another user" without inspecting errno. Neither Windows nor
+ * macOS has /proc, so both land on that fallback, where it works.
  *
  * On Windows the check is belt-and-braces rather than load-bearing: a named
  * pipe is a kernel object that evaporates with its last handle, so it cannot

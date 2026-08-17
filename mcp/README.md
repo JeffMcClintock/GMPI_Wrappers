@@ -14,9 +14,12 @@ tested is the real one.
 
 - Node ≥ 18
 - A GMPI standalone built from this repo, running. It prints
-  `command channel: /run/user/1000/gmpi-standalone/gmpi-standalone.<pid>`
-  at startup when the channel is open.
-- Linux/Wayland — the standalone wrapper's only platform today.
+  `command channel: <address>` at startup when the channel is open — a unix
+  socket path on Linux and macOS, a named pipe on Windows.
+- Linux, macOS or Windows. Discovery is a directory listing on all three, so
+  the server differs between them only in which directory it lists; see
+  `src/discover.ts`. On macOS the standalone is an `.app`, so the binary to
+  launch is `<Name>_STANDALONE.app/Contents/MacOS/<Name>_STANDALONE`.
 
 ## Build
 

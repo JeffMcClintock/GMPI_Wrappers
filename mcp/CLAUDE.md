@@ -114,9 +114,9 @@ because it runs inside a single visit to the app's main thread. Prefer it over
 three `gmpi_pointer` calls, which cost a tick each and let the app repaint
 mid-gesture in a way no real mouse produces.
 
-Events enter at the same `IInputClient` the Wayland seat delivers to, so mouse
-capture and hover work normally: a drag that leaves the control keeps going,
-exactly as under a hand.
+Events enter at the same `IInputClient` a real mouse reaches — the Wayland
+seat, a Win32 message, an `NSEvent` — so mouse capture and hover work normally:
+a drag that leaves the control keeps going, exactly as under a hand.
 
 **A drag reports the gesture, not the outcome.** Check what it did with
 `gmpi_get_param`. How far a knob moves per pixel is the plugin's business — the
@@ -160,7 +160,7 @@ The verbs, the socket and the threading contract are documented where they
 live:
 
 - [../wrapper/Standalone/mcp/IpcServer.h](../wrapper/Standalone/mcp/IpcServer.h) — socket, framing, shutdown ordering.
-- [../wrapper/Standalone/mcp/MainThreadQueue.h](../wrapper/Standalone/mcp/MainThreadQueue.h) — why the event-loop tick is the marshaller on Wayland.
+- [../wrapper/Standalone/mcp/MainThreadQueue.h](../wrapper/Standalone/mcp/MainThreadQueue.h) — why the event-loop tick is the marshaller (and why Wayland leaves no alternative).
 - [../wrapper/Standalone/mcp/CommandDispatcher.cpp](../wrapper/Standalone/mcp/CommandDispatcher.cpp) — every verb.
 
 Adding a verb: implement it in `CommandDispatcher.cpp`, then either expose it as
