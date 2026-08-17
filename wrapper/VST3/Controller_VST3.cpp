@@ -99,6 +99,28 @@ Controller_VST3::Controller_VST3(gmpi::hosting::pluginInfo& pinfo) :
 				endEdit(paramID);
 		};
 
+	// Blob parameters can't ride performEdit (doubles only), so the holder
+	// hands them to us already framed for the processor's ui->dsp queue
+	// ("ppc3"; see GmpiParameter::getQueMessage). We only move the bytes
+	// across - Processor_VST3::notify pushes them into that queue verbatim.
+	gmpiController.sendNonNativeParameterToProcessor = [this](gmpi::hosting::GmpiParameter* param)
+		{
+			struct MemStream : gmpi::hosting::my_output_stream
+			{
+				std::vector<uint8_t> bytes;
+				void Write(const void* buf, unsigned int byteCount) override
+				{
+					const auto* p = static_cast<const uint8_t*>(buf);
+					bytes.insert(bytes.end(), p, p + byteCount);
+				}
+			} frame;
+
+			const auto messageLength = param->queryQueMessageLength(0);
+			param->getQueMessage(frame, messageLength);
+
+			sendMessageToProcessor(frame.bytes.data(), static_cast<int>(frame.bytes.size()));
+		};
+
 	gmpiController.init(pinfo);
 }
 
