@@ -299,6 +299,12 @@ int main(int argc, char** argv)
     const int pageEditor   = layout->addPage(host.editorDrawingClient());
     const int pageSettings = layout->addPage(static_cast<gmpi::api::IDrawingClient*>(settingsPane.get()));
 
+    // The way OUT of the settings page. A menu opens it; its own Close button
+    // dismisses it, the way a settings screen anywhere else does. Only offered
+    // when there is a plugin editor to go back to.
+    if (host.editorDrawingClient())
+        settingsPane->setOnClose([&] { layout->showPage(pageEditor); });
+
     // --- menus --------------------------------------------------------------
     // The same two menus as the other two shells, which are in turn modelled on
     // JUCE's standalone: a File menu that quits and an Options menu that reaches
@@ -312,7 +318,11 @@ int main(int argc, char** argv)
 
         menus.push_back({ "Options", {
             {
-                "Audio/MIDI Settings",
+                // No "Plugin Editor" item beside it. Two items that switch
+                // between two pages is a radio pair, and nobody looks in a
+                // menu for the way out of a settings screen - they look for a
+                // button on the screen itself, which is where it now is.
+                "Audio/MIDI Settings...",
                 [&]
                 {
                     // Re-read the device lists on the way in: keyboards and
@@ -322,12 +332,6 @@ int main(int argc, char** argv)
                 },
                 {},
                 [&] { return layout->currentPage() == pageSettings; }
-            },
-            {
-                "Plugin Editor",
-                [&] { layout->showPage(pageEditor); },
-                [&host] { return host.editorDrawingClient() != nullptr; },
-                [&] { return layout->currentPage() == pageEditor; }
             },
             {},   // separator
             { "Quit", [&window] { window.requestClose(); } },
