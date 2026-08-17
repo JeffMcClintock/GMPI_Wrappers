@@ -293,7 +293,9 @@ server.registerTool(
       "THE RESULT ANSWERS 'did it make the right sound' WITHOUT READING THE FILE, which is usually all you need. " +
       "Runs on its own processor instance primed with the CURRENT parameter values, so it neither disturbs nor is disturbed by whatever the app is playing — and it works even when no audio device is open. " +
       "Because it starts from the plugin's initial state, it is deterministic and repeatable; it is not a recording of what you are hearing right now. " +
-      "Pass note to play something: without it a synth renders silence, which is a correct result and a useful control case.",
+      "FOR AN INSTRUMENT pass `note` to play something; without it a synth renders silence, which is a correct result and a useful control case. " +
+      "FOR AN EFFECT pass `input` ('tone' or 'noise') to feed its audio inputs — an effect fed the default silence outputs silence and tells you nothing. " +
+      "The result echoes `inputLevel`, so a gain check is arithmetic: feed 0.5, read `peak` back, and the ratio is the gain applied.",
     inputSchema: {
       path: z.string().describe("Absolute path for the output .wav file."),
       seconds: z.number().min(0.01).max(240).optional().describe("Duration, default 2."),
@@ -306,10 +308,15 @@ server.registerTool(
       rate: z.number().int().min(8000).max(384000).optional().describe("Sample rate, default 48000."),
       format: z.enum(["int16", "float32"]).optional()
         .describe("Default int16, which Python's `wave` module and sox can both read. float32 keeps headroom above 0 dBFS."),
+      input: z.enum(["silence", "tone", "noise"]).optional()
+        .describe("What to feed the plugin's audio INPUTS. Default silence (right for an instrument, useless for an effect). Refused if the plugin has no audio inputs."),
+      inputFreq: z.number().optional().describe("Tone frequency in Hz, default 440. Only with input:'tone'."),
+      inputLevel: z.number().min(0).max(1).optional()
+        .describe("Test-signal amplitude, default 0.5 (-6 dBFS), leaving headroom for a plugin with gain above 1."),
       pid: pidArg,
     },
   },
-  async ({ path, seconds, note, velocity, channel, hold, rate, format, pid }) => {
+  async ({ path, seconds, note, velocity, channel, hold, rate, format, input, inputFreq, inputLevel, pid }) => {
     const args = [`--render-audio ${quote(path)}`];
     if (seconds !== undefined) args.push(`--seconds ${seconds}`);
     if (note !== undefined) args.push(`--note ${note}`);
@@ -318,6 +325,9 @@ server.registerTool(
     if (hold !== undefined) args.push(`--hold ${hold}`);
     if (rate !== undefined) args.push(`--rate ${rate}`);
     if (format !== undefined) args.push(`--format ${format}`);
+    if (input === "tone") args.push(`--input-tone ${inputFreq ?? 440}`);
+    else if (input === "noise") args.push("--input-noise");
+    if (inputLevel !== undefined) args.push(`--input-level ${inputLevel}`);
     return one([args.join(" ")], pid);
   },
 );

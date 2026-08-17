@@ -52,6 +52,43 @@ is why the pointer verbs take window coordinates rather than plugin-relative
 ones. The app's menu bar occupies the strip above `editorOriginY`; a plugin
 coordinate `(x, y)` is window `(x, y + editorOriginY)`.
 
+## Instruments vs effects
+
+The single most common way to get a useless answer: exciting the plugin the
+wrong way. Check `audioInputs` in `gmpi_info` first.
+
+| | How you excite it | What "no excitation" proves |
+|---|---|---|
+| **Instrument** (`audioInputs: 0`) | `note` | a synth rendering `silent:true` with no note is healthy |
+| **Effect** (`audioInputs > 0`) | `input: "tone"` or `"noise"` | an effect rendering silence with silence in is healthy |
+
+An effect fed the default silence outputs silence — `ok:true`, `silent:true`,
+and nothing learned. Passing `note` to an effect does nothing at all; passing
+`input` to a plugin with no audio inputs is refused rather than ignored, so you
+find out immediately.
+
+Both generators are deterministic (fixed-seed LCG for noise, phase carried
+across blocks for the tone), so two runs of the same command produce identical
+files and a difference is a real regression.
+
+**Gain checks are arithmetic.** The result echoes `inputLevel`, so:
+
+```text
+gmpi_render_audio input="tone" inputLevel=0.5   → peak 0.5   ⇒ unity gain
+                                                → peak 1.0   ⇒ 2x
+                                                → peak 0.25  ⇒ 0.5x
+```
+
+An `rms` of exactly `peak / √2` additionally tells you the output is a clean
+sine — i.e. the plugin applied gain without distorting or clipping.
+
+## Restoring state
+
+`gmpi_list_params` reports `default` alongside `value`. Put a parameter back to
+its **default**, not to whatever it was on entry: the incoming value may itself
+be the degenerate leftover of the last thing that ran, and a gain sitting at 0
+makes a perfectly healthy plugin look broken.
+
 ## Workflow: "check the filter actually filters"
 
 ```text
