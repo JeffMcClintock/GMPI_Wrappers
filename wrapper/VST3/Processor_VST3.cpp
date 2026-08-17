@@ -1052,7 +1052,22 @@ tresult Processor_VST3::setState (IBStream* state)
 	chunk.resize(chunkSize);
 	state->read(chunk.data(), chunkSize, &bytesRead);
 
-	plugin.setPresetUnsafe(chunk);//, active_);
+	// Fail safe. This is a host boundary on the MAIN thread: the DAW calls it
+	// while opening a project, and an exception escaping here unwinds into the
+	// host's own event loop, where there is no handler - on macOS it reaches
+	// -[NSApplication run], terminate() runs and the whole DAW aborts. A preset
+	// we cannot read is a lost patch; it must never be a lost session.
+	//
+	// The plugin is left in its default (empty) state and the host is told the
+	// restore failed, which is the honest answer.
+	try
+	{
+		plugin.setPresetUnsafe(chunk);//, active_);
+	}
+	catch (...)
+	{
+		return kResultFalse;
+	}
 
 	return kResultTrue;
 }

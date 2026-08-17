@@ -822,7 +822,19 @@ bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
         buffer[totalRd] = 0;
 
     auto dat = std::string(buffer);
-    plugin.setPresetUnsafe(dat);
+
+    // Fail safe, as in the VST3 wrapper's setState. Doubly so here: stateLoad
+    // is noexcept, so an escaping exception does not even unwind - it calls
+    // std::terminate directly and takes the host with it. A preset we cannot
+    // read leaves the plugin in its default state and reports failure.
+    try
+    {
+        plugin.setPresetUnsafe(dat);
+    }
+    catch (...)
+    {
+        return false;
+    }
 
 #if 0 // TODO
 //    _DBGCOUT << dat << std::endl;

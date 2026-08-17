@@ -467,7 +467,54 @@ tresult PLUGIN_API Controller_VST3::setComponentState (IBStream* state)
 	DawPreset preset(parametersInfo, chunk);
 	setPreset(&preset);
 #endif
-	gmpiController.setPresetXmlFromDaw(chunk);
+	// Fail safe, for the same reason as Processor_VST3::setState - this is the
+	// controller half of the same main-thread project-load path, so an escaping
+	// exception aborts the DAW just as surely.
+	try
+	{
+		gmpiController.setPresetXmlFromDaw(chunk);
+
+		// Hand the restored parameters to the plug-in's own <Controller/>.
+		// It registers as an IParameterObserver, but nothing ever called it -
+		// sePluginController was only ever initialize()d - so a plug-in whose
+		// state IS a parameter had no way to learn its state had been restored,
+		// and started blank however good the preset was.
+		//
+		// Encoding is the parameter's own datatype, not a pin's: the plug-in
+		// controller has no pins. Blobs and strings arrive as their raw bytes,
+		// scalars as a double. Non-stateful parameters are skipped for the same
+		// reason the preset writer skips them - they hold things like a raw
+		// pointer to a live object, valid only for the run that published them.
+		if (sePluginController)
+		{
+			constexpr int32_t voice{};
+
+			for (auto& [handle, param] : gmpiController.patchManager.parameters)
+			{
+				if (!param.info || !param.info->is_stateful)
+					continue;
+
+				if (const auto* bytes = std::get_if<std::vector<uint8_t>>(&param.value_); bytes)
+				{
+					sePluginController->setParameter(
+						param.info->id, gmpi::Field::Value, voice,
+						static_cast<int32_t>(bytes->size()), bytes->data());
+				}
+				else
+				{
+					const double value = param.valueReal();
+					sePluginController->setParameter(
+						param.info->id, gmpi::Field::Value, voice,
+						static_cast<int32_t>(sizeof(value)),
+						reinterpret_cast<const uint8_t*>(&value));
+				}
+			}
+		}
+	}
+	catch (...)
+	{
+		return kResultFalse;
+	}
 
 	return kResultTrue;
 }
