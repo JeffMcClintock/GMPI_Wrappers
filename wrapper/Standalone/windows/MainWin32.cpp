@@ -34,10 +34,17 @@
 #include "ToplevelWindow.h"
 
 #include "../AppLayout.h"
+#include "../CommandChannel.h"
 #include "../MenuBarView.h"
 #include "../SettingsPane.h"
 #include "../StandaloneHost.h"
 #include "../StandaloneSettings.h"
+
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+#include "FrameCapture.h"
+#include "../mcp/CommandDispatcher.h"
+#include "../mcp/IpcServer.h"
+#endif
 
 #include "GmpiUiDrawing.h"
 #include "helpers/Timer.h"
@@ -262,17 +269,101 @@ int APIENTRY wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int)
             }
         }
 
-        // Device changes the user asked for while we were inside input
-        // dispatch, applied from a timer instead. Re-opening an audio device
-        // there would mean joining the driver's threads with a click still on
-        // the stack.
-        Ticker deferredApply([&settingsPane] { settingsPane->pumpDeferred(); });
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+        // --- command channel ------------------------------------------------
+        // A named pipe naming this process, so a test harness or an MCP server
+        // can drive the very plugin instance the user is looking at. Failing to
+        // open it is not fatal: someone launched this app to make a sound with,
+        // and a missing debug channel must never be the reason it will not
+        // start.
+        FrameCapture frameCapture(frame);
+        gmpi::standalone::mcp::IpcServer ipcServer;
+        gmpi::standalone::mcp::AppContext ipcContext;
+        {
+            ipcContext.host = &host;
+
+            // Pointer coordinates are window-relative, matching the screenshot,
+            // so "find the knob in the PNG, then click it" needs no arithmetic.
+            // This is what a caller adds to convert a plugin-relative one.
+            ipcContext.editorOriginY = MenuBarView::kHeight;
+
+            ipcContext.framePixels = [&frameCapture](bool forceRedraw,
+                                                     const uint8_t*& pixels, int& w, int& h, int& stride)
+            {
+                return frameCapture.capture(forceRedraw, pixels, w, h, stride);
+            };
+
+            ipcContext.logicalSize = [&window](float& w, float& h)
+            {
+                // DIPs, which is the space pointer coordinates are in. Read
+                // from the frame's own transform rather than from GetClientRect
+                // so this cannot drift from what the editor was arranged at.
+                RECT client{};
+                ::GetClientRect(window.hwnd(), &client);
+
+                const float scale = window.frame().getRasterizationScale();
+                w = scale > 0.0f ? client.right  / scale : static_cast<float>(client.right);
+                h = scale > 0.0f ? client.bottom / scale : static_cast<float>(client.bottom);
+            };
+
+            // Input enters at the layout, which is what the frame has attached
+            // and therefore exactly where a real mouse arrives - so the menu
+            // bar, the page switch and the plugin's own widgets all see
+            // synthetic events on the same path, with the same capture
+            // bookkeeping.
+            ipcContext.inputClient = [&layout]() -> gmpi::api::IInputClient*
+            {
+                gmpi::api::IInputClient* client{};
+                layout->queryInterface(&gmpi::api::IInputClient::guid,
+                                       reinterpret_cast<void**>(&client));
+
+                // queryInterface addRefs. The layout outlives every command, so
+                // the reference is dropped here rather than making each caller
+                // own one.
+                if (client)
+                    client->release();
+
+                return client;
+            };
+
+            ipcServer.start(
+                [&ipcContext](const std::string& line)
+                {
+                    return gmpi::standalone::mcp::dispatchCommand(ipcContext, line);
+                });
+        }
+#endif
+
+        // The app's one periodic job list. Two entries:
+        //
+        //  * commands from the pipe. This is the ONLY point at which they run -
+        //    the listener thread never touches the plugin, it just parks here
+        //    until we get to it. Drained BEFORE the settings apply and before
+        //    anything else, so a --set-param is queued for the processor in
+        //    time for this tick rather than the next.
+        //  * device changes the user asked for while we were inside input
+        //    dispatch. Re-opening an audio device there would mean joining the
+        //    driver's threads with a click still on the stack.
+        Ticker tick([&]
+        {
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+            ipcServer.mainThreadQueue().drain();
+#endif
+            settingsPane->pumpDeferred();
+        });
 
         exitCode = window.runEventLoop();
 
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+        // FIRST, and on this thread: stop() refuses further model access before
+        // it joins its threads, so no command can still be reaching for the
+        // host, the editor or the drivers that the next lines tear down.
+        ipcServer.stop();
+#endif
+
         // Stop the audio and MIDI threads before anything they touch goes away.
-        // First, and on this thread: close() on either driver returns only once
-        // no callback can still be running.
+        // close() on either driver returns only once no callback can still be
+        // running.
         host.stopMidi();
         host.stopAudio();
 

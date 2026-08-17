@@ -30,12 +30,16 @@
 #include "MidiDriverAlsa.h"
 
 #include "../AppLayout.h"
+#include "../CommandChannel.h"
 #include "../MenuBarView.h"
 #include "../SettingsPane.h"
 #include "../StandaloneHost.h"
 #include "../StandaloneSettings.h"
+
+#if GMPI_STANDALONE_COMMAND_CHANNEL
 #include "../mcp/CommandDispatcher.h"
 #include "../mcp/IpcServer.h"
+#endif
 
 #include "GmpiUiDrawing.h"
 #include "backends/DrawingFrameWayland.h"
@@ -243,6 +247,7 @@ int main(int argc, char** argv)
         }
     }
 
+#if GMPI_STANDALONE_COMMAND_CHANNEL
     // --- command channel ----------------------------------------------------
     // A unix socket naming this process, so a test harness or an MCP server can
     // drive the very plugin instance the user is looking at. Failing to open it
@@ -313,10 +318,11 @@ int main(int argc, char** argv)
         // socat at, and its absence is the first thing to check when a client
         // reports no running apps.
         if (started)
-            fprintf(stderr, "command channel: %s\n", ipcServer.socketPath().c_str());
+            fprintf(stderr, "command channel: %s\n", ipcServer.channelName().c_str());
         else
             fprintf(stderr, "command channel: unavailable (no writable runtime directory).\n");
     }
+#endif
 
     std::signal(SIGTERM, onTerminationSignal);
     std::signal(SIGINT,  onTerminationSignal);
@@ -329,6 +335,7 @@ int main(int argc, char** argv)
             return;
         }
 
+#if GMPI_STANDALONE_COMMAND_CHANNEL
         // Commands from the socket. This is the ONLY point at which they run:
         // the listener thread never touches the plugin, it just parks here
         // until we get to it (mcp/MainThreadQueue.h explains why the tick has
@@ -338,6 +345,7 @@ int main(int argc, char** argv)
         // the processor, and the pump is what delivers it. Draining first means
         // a parameter set now is audible this tick rather than the next one.
         ipcServer.mainThreadQueue().drain();
+#endif
 
         // gmpi_ui's timers have no native source on Linux, so the loop is the
         // source. This is what drives the host's parameter queues and the
@@ -354,10 +362,12 @@ int main(int argc, char** argv)
         settingsPane->pumpDeferred();
     });
 
+#if GMPI_STANDALONE_COMMAND_CHANNEL
     // FIRST, and on this thread: stop() refuses further model access before it
     // joins the listener, so no command can still be reaching for the host,
     // the editor or the drivers that the next three lines tear down.
     ipcServer.stop();
+#endif
 
     // Stop the audio and MIDI threads before anything they touch goes away.
     host.stopMidi();
