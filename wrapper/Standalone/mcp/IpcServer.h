@@ -16,27 +16,31 @@
 
 // A unix-domain-socket command channel into the RUNNING standalone app.
 //
-// The Linux counterpart of SynthEdit2/EditorIpcServer.{h,cpp} (Windows named
-// pipe) and SynthEditMac/EditorIpcServerMac.h (macOS unix socket). Same
-// newline framing, same JSONL responses, same discovery-by-directory-listing,
-// so one MCP client drives any of them without knowing which it reached.
+// Serves BOTH unixes: Linux and macOS. The counterpart of
+// SynthEdit2/EditorIpcServer.{h,cpp} (Windows named pipe) and
+// SynthEditMac/EditorIpcServerMac.h (macOS unix socket). Same newline framing,
+// same JSONL responses, same discovery-by-directory-listing, so one MCP client
+// drives any of them without knowing which it reached.
 //
 // THREADING. The listener thread never touches the plugin. It parses a line
 // and hands it to MainThreadQueue, which the event loop's tick drains; see
 // MainThreadQueue.h for why the tick is the only usable marshaller here.
 //
-// Two Linux differences from the macOS server worth naming:
+// Two things differ between the two unixes, and both are handled in the compat
+// shims below rather than by forking the class:
 //
-//  * There is no SO_NOSIGPIPE. A dead peer would raise SIGPIPE and the default
-//    disposition takes the app down mid-session, so every response goes out
-//    through send(MSG_NOSIGNAL) rather than write(). Per-call, not per-socket,
-//    which is why it is spelled at each site instead of once at accept().
+//  * SIGPIPE suppression. Linux has no SO_NOSIGPIPE and spells it per-call as
+//    send(MSG_NOSIGNAL); macOS has no MSG_NOSIGNAL and spells it once per
+//    socket as setsockopt(SO_NOSIGPIPE). Either way a peer that dies mid-
+//    response must not take the app down with it, which the default
+//    disposition would.
 //
-//  * The natural home for the socket is $XDG_RUNTIME_DIR: it is already
-//    per-user, already mode 0700, on tmpfs, and the session manager clears it
-//    at logout so a crashed app cannot leave a corpse across sessions. macOS
-//    has no equivalent and falls back to the settings folder; here that is the
-//    first choice rather than the fallback.
+//  * Where the socket goes. $XDG_RUNTIME_DIR is the natural home on Linux: it
+//    is already per-user, already mode 0700, on tmpfs, and the session manager
+//    clears it at logout so a crashed app cannot leave a corpse across
+//    sessions. macOS has no equivalent, so it lands on the /tmp fallback -
+//    which is why that path is ownership-checked rather than trusted, and why
+//    the MCP client's discovery lists it on every unix (mcp/src/discover.ts).
 
 #include <algorithm>
 #include <atomic>
@@ -58,6 +62,99 @@
 #include <unistd.h>
 
 #include "MainThreadQueue.h"
+
+// ---------------------------------------------------------------------------
+// The four calls Linux has atomic forms of and macOS does not. Each shim below
+// does the same thing in two steps, and the RACE that costs is worth naming:
+// between the create and the fcntl, a fork+exec on another thread leaks the
+// descriptor into the child. This app forks nothing, and the alternative -
+// declining to build on macOS over a hazard it does not have - is worse. The
+// atomic form is still used wherever the platform has it.
+// ---------------------------------------------------------------------------
+
+namespace gmpi
+{
+namespace standalone
+{
+namespace mcp
+{
+namespace compat
+{
+
+inline void setCloExec(int fd)
+{
+    if (fd < 0)
+        return;
+    const int flags = ::fcntl(fd, F_GETFD, 0);
+    ::fcntl(fd, F_SETFD, (flags < 0 ? 0 : flags) | FD_CLOEXEC);
+}
+
+/// A SOCK_STREAM unix socket with close-on-exec set. Also the one place
+/// SO_NOSIGPIPE can be applied on macOS - it is a socket option there, not a
+/// send() flag - so writeAll() below needs no platform arm of its own.
+inline int socketCloExec()
+{
+#if defined(SOCK_CLOEXEC)
+    return ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+#else
+    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    setCloExec(fd);
+    return fd;
+#endif
+}
+
+inline int acceptCloExec(int listenFd)
+{
+#if defined(__linux__)
+    const int fd = ::accept4(listenFd, nullptr, nullptr, SOCK_CLOEXEC);
+#else
+    const int fd = ::accept(listenFd, nullptr, nullptr);
+    setCloExec(fd);
+#endif
+
+#if defined(SO_NOSIGPIPE)
+    // Per-socket, because macOS has no MSG_NOSIGNAL to spell it per-call.
+    // Set on the ACCEPTED socket rather than the listening one: the option is
+    // not inherited, and it is the accepted socket that responses go out on.
+    if (fd >= 0)
+    {
+        const int on = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on));
+    }
+#endif
+    return fd;
+}
+
+/// The self-pipe stop() writes to. Non-blocking on both ends so a stop() that
+/// races an earlier unread wake byte cannot block the main thread.
+inline bool wakePipe(int fds[2])
+{
+#if defined(__linux__)
+    return ::pipe2(fds, O_CLOEXEC | O_NONBLOCK) == 0;
+#else
+    if (::pipe(fds) != 0)
+        return false;
+    for (int i = 0; i < 2; ++i)
+    {
+        setCloExec(fds[i]);
+        const int fl = ::fcntl(fds[i], F_GETFL, 0);
+        ::fcntl(fds[i], F_SETFL, (fl < 0 ? 0 : fl) | O_NONBLOCK);
+    }
+    return true;
+#endif
+}
+
+/// MSG_NOSIGNAL where it exists; 0 where SO_NOSIGPIPE did the job at accept().
+#if defined(MSG_NOSIGNAL)
+inline constexpr int kSendFlags = MSG_NOSIGNAL;
+#else
+inline constexpr int kSendFlags = 0;
+#endif
+
+} // namespace compat
+} // namespace mcp
+} // namespace standalone
+} // namespace gmpi
 
 namespace gmpi
 {
@@ -93,9 +190,11 @@ inline bool ensurePrivateDir(const std::string& dir)
 
 /// Where this process publishes its channel, or empty if nowhere will have it.
 ///
-/// sun_path is 108 bytes on Linux and an over-long path binds to a SILENTLY
-/// TRUNCATED name - two apps would collide invisibly. So a path that does not
-/// fit is refused, never truncated, and the next candidate is tried.
+/// sun_path is 108 bytes on Linux and 104 on macOS, and an over-long path binds
+/// to a SILENTLY TRUNCATED name - two apps would collide invisibly. So a path
+/// that does not fit is refused, never truncated, and the next candidate is
+/// tried. sizeof(sun_path) is read from the struct rather than assumed, so the
+/// shorter macOS limit needs no arm of its own.
 inline std::string chooseSocketPath()
 {
     const std::string leaf = std::string(kSocketPrefix) + std::to_string(static_cast<long>(::getpid()));
@@ -166,7 +265,7 @@ public:
         // a corpse left by a previous process that happened to hold it.
         ::unlink(socketPath_.c_str());
 
-        listenFd_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+        listenFd_ = compat::socketCloExec();
         if (listenFd_ < 0)
         {
             socketPath_.clear();
@@ -199,7 +298,7 @@ public:
             return false;
         }
 
-        if (::pipe2(wakeFd_, O_CLOEXEC | O_NONBLOCK) != 0)
+        if (!compat::wakePipe(wakeFd_))
         {
             cleanupFds();
             ::unlink(socketPath_.c_str());
@@ -351,7 +450,7 @@ private:
 
             if (fds[0].revents & POLLIN)
             {
-                const int fd = ::accept4(listenFd_, nullptr, nullptr, SOCK_CLOEXEC);
+                const int fd = compat::acceptCloExec(listenFd_);
                 if (fd >= 0)
                 {
                     if (clients.size() >= kMaxClients)
@@ -421,14 +520,16 @@ private:
     }
 
     /// Never blocks indefinitely on a client that stopped reading - the wake fd
-    /// is in every wait. MSG_NOSIGNAL because a peer that died mid-response
-    /// would otherwise raise SIGPIPE and take the app down with it.
+    /// is in every wait. A peer that died mid-response must not raise SIGPIPE
+    /// and take the app down with it: on Linux that is compat::kSendFlags
+    /// carrying MSG_NOSIGNAL here, on macOS it is the SO_NOSIGPIPE that
+    /// compat::acceptCloExec already set on this socket.
     bool writeAll(int fd, const std::string& data)
     {
         size_t sent = 0;
         while (sent < data.size())
         {
-            const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
+            const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, compat::kSendFlags);
             if (n > 0)
             {
                 sent += static_cast<size_t>(n);

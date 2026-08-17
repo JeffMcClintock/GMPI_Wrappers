@@ -11,9 +11,11 @@
 // the top of the SCREEN, and one that has none is a broken-looking app with no
 // Cmd-Q and no Hide. This file installs that, minimally. The File/Options strip
 // INSIDE the window is the same drawn MenuBarView the other two shells have,
-// and it stays so that the window's contents are identical on every platform.
-// A macOS-only chrome would make a cross-platform GUI test compare two
-// different pictures.
+// and it stays for two reasons: the window's contents are then identical on
+// every platform, and the command channel's coordinate space - editorOriginY,
+// which every screenshot and every synthetic click is measured against -
+// therefore agrees across platforms too. A macOS-only chrome would make a
+// cross-platform GUI test compare two different pictures.
 //
 // Two things this file owns that a plugin never does:
 //
@@ -44,10 +46,17 @@
 #include "ToplevelWindowMac.h"
 
 #include "../AppLayout.h"
+#include "../CommandChannel.h"
 #include "../MenuBarView.h"
 #include "../SettingsPane.h"
 #include "../StandaloneHost.h"
 #include "../StandaloneSettings.h"
+
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+#include "FrameCapture.h"
+#include "../mcp/CommandDispatcher.h"
+#include "../mcp/IpcServer.h"
+#endif
 
 #include "GmpiUiDrawing.h"
 #include "helpers/DrawingFactory.h"
@@ -55,8 +64,8 @@
 
 // Cmd-Q, the Dock's Quit, and "Quit" in the application menu all arrive as
 // -terminate:, which calls exit() and would skip every line after the run loop -
-// the audio and MIDI threads, the frame detach. This delegate redirects all
-// three onto the window's own orderly close.
+// the command channel's stop(), the audio and MIDI threads, the frame detach.
+// This delegate redirects all three onto the window's own orderly close.
 #define GMPI_STANDALONE_APP_DELEGATE GMPI_STANDALONE_APP_DELEGATE_01
 
 @interface GMPI_STANDALONE_APP_DELEGATE : NSObject <NSApplicationDelegate>
@@ -112,10 +121,11 @@ void fatal(const std::string& message)
 }
 
 // A TimerClient that runs one callback. gmpi::TimerManager is the app's only
-// periodic source, and two things need a tick: the settings page's deferred
-// apply (see SettingsPane::pumpDeferred, which exists because re-opening an
-// audio device inside input dispatch would join the driver's threads with a
-// click still on the stack), and the layout's preGraphicsRedraw.
+// periodic source, and three things need a tick: the command queue, the
+// settings page's deferred apply (see SettingsPane::pumpDeferred, which exists
+// because re-opening an audio device inside input dispatch would join the
+// driver's threads with a click still on the stack), and the layout's
+// preGraphicsRedraw.
 class Ticker : public gmpi::TimerClient
 {
 public:
@@ -383,11 +393,80 @@ int main(int argc, char** argv)
         }
     }
 
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+    // --- command channel ----------------------------------------------------
+    // A unix socket naming this process, so a test harness or an MCP server can
+    // drive the very plugin instance the user is looking at. Failing to open it
+    // is not fatal: someone launched this app to make a sound with, and a
+    // missing debug channel must never be the reason it will not start.
+    FrameCapture frameCapture(window);
+    gmpi::standalone::mcp::IpcServer ipcServer;
+    gmpi::standalone::mcp::AppContext ipcContext;
+    {
+        ipcContext.host = &host;
+
+        // Pointer coordinates are window-relative, matching the screenshot, so
+        // "find the knob in the PNG, then click it" needs no arithmetic. This is
+        // what a caller adds to convert a plugin-relative one.
+        ipcContext.editorOriginY = MenuBarView::kHeight;
+
+        ipcContext.framePixels = [&frameCapture](bool forceRedraw,
+                                                 const uint8_t*& pixels, int& w, int& h, int& stride)
+        {
+            return frameCapture.capture(forceRedraw, pixels, w, h, stride);
+        };
+
+        ipcContext.logicalSize = [&window](float& w, float& h)
+        {
+            // Points, which is the space pointer coordinates are in. Read from
+            // the frame's own view rather than from the window, so this cannot
+            // drift from what the editor was arranged at.
+            window.logicalSize(w, h);
+        };
+
+        // Input enters at the layout, which is what the frame has attached and
+        // therefore exactly where a real mouse arrives - so the menu bar, the
+        // page switch and the plugin's own widgets all see synthetic events on
+        // the same path, with the same capture bookkeeping.
+        ipcContext.inputClient = [&layout]() -> gmpi::api::IInputClient*
+        {
+            gmpi::api::IInputClient* client{};
+            layout->queryInterface(&gmpi::api::IInputClient::guid,
+                                   reinterpret_cast<void**>(&client));
+
+            // queryInterface addRefs. The layout outlives every command, so the
+            // reference is dropped here rather than making each caller own one.
+            if (client)
+                client->release();
+
+            return client;
+        };
+
+        const bool started = ipcServer.start(
+            [&ipcContext](const std::string& line)
+            {
+                return gmpi::standalone::mcp::dispatchCommand(ipcContext, line);
+            });
+
+        // Printed rather than silent: it is how you find the socket to point
+        // socat at, and its absence is the first thing to check when a client
+        // reports no running apps.
+        if (started)
+            std::fprintf(stderr, "command channel: %s\n", ipcServer.channelName().c_str());
+        else
+            std::fprintf(stderr, "command channel: unavailable (no writable runtime directory).\n");
+    }
+#endif
+
     std::signal(SIGTERM, onTerminationSignal);
     std::signal(SIGINT,  onTerminationSignal);
 
     // The app's one periodic job list.
     //
+    //  * commands from the socket. This is the ONLY point at which they run -
+    //    the listener thread never touches the plugin, it just parks here until
+    //    we get to it. Drained BEFORE anything else, so a --set-param is queued
+    //    for the processor in time for this tick rather than the next.
     //  * preGraphicsRedraw, which lets the visible page service its DSP->GUI
     //    queue once per frame rather than being polled from the audio thread's
     //    side. On Windows the frame's own render timer does this; the Cocoa
@@ -403,11 +482,22 @@ int main(int argc, char** argv)
             return;
         }
 
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+        ipcServer.mainThreadQueue().drain();
+#endif
+
         layout->preGraphicsRedraw();
         settingsPane->pumpDeferred();
     });
 
     const int exitCode = window.runEventLoop();
+
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+    // FIRST, and on this thread: stop() refuses further model access before it
+    // joins its threads, so no command can still be reaching for the host, the
+    // editor or the drivers that the next lines tear down.
+    ipcServer.stop();
+#endif
 
     // Stop the audio and MIDI threads before anything they touch goes away.
     // close() on either driver returns only once no callback can still be

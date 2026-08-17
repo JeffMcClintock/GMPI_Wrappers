@@ -11,11 +11,13 @@
 // works from a script and over ssh.
 //
 // libpng rather than a hand-rolled encoder because the Standalone wrapper
-// already links it (see the `png` entry in its target_link_libraries) for
-// gmpi_ui's image decoding. Windows has no libpng in this build and needs
-// none: WIC is already linked for the Direct2D backend's image loading, so the
-// Windows half below encodes through that instead. One writePng, two encoders,
-// identical input - see the format note on the function itself.
+// already links it on Linux (see the `png` entry in its target_link_libraries)
+// for gmpi_ui's image decoding. Neither other platform has libpng in this build
+// and neither needs one: WIC is already linked for the Direct2D backend's image
+// loading, and ImageIO for the Cocoa backend's, so those two arms encode
+// through the framework that is there rather than adding a dependency. One
+// writePng, three encoders, identical input - see the format note on the
+// function itself.
 
 #include <cstdint>
 #include <cstdio>
@@ -34,6 +36,10 @@
 #define NOMINMAX
 #include <windows.h>
 #include <wincodec.h>
+#elif defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
+#include <ImageIO/ImageIO.h>
 #else
 #include <png.h>
 #endif
@@ -54,7 +60,115 @@ namespace mcp
 /// the comment on ShmBuffer spells out that there is no alpha for the
 /// compositor to blend - and an alpha channel carrying undefined padding shows
 /// up as a fully transparent PNG in any viewer that honours it.
-#if !defined(_WIN32)
+#if defined(__APPLE__)
+
+/// The same contract, encoded through ImageIO.
+///
+/// The source rows are still BGRX8888 - mac/FrameCapture renders into exactly
+/// that layout so this file needs no third pixel path - and they are narrowed
+/// to 24bpp RGB here for the same reason the other two arms do it: the X byte
+/// is padding, and handing it over as alpha produces a PNG that any viewer
+/// honouring alpha draws as fully transparent.
+///
+/// CGImageDestination rather than NSBitmapImageRep: this header is included by
+/// plain C++ translation units (mcp/CommandDispatcher.cpp), so it may use
+/// CoreGraphics and CoreFoundation but not AppKit or Objective-C.
+inline bool writePng(const std::string& path,
+                     const uint8_t* pixels,
+                     int width,
+                     int height,
+                     int stride,
+                     std::string& errorOut)
+{
+    if (!pixels || width <= 0 || height <= 0)
+    {
+        errorOut = "no pixels to write (the window may not have been drawn yet)";
+        return false;
+    }
+
+    // Packed tightly, because CGDataProvider wants one contiguous block and the
+    // source stride may be wider than the row.
+    const size_t outStride = static_cast<size_t>(width) * 3;
+    std::vector<uint8_t> rgb(outStride * static_cast<size_t>(height));
+
+    for (int y = 0; y < height; ++y)
+    {
+        const uint8_t* src = pixels + static_cast<size_t>(y) * static_cast<size_t>(stride);
+        uint8_t* dst = rgb.data() + static_cast<size_t>(y) * outStride;
+        for (int x = 0; x < width; ++x)
+        {
+            dst[x * 3 + 0] = src[x * 4 + 2];   // R
+            dst[x * 3 + 1] = src[x * 4 + 1];   // G
+            dst[x * 3 + 2] = src[x * 4 + 0];   // B
+        }
+    }
+
+    // No-copy provider over `rgb`, which outlives every use of the image below.
+    CGDataProviderRef provider = CGDataProviderCreateWithData(
+        nullptr, rgb.data(), rgb.size(), nullptr);
+    if (!provider)
+    {
+        errorOut = "could not wrap the pixels for encoding";
+        return false;
+    }
+
+    // sRGB named explicitly. The capture has already been converted out of the
+    // frame's linear working space, so tagging it with anything else - or with
+    // the display's profile - would make the file disagree with the Windows and
+    // Linux encoders, which both emit untagged sRGB.
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGImageRef image = CGImageCreate(
+        static_cast<size_t>(width), static_cast<size_t>(height),
+        8, 24, outStride,
+        colorSpace,
+        kCGBitmapByteOrderDefault | kCGImageAlphaNone,
+        provider, nullptr, false, kCGRenderingIntentDefault);
+
+    CGColorSpaceRelease(colorSpace);
+    CGDataProviderRelease(provider);
+
+    if (!image)
+    {
+        errorOut = "could not build an image from the captured pixels";
+        return false;
+    }
+
+    CFStringRef pathStr = CFStringCreateWithCString(nullptr, path.c_str(), kCFStringEncodingUTF8);
+    CFURLRef url = pathStr ? CFURLCreateWithFileSystemPath(nullptr, pathStr, kCFURLPOSIXPathStyle, false)
+                           : nullptr;
+    if (pathStr)
+        CFRelease(pathStr);
+
+    if (!url)
+    {
+        CGImageRelease(image);
+        errorOut = "'" + path + "' is not a usable file path";
+        return false;
+    }
+
+    CGImageDestinationRef dest = CGImageDestinationCreateWithURL(url, CFSTR("public.png"), 1, nullptr);
+    CFRelease(url);
+
+    if (!dest)
+    {
+        CGImageRelease(image);
+        errorOut = "could not open '" + path + "' for writing";
+        return false;
+    }
+
+    CGImageDestinationAddImage(dest, image, nullptr);
+    const bool ok = CGImageDestinationFinalize(dest);
+
+    CFRelease(dest);
+    CGImageRelease(image);
+
+    if (!ok)
+        errorOut = "write failed (disk full, or the directory does not exist?)";
+
+    return ok;
+}
+
+#elif !defined(_WIN32)
 
 inline bool writePng(const std::string& path,
                      const uint8_t* pixels,

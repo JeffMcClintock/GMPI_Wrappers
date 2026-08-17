@@ -186,6 +186,14 @@ if(APPLE)
         ${GMPI_UI_SDK}/helpers/DrawingFactory_mac.mm
     )
 
+    if(GMPI_STANDALONE_COMMAND_CHANNEL)
+        list(APPEND standalone_srcs
+            ${standalone_mcp_srcs}     # the transport is the unix socket in IpcServer.h
+            mac/FrameCapture.h         # --screenshot: draw the view into our own bitmap
+            mac/FrameCapture.mm
+        )
+    endif()
+
     foreach(framework
         Cocoa               # the window, the menu bar, the run loop
         CoreFoundation
