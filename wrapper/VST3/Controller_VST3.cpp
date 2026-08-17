@@ -467,7 +467,17 @@ tresult PLUGIN_API Controller_VST3::setComponentState (IBStream* state)
 	DawPreset preset(parametersInfo, chunk);
 	setPreset(&preset);
 #endif
-	gmpiController.setPresetXmlFromDaw(chunk);
+	// Fail safe, for the same reason as Processor_VST3::setState - this is the
+	// controller half of the same main-thread project-load path, so an escaping
+	// exception aborts the DAW just as surely.
+	try
+	{
+		gmpiController.setPresetXmlFromDaw(chunk);
+	}
+	catch (...)
+	{
+		return kResultFalse;
+	}
 
 	return kResultTrue;
 }
