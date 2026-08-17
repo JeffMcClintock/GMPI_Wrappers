@@ -9,20 +9,18 @@ project(Standalone_Wrapper)
 # this library (a main() inside a static archive is never pulled in, because
 # nothing references it).
 #
-# Linux and Windows. The file is arranged as a portable source list plus one
-# platform arm that appends the shell, its drivers and its dependencies; the
-# add_library and the target_* calls at the bottom are shared. macOS returns
-# early - the portable half compiles there, but without a window and a main
-# there is nothing to link.
+# Linux, Windows and macOS. The file is arranged as a portable source list plus
+# one platform arm that appends the shell, its drivers and its dependencies; the
+# add_library and the target_* calls at the bottom are shared.
 #
-# The two arms are not symmetrical, and the reason is worth stating: on Linux
+# The three arms are not symmetrical, and the reason is worth stating: on Linux
 # every dependency is a package that may be absent, so that arm probes for
-# thirteen of them and can decline; on Windows they all ship with the OS, so
-# there is nothing to probe and nothing that can decline.
+# thirteen of them and can decline; on Windows and macOS they all ship with the
+# OS, so there is nothing to probe and nothing that can decline.
 
 set(CMAKE_CXX_STANDARD 20)
 
-if(APPLE OR NOT (WIN32 OR UNIX))
+if(NOT (WIN32 OR UNIX))
     message(STATUS "Standalone_Wrapper: skipped (no shell written for this platform)")
     return()
 endif()
@@ -146,6 +144,76 @@ if(WIN32)
         avrt                              # MMCSS "Pro Audio" thread scheduling
         winmm                             # MIDI input
     )
+endif()
+
+# ---------------------------------------------------------------------------
+# macOS: CoreGraphics, CoreAudio, CoreMIDI.
+#
+# The thinnest of the three arms, because gmpi_ui's Cocoa backend is not a class
+# this shell embeds but an NSVIEW it parents - the same view the AU, VST3 and
+# CLAP wrappers hand their host. mac/ToplevelWindowMac supplies the NSWindow it
+# lives in, and nothing else.
+#
+# Every dependency is a system framework, so unlike the Linux arm there is
+# nothing to probe and nothing that can decline.
+# ---------------------------------------------------------------------------
+
+if(APPLE)
+    list(APPEND standalone_srcs
+        mac/ToplevelWindowMac.h
+        mac/ToplevelWindowMac.mm
+        mac/AudioDriverCoreAudio.h
+        mac/AudioDriverCoreAudio.cpp
+        mac/MidiDriverCoreMidi.h
+        mac/MidiDriverCoreMidi.cpp
+
+        # The Cocoa editor frame, which is the same one the GMPI AU and VST3
+        # wrappers embed in a DAW. mac/ToplevelWindowMac only supplies the
+        # window it lives inside.
+        ${GMPI_UI_SDK}/backends/DrawingFrameCommon.h
+        ${GMPI_UI_SDK}/backends/DrawingFrameCommon.cpp
+        ${GMPI_UI_SDK}/backends/DrawingFrameMac.h
+        ${GMPI_UI_SDK}/backends/DrawingFrameMac.mm
+        ${GMPI_UI_SDK}/backends/CocoaGfx.h
+        ${GMPI_UI_SDK}/backends/Gfx_base.h
+        ${GMPI_UI_SDK}/backends/Bezier.h
+
+        # The menu bar's font. The Windows shell borrows the frame's own
+        # factory; here the frame is an NSView and its factory is private to
+        # gmpi_ui, so the app mints one of its own through this helper - see the
+        # note in mac/MainMac.mm for why that is equivalent.
+        ${GMPI_UI_SDK}/helpers/DrawingFactory.h
+        ${GMPI_UI_SDK}/helpers/DrawingFactory_mac.mm
+    )
+
+    foreach(framework
+        Cocoa               # the window, the menu bar, the run loop
+        CoreFoundation
+        CoreGraphics        # the drawing backend
+        CoreText            # and its text
+        ImageIO             # PNG encode, for --screenshot
+        QuartzCore
+        Accelerate          # gmpi_ui's image paths
+        CoreAudio           # device enumeration
+        AudioToolbox        # AUHAL
+        AudioUnit
+        CoreMIDI            # MIDI input
+    )
+        find_library(FRAMEWORK_${framework} ${framework})
+        mark_as_advanced(FRAMEWORK_${framework})
+        list(APPEND standalone_libs ${FRAMEWORK_${framework}})
+    endforeach()
+
+    # WEAK, and the header that needs it says why: gmpi_ui's MacFileDialog
+    # prefers UTType / allowedContentTypes and falls back to allowedFileTypes
+    # below macOS 11, guarded by @available. The framework does not exist on
+    # 10.x, so a hard link would stop the app starting at all rather than
+    # taking that fallback.
+    #
+    # The AU, VST3 and CLAP wrappers never had to name this: they are loaded
+    # into a host that has already linked it. A standalone is the first target
+    # here that links its own executable.
+    list(APPEND standalone_libs "-weak_framework UniformTypeIdentifiers")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -397,6 +465,24 @@ if(WIN32)
     # PUBLIC: the executable compiles windows/MainWin32.cpp itself, and it calls
     # the same wide-character entry points this library does.
     target_compile_definitions(${PROJECT_NAME} PUBLIC UNICODE _UNICODE)
+endif()
+
+if(APPLE)
+    # PUBLIC, because mac/MainMac.mm is compiled by the EXECUTABLE and reaches
+    # the same two APIs this library does:
+    #
+    #  * MIDIInputPortCreate, deprecated since macOS 11 in favour of the UMP
+    #    port. Deliberate - see the note at the top of mac/MidiDriverCoreMidi.h -
+    #    and suppressed at the call site rather than here. What this covers is
+    #    gmpi_ui's Cocoa backend, which is full of the same warnings from
+    #    CoreGraphics and AppKit APIs whose replacements postdate the
+    #    deployment target. Same flag the AU wrapper carries.
+    #  * the enum-to-enum arithmetic CoreAudio's bitmask constants make
+    #    unavoidable under C++20.
+    target_compile_options(${PROJECT_NAME} PUBLIC
+        -Wno-deprecated-declarations
+        -Wno-deprecated-enum-enum-conversion
+    )
 endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC ${standalone_libs})

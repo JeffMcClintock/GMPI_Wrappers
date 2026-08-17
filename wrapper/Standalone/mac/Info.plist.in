@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    The standalone app's bundle description. Substituted by CMake through
+    MACOSX_BUNDLE_INFO_PLIST - see the APPLE branch of gmpi_plugin.cmake, which
+    is what sets every MACOSX_BUNDLE_* variable named below.
+
+    Only three keys here are decisions rather than boilerplate:
+
+      NSMicrophoneUsageDescription  macOS refuses an audio INPUT device to a
+                                    process whose bundle does not carry this
+                                    string, and shows it in the permission
+                                    prompt. An effect being auditioned live
+                                    needs the input, so this is the difference
+                                    between a working duplex device and silence.
+      NSHighResolutionCapable       Without it AppKit gives the window a 1x
+                                    backing store and scales it up, and the
+                                    editor is soft on every Retina display.
+      LSApplicationCategoryType     Music, so the Finder and Launchpad file it
+                                    somewhere sensible.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+    <key>CFBundleIdentifier</key>
+    <string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+    <key>CFBundleDisplayName</key>
+    <string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+    <key>CFBundleVersion</key>
+    <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>${MACOSX_BUNDLE_BUNDLE_NAME} needs the audio input device you choose on its Audio/MIDI settings page, so the plugin can process live audio.</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>

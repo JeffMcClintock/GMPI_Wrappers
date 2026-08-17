@@ -34,12 +34,23 @@ bundles. `GMPI-plugins/plugins/SawDemo` (a synth: MIDI in, stereo out) and
 | --- | --- | --- | --- | --- |
 | Linux | Wayland (gmpi_ui's own backend, CPU rendering) | PipeWire | ALSA sequencer | unix socket |
 | Windows | Win32 + Direct2D (gmpi_ui's `DrawingFrame`, the one the VST3 wrapper embeds) | WASAPI, shared mode | winmm | named pipe |
-| macOS | not written | not written | not written | not written |
+| macOS | Cocoa + CoreGraphics (gmpi_ui's `createNativeView`, the one the AU and VST3 wrappers hand their host) | CoreAudio (AUHAL) | CoreMIDI | not written |
 
-`gmpi_plugin()` drops `STANDALONE` from the format list on the platforms that
-have no shell, with a `message(STATUS)` saying so, and this directory's
-`CMakeLists.txt` returns immediately. A cross-platform project can therefore
-list `STANDALONE` unconditionally.
+`gmpi_plugin()` drops `STANDALONE` from the format list on a platform with no
+shell, with a `message(STATUS)` saying so, and this directory's `CMakeLists.txt`
+returns immediately. A cross-platform project can therefore list `STANDALONE`
+unconditionally.
+
+**macOS builds an `.app`**, unlike the bare binary the other two produce. Not
+for tidiness: an app that opens an audio *input* needs
+`NSMicrophoneUsageDescription` in an `Info.plist` or macOS refuses the device,
+and `NSHighResolutionCapable` is what stops AppKit handing the editor a 1x
+backing store on a Retina display. The binary is still directly runnable, and
+that is the path a script or the MCP server should launch:
+
+```bash
+build/plugins/SawDemo/SawDemo_STANDALONE.app/Contents/MacOS/SawDemo_STANDALONE
+```
 
 The command channel is compiled in by **default** and can be switched off with
 the CMake option `GMPI_STANDALONE_COMMAND_CHANNEL=OFF` (or
@@ -73,6 +84,11 @@ Per platform:
 | `windows/AudioDriverWasapi.*` | render + capture streams, device enumeration |
 | `windows/MidiDriverWin.*` | winmm input, including sysex |
 | `windows/FrameCapture.*` | `--screenshot`: reads the window back out of the swap chain |
+| `mac/MainMac.mm` | the entry point: the `NSApplication`, its screen menu bar, the run loop |
+| `mac/ToplevelWindowMac.*` | the `NSWindow` gmpi_ui's Cocoa view lives inside |
+| `mac/AudioDriverCoreAudio.*` | one AUHAL, duplex when the device is, device enumeration |
+| `mac/MidiDriverCoreMidi.*` | CoreMIDI input, including sysex split across packets |
+| `mac/Info.plist.in` | the `.app`'s bundle description; `gmpi_plugin()` substitutes it |
 
 `compat/it_enum_list.h` is a shim, not a component — see the comment at the top
 of it.
@@ -121,6 +137,58 @@ created **on the thread that uses it**, each device thread being an MTA of its
 own. `open()` starts the render thread and waits for it to report back rather
 than activating an `IAudioClient` on the UI thread (an STA, because the window
 needs OLE) and calling it from elsewhere.
+
+## The macOS shell
+
+Thinner still than the Windows one, for the same reason and one more. gmpi_ui's
+Cocoa backend is not a class to embed but an **NSView** —
+`createNativeView(parent, parameterHost, client, w, h)` builds the view the
+GMPI **AU, VST3 and CLAP** wrappers all hand their host, carrying the
+CoreGraphics render path, mouse and keyboard dispatch, and the native popup,
+text-edit, file and colour dialogs. What it cannot do is exist on its own: it is
+created *inside* a parent view, which in a DAW is the host's. So
+`mac/ToplevelWindowMac.*` supplies that parent and nothing else, and the plugin
+sees the arrangement it sees in a DAW — its editor in a subview of somebody
+else's view, at a backing scale it must read from the window.
+
+**There are two menu bars, and that is deliberate.** macOS gives every app a
+menu bar at the top of the screen, and one without it has no Cmd-Q and no Hide.
+`MainMac.mm` installs that, minimally. The File/Options strip *inside* the
+window is the same drawn `MenuBarView` the other two shells have, and it stays
+so that the window's contents are identical on every platform. A macOS-only
+chrome would make a cross-platform GUI test compare two different pictures.
+
+Three things the other shells get for free here:
+
+- **Resize does not reach the frame by itself.** AppKit's autoresizing calls
+  `setFrameSize:`, and gmpi_ui's view only overrides `setFrame:` — so an
+  autoresized editor would keep a backing bitmap at the old size and stretch.
+  The window delegate calls `resizeNativeView` instead, the same entry point the
+  VST3 wrapper's `onSize` uses.
+- **Nothing calls `preGraphicsRedraw`.** `DrawingFrameWin` drives it from its own
+  render timer and `DrawingFrameCocoa` has no equivalent, so the app's ticker
+  does it — exactly as the Wayland loop does.
+- **Quit must not be `-terminate:`**, which calls `exit()` and would skip the
+  audio and MIDI threads and the frame teardown.
+  Cmd-Q, the Dock and the drawn File menu all route to one deferred window
+  close instead. Deferred because a menu action arrives with the editor's own
+  view on the stack, and tearing that down underneath itself is a crash the
+  Windows shell cannot have — `DestroyWindow` from inside a message handler is
+  legal there.
+
+**Duplex is one device**, which is the real difference from the other two audio
+drivers. They open a render stream and a capture stream with a ring buffer
+between them, because on those platforms the two halves have separate clocks
+whatever device they name. A single AUHAL with input enabled has no such
+problem — one IOProc, one clock, nothing to reconcile — but it only works when
+the chosen device has both. So input opens when the plugin has input pins **and**
+the selected device has input streams; otherwise the plugin runs on silence and
+a line on stderr says so. That covers every audio interface an effect would
+actually be auditioned through, and not a modern Mac's built-in audio, where the
+speakers and the microphone are separate devices. Devices that offer both are
+marked `(in/out)` in the settings pane's list. Aggregating two devices into one
+clock domain is a real feature and belongs behind a real aggregate device, which
+macOS already provides, rather than a ring buffer bolted on here.
 
 ## Building on Linux
 
