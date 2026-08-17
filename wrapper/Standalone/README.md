@@ -110,3 +110,66 @@ the staging protocols the backend binds.
 - **Settings apply instantly, with no OK button**, and the apply is deferred to
   the next frame — re-opening an audio device inside a click's event dispatch
   would join the driver's threads with the compositor waiting on us.
+
+## The command channel
+
+Every standalone opens a unix socket that drives the plugin it is hosting —
+read and set parameters, inject MIDI, click and drag the GUI, screenshot the
+window, render audio offline. It exists to make plugin testing scriptable: the
+thing being driven is the app the user actually has open, not a headless second
+copy of it.
+
+On startup the app prints where it published:
+
+```text
+command channel: /run/user/1000/gmpi-standalone/gmpi-standalone.10673
+```
+
+The socket is mode 0700 under `$XDG_RUNTIME_DIR` (falling back to
+`/tmp/gmpi-standalone.<uid>`), named for the pid, so **a directory listing is
+the discovery mechanism** — no registry, config file or port to keep in sync.
+`GMPI_STANDALONE_IPC_DIR` overrides it, for tests. Failing to open the channel
+is never fatal; the app just says so and runs normally.
+
+The grammar is SynthEditCL's: newline-framed shell-style verb lines in, one
+JSON object per line out. Anything that speaks a socket can drive it —
+
+```bash
+printf -- '--info\n--set-param 7 30\n--screenshot /tmp/a.png\n' \
+  | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/gmpi-standalone/gmpi-standalone.10673
+```
+
+— and [../../mcp/](../../mcp/) wraps the same verbs as MCP tools for an AI
+agent.
+
+### Two things it can do that the desktop cannot
+
+- **Screenshot itself.** Every Wayland screenshot route goes through the
+  compositor, and GNOME refuses both `org.gnome.Shell.Screenshot` and the
+  xdg-desktop-portal one to an unattended caller. The app renders and reads its
+  own shm buffer instead, so this works from a script and over ssh.
+- **Render audio offline**, on a processor of its own primed with the current
+  parameter values — faster than realtime, without disturbing what is playing,
+  and even when no audio device would open. The result reports peak, rms and
+  clipping, so "did it make the right sound" is answerable without opening the
+  WAV.
+
+### Implementation notes
+
+| File | What |
+|---|---|
+| `mcp/IpcServer.h` | The socket: publishing, framing, client handling, shutdown ordering. |
+| `mcp/MainThreadQueue.h` | Why the event loop's tick is the only usable main-thread marshaller here. |
+| `mcp/CommandDispatcher.cpp` | Every verb. |
+
+**Commands run on the main thread, once per frame.** The listener thread never
+touches the plugin: it parses a line, hands it to `MainThreadQueue`, and blocks
+until the tick has run it. Windows and macOS have `DispatcherQueue::TryEnqueue`
+and `dispatch_async` for this; a Wayland app has neither, and its main thread is
+parked in `poll()` inside `runEventLoop` — so the loop's tick *is* the queue.
+That missing marshaller is why SynthEdit's live transport was never ported to
+Linux.
+
+**Pointer verbs enter at the same `IInputClient` the seat delivers to**, so
+capture and hover behave exactly as under a real mouse, and coordinates are the
+window's logical DIPs — the space a screenshot is measured in at scale 1.

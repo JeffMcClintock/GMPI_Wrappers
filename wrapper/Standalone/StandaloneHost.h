@@ -100,6 +100,15 @@ public:
     // the first knob drag dereferences null.
     gmpi::api::IUnknown* parameterHost();
 
+    // The parameter store and its two notification paths, for the command
+    // channel's --get-param / --set-param (mcp/CommandDispatcher.cpp).
+    //
+    // Handed out whole rather than wrapped in per-parameter accessors: setting
+    // a value correctly means notifying the editor AND queueing to the
+    // processor, and a getter/setter pair that did only the first would be an
+    // inviting way to get it half right.
+    gmpi::hosting::gmpi_controller_holder& controller() { return controller_; }
+
     // Call once the drawing client has been attached to a frame and given a
     // host. Runs the plugin's own initialisation and pushes the current value
     // of every parameter into it.

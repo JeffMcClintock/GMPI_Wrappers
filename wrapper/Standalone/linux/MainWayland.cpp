@@ -34,6 +34,8 @@
 #include "../SettingsPane.h"
 #include "../StandaloneHost.h"
 #include "../StandaloneSettings.h"
+#include "../mcp/CommandDispatcher.h"
+#include "../mcp/IpcServer.h"
 
 #include "GmpiUiDrawing.h"
 #include "backends/DrawingFrameWayland.h"
@@ -241,6 +243,81 @@ int main(int argc, char** argv)
         }
     }
 
+    // --- command channel ----------------------------------------------------
+    // A unix socket naming this process, so a test harness or an MCP server can
+    // drive the very plugin instance the user is looking at. Failing to open it
+    // is not fatal: someone launched this app to make a sound with, and a
+    // missing debug channel must never be the reason it will not start.
+    gmpi::standalone::mcp::IpcServer ipcServer;
+    gmpi::standalone::mcp::AppContext ipcContext;
+    {
+        ipcContext.host = &host;
+
+        // Pointer coordinates are window-relative, matching the screenshot, so
+        // "find the knob in the PNG, then click it" needs no arithmetic. This
+        // is what a caller adds to convert a plugin-relative coordinate.
+        ipcContext.editorOriginY = MenuBarView::kHeight;
+
+        ipcContext.framePixels = [&frame](bool forceRedraw,
+                                          const uint8_t*& pixels, int& w, int& h, int& stride)
+        {
+            // A screenshot must show the effect of the command before it, so it
+            // renders rather than reading a frame that predates the change.
+            // present() early-outs before the first configure, so this is safe
+            // even if a client connects while the window is still opening.
+            if (forceRedraw)
+                frame.present();
+
+            const auto& buffer = frame.frameBuffer();
+            if (!buffer.pixels())
+                return false;
+
+            pixels = buffer.pixels();
+            w      = buffer.width();
+            h      = buffer.height();
+            stride = buffer.stride();
+            return true;
+        };
+
+        ipcContext.logicalSize = [&frame](float& w, float& h)
+        {
+            w = static_cast<float>(frame.logicalWidth());
+            h = static_cast<float>(frame.logicalHeight());
+        };
+
+        // Input enters at the layout, which is what the frame has attached and
+        // therefore exactly where the seat delivers a real mouse - so the menu
+        // bar, the page switch and the plugin's own widgets all see synthetic
+        // events on the same path, with the same capture bookkeeping.
+        ipcContext.inputClient = [&layout]() -> gmpi::api::IInputClient*
+        {
+            gmpi::api::IInputClient* client{};
+            layout->queryInterface(&gmpi::api::IInputClient::guid,
+                                   reinterpret_cast<void**>(&client));
+
+            // queryInterface addRefs. The layout outlives every command, so the
+            // reference is dropped here rather than making each caller own one.
+            if (client)
+                client->release();
+
+            return client;
+        };
+
+        const bool started = ipcServer.start(
+            [&ipcContext](const std::string& line)
+            {
+                return gmpi::standalone::mcp::dispatchCommand(ipcContext, line);
+            });
+
+        // Printed rather than silent: it is how you find the socket to point
+        // socat at, and its absence is the first thing to check when a client
+        // reports no running apps.
+        if (started)
+            fprintf(stderr, "command channel: %s\n", ipcServer.socketPath().c_str());
+        else
+            fprintf(stderr, "command channel: unavailable (no writable runtime directory).\n");
+    }
+
     std::signal(SIGTERM, onTerminationSignal);
     std::signal(SIGINT,  onTerminationSignal);
 
@@ -251,6 +328,16 @@ int main(int argc, char** argv)
             frame.close();
             return;
         }
+
+        // Commands from the socket. This is the ONLY point at which they run:
+        // the listener thread never touches the plugin, it just parks here
+        // until we get to it (mcp/MainThreadQueue.h explains why the tick has
+        // to be the marshaller on Wayland).
+        //
+        // BEFORE the timer pump, not after: a --set-param queues the value for
+        // the processor, and the pump is what delivers it. Draining first means
+        // a parameter set now is audible this tick rather than the next one.
+        ipcServer.mainThreadQueue().drain();
 
         // gmpi_ui's timers have no native source on Linux, so the loop is the
         // source. This is what drives the host's parameter queues and the
@@ -266,6 +353,11 @@ int main(int argc, char** argv)
         // driver's threads with a click still on the stack.
         settingsPane->pumpDeferred();
     });
+
+    // FIRST, and on this thread: stop() refuses further model access before it
+    // joins the listener, so no command can still be reaching for the host,
+    // the editor or the drivers that the next three lines tear down.
+    ipcServer.stop();
 
     // Stop the audio and MIDI threads before anything they touch goes away.
     host.stopMidi();
