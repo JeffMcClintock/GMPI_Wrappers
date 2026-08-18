@@ -1,8 +1,5 @@
 #include "FrameCapture.h"
 
-#include <algorithm>
-#include <cmath>
-
 #include "ToplevelWindowMac.h"
 
 namespace gmpi
@@ -87,8 +84,12 @@ bool FrameCapture::capture(bool forceRedraw,
     const NSRect bounds = [view bounds];
     const float scale = window_.rasterizationScale();
 
-    const int pixelWidth  = static_cast<int>(std::lround(bounds.size.width  * scale));
-    const int pixelHeight = static_cast<int>(std::lround(bounds.size.height * scale));
+    // The same measurement the shell reports for --info, and taken from the same
+    // place on purpose: a caller divides one by the other to recover the scale,
+    // so a bitmap sized here by different arithmetic would make that ratio lie.
+    int pixelWidth  = 0;
+    int pixelHeight = 0;
+    window_.canvasSize(pixelWidth, pixelHeight);
 
     if (pixelWidth <= 0 || pixelHeight <= 0)
     {
@@ -96,16 +97,29 @@ bool FrameCapture::capture(bool forceRedraw,
         return false;
     }
 
-    const bool sizeChanged = (pixelWidth != width_ || pixelHeight != height_);
-
-    if (!ensureContext(pixelWidth, pixelHeight))
-        return false;
-
-    // A caller that only wants the dimensions gets the last frame back rather
-    // than making the app paint. After a resize there is no last frame that
-    // means anything, so that case draws regardless.
-    if (forceRedraw || !haveFrame_ || sizeChanged)
+    // The contract in mcp/CommandDispatcher.h: only a caller that asks for a
+    // redraw gets one. A verb that merely wants to look at the frame must not
+    // make the whole editor paint to answer.
+    //
+    // What the unforced form can hand back is narrower here than on the other
+    // two shells, and the difference is not laziness but what there is to read.
+    // Windows reads its swap chain and Linux its shm buffer, so both report the
+    // frame the USER is looking at. Nothing equivalent is in reach here:
+    // gmpi_ui's copy is DrawingFrameCocoa::backBuffer, private to
+    // backends/DrawingFrameMac.mm; the window server's copy needs a screen
+    // capture API (CGWindowListCreateImage is deprecated as of macOS 14,
+    // ScreenCaptureKit is consent-gated); and -cacheDisplayInRect: is the
+    // re-render below under a different name. The app's own paints go to the
+    // screen and never into the bitmap here.
+    //
+    // So the only frame this file can produce without painting is the one it
+    // drew itself, on the last forced capture - and where there is none it says
+    // so rather than quietly painting one.
+    if (forceRedraw)
     {
+        if (!ensureContext(pixelWidth, pixelHeight))
+            return false;
+
         @autoreleasepool
         {
             // Points to backing pixels. The view's own coordinate system is in
@@ -136,6 +150,21 @@ bool FrameCapture::capture(bool forceRedraw,
         }
 
         haveFrame_ = true;
+    }
+    else if (!haveFrame_)
+    {
+        lastError_ = "nothing has been captured yet - on macOS only a screenshot paints";
+        return false;
+    }
+    else if (pixelWidth != width_ || pixelHeight != height_)
+    {
+        // A capture at the previous size is not a stale view of this window, it
+        // is a picture of a different one - and it would be handed over with the
+        // OLD dimensions, which no longer divide into the window's logical size
+        // by the scale factor --info reports. A caller mapping a coordinate onto
+        // that PNG would land somewhere else entirely, so this refuses.
+        lastError_ = "the window has been resized since the last capture";
+        return false;
     }
 
     pixels = pixels_.data();

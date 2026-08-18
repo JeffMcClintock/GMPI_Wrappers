@@ -48,11 +48,19 @@ if (!apps.count) {
   process.exit(1);
 }
 
+// BEFORE the screenshot, deliberately - do not reorder. The geometry is read
+// from the window rather than from a captured frame, and this is the only thing
+// that proves it: on macOS nothing fills the app's capture bitmap except a
+// screenshot, so a --info that measured a frame would report nothing at all
+// here while passing perfectly well if this block ran further down the file.
 console.log("\ninfo");
 const info = await callTool("gmpi_info");
 check("reports plugin name", !!info.name, info.name);
-check("reports window geometry", info.windowWidth > 0 && info.canvasWidth > 0,
+check("reports window geometry before any screenshot",
+      info.windowWidth > 0 && info.canvasWidth > 0,
       `${info.windowWidth}x${info.windowHeight} DIP, ${info.canvasWidth}x${info.canvasHeight} px, scale ${info.scale}`);
+check("the two spaces agree on the scale",
+      Math.abs(info.canvasWidth / info.windowWidth - info.scale) < 1e-6, `scale ${info.scale}`);
 
 console.log("\nparameters");
 const list = await callTool("gmpi_list_params");

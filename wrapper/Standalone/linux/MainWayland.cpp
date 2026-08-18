@@ -211,6 +211,21 @@ public:
         width  = static_cast<float>(frame_.logicalWidth());
         height = static_cast<float>(frame_.logicalHeight());
     }
+
+    void canvasSize(int& width, int& height) override
+    {
+        // Deliberately NOT frameBuffer()'s dimensions, which exist only after
+        // the first present: this has to answer before anything has painted.
+        //
+        // The arithmetic is copied from WaylandFrameBase::present(), which sizes
+        // that buffer exactly this way, so the two agree to the pixel - including
+        // the rounding, which under fractional scaling is what decides whether a
+        // 1.25x window is 800 or 801 pixels wide.
+        const float scale = frame_.getRasterizationScale();
+
+        width  = static_cast<int>(frame_.logicalWidth()  * scale + 0.5f);
+        height = static_cast<int>(frame_.logicalHeight() * scale + 0.5f);
+    }
 #endif
 
 private:

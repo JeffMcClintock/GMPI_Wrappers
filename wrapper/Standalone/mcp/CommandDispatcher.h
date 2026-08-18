@@ -36,14 +36,41 @@ struct AppContext
     StandaloneHost* host{};
 
     /// The app's own on-screen pixels, in the compositor's XRGB8888 layout.
-    /// Returns false before the first frame has been drawn.
+    /// Returns false when there is no frame to hand over: everywhere before the
+    /// first one, and on macOS - whose shell has no readable frame of its own,
+    /// only what it last drew for a screenshot - also unforced after a resize
+    /// (mac/FrameCapture.h says why).
     ///
-    /// Takes a redraw flag rather than always presenting: a screenshot wants
-    /// the very latest frame (so a parameter set on the line before is
-    /// visible), while --info only wants the dimensions and should not force
-    /// the app to paint just to answer a question.
+    /// Takes a redraw flag rather than always presenting, because a screenshot
+    /// wants the very latest frame - so a parameter set on the line before is
+    /// visible - and a verb that merely reads the frame does not want to make
+    /// the whole editor paint to answer.
+    ///
+    /// ONLY A SCREENSHOT ASKS FOR PIXELS. Anything after the window's
+    /// dimensions asks canvasSize below, which is why --info neither paints nor
+    /// depends on a frame existing.
+    ///
+    /// Which leaves exactly one caller, passing TRUE - so the unforced path is
+    /// currently unexercised, and worth checking by hand before relying on it.
+    /// It is kept rather than removed because each shell answers it meaningfully
+    /// and differently (Wayland hands back the buffer it has already presented,
+    /// without asking the CPU backend to redraw it), and because "the frame as
+    /// it stands, cheaply" is the natural shape of the next verb that wants
+    /// pixels repeatedly.
     std::function<bool(bool forceRedraw,
                        const uint8_t*& pixels, int& width, int& height, int& stride)> framePixels;
+
+    /// Window size in PIXELS - the space a screenshot is measured in, and the
+    /// dimensions framePixels would report.
+    ///
+    /// Separate from framePixels because it is a question about the WINDOW, not
+    /// about a frame: a window has a size from the moment it exists, painted
+    /// into or not. Deriving it from a captured frame instead made --info's
+    /// answer depend on a screenshot having been taken first, which on macOS is
+    /// the only thing that fills the capture bitmap at all.
+    ///
+    /// Zero on both before there is a window.
+    std::function<void(int& width, int& height)> canvasSize;
 
     /// Where synthetic pointer events enter: the SAME IInputClient a real
     /// mouse reaches, so hover state, mouse capture and the menu bar all

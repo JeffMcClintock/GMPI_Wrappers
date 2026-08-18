@@ -1,6 +1,7 @@
 #include "ToplevelWindowMac.h"
 
 #include <algorithm>
+#include <cmath>
 
 // The three entry points gmpi_ui's Cocoa frame exposes to C++. Declared here
 // rather than reached through a header, matching how every other consumer of
@@ -247,6 +248,25 @@ void ToplevelWindowMac::logicalSize(float& width, float& height) const
     const NSSize size = [v bounds].size;
     width  = static_cast<float>(size.width);
     height = static_cast<float>(size.height);
+}
+
+void ToplevelWindowMac::canvasSize(int& width, int& height) const
+{
+    width = height = 0;
+
+    float points[2]{};
+    logicalSize(points[0], points[1]);
+    if (points[0] <= 0.0f || points[1] <= 0.0f)
+        return;
+
+    // std::lround, matching the CGBitmapContext FrameCapture allocates. Points
+    // are CGFloat and the backing scale is fractional on nothing Apple ships
+    // today, but the AppKit APIs promise neither, so the rounding is stated
+    // rather than left to a truncating cast.
+    const float scale = rasterizationScale();
+
+    width  = static_cast<int>(std::lround(points[0] * scale));
+    height = static_cast<int>(std::lround(points[1] * scale));
 }
 
 int ToplevelWindowMac::runEventLoop()

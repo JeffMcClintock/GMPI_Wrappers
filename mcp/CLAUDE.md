@@ -52,6 +52,11 @@ is why the pointer verbs take window coordinates rather than plugin-relative
 ones. The app's menu bar occupies the strip above `editorOriginY`; a plugin
 coordinate `(x, y)` is window `(x, y + editorOriginY)`.
 
+All four numbers come from the **window**, not from a captured frame, so
+`gmpi_info` reports them on an app that has never been screenshotted and
+repaints nothing to do it. Ask it first and place clicks straight away; there is
+no "take a screenshot to learn the scale" step, on any platform.
+
 ## Instruments vs effects
 
 The single most common way to get a useless answer: exciting the plugin the

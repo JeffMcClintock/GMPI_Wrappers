@@ -327,6 +327,17 @@ public:
         // from what the editor was arranged at.
         window_.logicalSize(width, height);
     }
+
+    void canvasSize(int& width, int& height) override
+    {
+        // The one platform where this is not a convenience: nothing here paints
+        // into FrameCapture's bitmap except FrameCapture itself, so before the
+        // first screenshot there are no pixels to measure and --info would
+        // otherwise have nothing to report. The window's geometry is available
+        // the whole time, and the same arithmetic FrameCapture sizes its bitmap
+        // with lives in ToplevelWindowMac so the two cannot disagree.
+        window_.canvasSize(width, height);
+    }
 #endif
 
 private:

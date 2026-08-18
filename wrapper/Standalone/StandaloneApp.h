@@ -292,6 +292,21 @@ public:
     // fractional scaling is not the pixel size above.
     virtual void logicalSize(float& width, float& height) = 0;
 
+    // The same window in PIXELS - the space a screenshot is measured in, and
+    // the dimensions of the buffer framePixels() would hand back.
+    //
+    // GEOMETRY, NOT PIXELS, and that distinction is the whole reason this is a
+    // separate question. A window has a size the moment it exists, whether or
+    // not anything has painted into it, so --info can report it on a freshly
+    // started app; asking framePixels(false, ...) for the same numbers made the
+    // answer depend on a frame being available, which on macOS means a
+    // screenshot having been taken first (mac/FrameCapture.h says why).
+    //
+    // Zero on both when there is no window yet. Every shell derives it from the
+    // window and the scale factor by the same arithmetic its own frame uses to
+    // size its buffer, so this and a screenshot cannot report different numbers.
+    virtual void canvasSize(int& width, int& height) = 0;
+
 #endif
 };
 

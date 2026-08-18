@@ -111,6 +111,15 @@ public:
     // and the space a screenshot is measured in at scale 1.
     void logicalSize(float& width, float& height) const;
 
+    // The same area in BACKING PIXELS - what a capture of this window measures.
+    //
+    // Here rather than at the two call sites (FrameCapture, and the shell's
+    // answer to --info) so that the rounding is written once: the two must agree
+    // to the pixel or a caller dividing one by the logical size gets a scale
+    // factor that does not match the bitmap it was handed. Zero on both before
+    // there is a view.
+    void canvasSize(int& width, int& height) const;
+
     // Runs until the window closes. Returns the process exit code.
     int runEventLoop();
 

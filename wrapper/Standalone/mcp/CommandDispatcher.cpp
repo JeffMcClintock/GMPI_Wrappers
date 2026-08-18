@@ -168,6 +168,19 @@ std::string cmdInfo(AppContext& context)
            .str("id", info->id)
            .str("vendor", info->vendorName)
            .num("parameterCount", static_cast<double>(info->parameters.size()));
+
+        // The plugin's declared version, read by the SDK's parser - the same
+        // string the VST3 factory reports to a DAW. gmpi_plugin.cmake stamps
+        // this executable's VERSIONINFO resource from that same attribute but
+        // by its own text search, so this is the value to trust where the two
+        // disagree (gmpi::hosting::pluginInfo::version says when they can).
+        //
+        // Guarded because the field is in the SDK repo, which can be older than
+        // this one; an older SDK simply omits the field rather than failing to
+        // build.
+#ifdef GMPI_HOSTING_PLUGININFO_HAS_VERSION
+        obj.str("version", info->version);
+#endif
     }
 
     // "audioRunning" is asked of the DRIVER, not of whether startAudio()
@@ -220,22 +233,32 @@ std::string cmdInfo(AppContext& context)
 
     // Both spaces, never conflated: pointer verbs speak DIPs, screenshots are
     // measured in pixels, and under fractional scaling those differ.
+    //
+    // BOTH ARE ASKED OF THE WINDOW, and neither costs a paint. That is what lets
+    // --info be the FIRST thing a client does: a caller has to know the scale
+    // before it can place a click, and making it take a screenshot to find out
+    // would mean painting the editor to answer a question about its frame - and
+    // on macOS a screenshot is the only thing that ever fills the capture
+    // bitmap, so deriving these from it left --info with nothing to say at all
+    // until one had been taken.
     float logicalW = 0.0f, logicalH = 0.0f;
     if (context.logicalSize)
         context.logicalSize(logicalW, logicalH);
 
+    int canvasW = 0, canvasH = 0;
+    if (context.canvasSize)
+        context.canvasSize(canvasW, canvasH);
+
     obj.num("windowWidth", logicalW)
        .num("windowHeight", logicalH)
+       .num("canvasWidth", canvasW)
+       .num("canvasHeight", canvasH)
        .num("editorOriginY", context.editorOriginY);
 
-    const uint8_t* pixels = nullptr;
-    int w = 0, h = 0, stride = 0;
-    if (context.framePixels && context.framePixels(false, pixels, w, h, stride))
-    {
-        obj.num("canvasWidth", w).num("canvasHeight", h);
-        if (logicalW > 0.0f)
-            obj.num("scale", static_cast<double>(w) / logicalW);
-    }
+    // Reported rather than left to the caller's division, because a caller
+    // dividing zero by zero gets NaN rather than an answer it can test.
+    if (logicalW > 0.0f && canvasW > 0)
+        obj.num("scale", static_cast<double>(canvasW) / logicalW);
 
     return obj.done();
 }

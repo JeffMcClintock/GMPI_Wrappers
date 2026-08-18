@@ -18,6 +18,17 @@
                                     editor is soft on every Retina display.
       LSApplicationCategoryType     Music, so the Finder and Launchpad file it
                                     somewhere sensible.
+
+    The two version keys are the plugin's own version, not the app shell's:
+    gmpi_plugin.cmake reads the `version` attribute of <Plugin> in the plugin's
+    metadata XML and fills MACOSX_BUNDLE_BUNDLE_VERSION and
+    MACOSX_BUNDLE_SHORT_VERSION_STRING with it. A plugin that declares no
+    version gets 1.0.0.
+
+    Normally that is the same string --info reports and the VST3 factory tells a
+    host, but CMake finds the element by a text search rather than through the
+    SDK's parser; gmpi::hosting::pluginInfo::version lists the cases where the
+    two can differ, and which of them is authoritative.
 -->
 <plist version="1.0">
 <dict>

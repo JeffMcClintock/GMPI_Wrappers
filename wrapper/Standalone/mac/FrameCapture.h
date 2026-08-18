@@ -29,6 +29,18 @@
 // Output is BGRX8888 - the same layout the Wayland shell reports and the
 // Windows one converts to - so mcp/PngWriter and the MCP client beyond it see
 // one pixel format on every platform.
+//
+// The consequence of drawing rather than reading back, and the whole of this
+// file's asymmetry with the other two: the bitmap below only ever holds frames
+// THIS class drew. The app's own paints go to the screen, so a caller that does
+// not ask for a redraw has nothing here to be handed until a forced capture has
+// run - and gets an honest no rather than a paint. capture() says why that is
+// the only frame within reach on this backend.
+//
+// Nothing else in the app is narrowed by that. The one thing a caller used to
+// come here for without wanting a picture - how big the canvas is - is answered
+// from the window instead, by PlatformShell::canvasSize, on every platform
+// alike.
 
 #include <cstdint>
 #include <string>
@@ -53,12 +65,20 @@ public:
     ///
     /// `forceRedraw` paints first, so a screenshot taken right after
     /// --set-param shows the new value rather than a frame that predates the
-    /// command. False reuses the last capture when there is one, so --info can
-    /// report the dimensions without making the app paint to answer a question.
+    /// command. It is the only thing in this file that paints.
+    ///
+    /// False never paints: it hands back the last forced capture if that
+    /// capture is still the size of the window, and otherwise fails. So on this
+    /// platform there is nothing to be had here before the first screenshot.
+    ///
+    /// That is a restriction on PIXELS only. The window's dimensions are
+    /// geometry and need no paint at all, so nobody asks for them through this
+    /// method: PlatformShell::canvasSize answers them from the window itself,
+    /// which is what --info reports and what this file sizes its bitmap by.
     ///
     /// The returned pointer is owned by this object and stays valid until the
-    /// next call. False means there is nothing to draw yet (no view, or a
-    /// window with no area).
+    /// next call. False means there is nothing to hand back - no view, no area,
+    /// or no capture at the window's current size - and lastError() says which.
     bool capture(bool forceRedraw,
                  const uint8_t*& pixels, int& width, int& height, int& stride);
 

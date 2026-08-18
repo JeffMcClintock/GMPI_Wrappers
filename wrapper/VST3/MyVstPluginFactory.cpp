@@ -125,6 +125,34 @@ std::string calcSubCategories(gmpi::hosting::pluginInfo const& plugin)
 	return "Fx";
 }
 
+// The plugin's own version, as declared by the `version` attribute of <Plugin>
+// in its metadata XML and read by the SDK's parser. What the DAW is told, and
+// the authoritative answer.
+//
+// gmpi_plugin.cmake stamps the macOS bundle and the Windows VERSIONINFO
+// resource from that same attribute, so a host and Explorer normally agree
+// about what is installed - but CMake finds the element by a text search rather
+// than through this parser, and gmpi::hosting::pluginInfo::version lists the
+// cases where the two can differ. When they do, this is the one that is right.
+//
+// Read through a guard because pluginInfo::version arrived in the SDK after
+// this wrapper existed, and the two are separate repositories that are
+// routinely at different revisions. An older SDK gets "1.0.0", which is what
+// this factory reported unconditionally before, so nothing regresses.
+namespace
+{
+std::string pluginVersion(gmpi::hosting::pluginInfo const& plugin)
+{
+#ifdef GMPI_HOSTING_PLUGININFO_HAS_VERSION
+	if (!plugin.version.empty())
+		return plugin.version;
+#else
+	(void)plugin;
+#endif
+	return "1.0.0";
+}
+}
+
 MyVstPluginFactory* MyVstPluginFactory::GetInstance()
 {
 	static MyVstPluginFactory singleton;
@@ -275,14 +303,14 @@ tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
 		return kInvalidArgument;
 	}
 
-	std::string version{ "1.0.0" }; // for now
-
 	const int pluginIndex = index / 2;
 	const int classIndex = index % 2;
 
 	auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo(pluginIndex);
 	if (!plugin)
 		return kResultFalse;
+
+	const auto version = pluginVersion(*plugin);
 
 	Steinberg::TUID procUUid{};
 	Steinberg::TUID ctrlUUid{};
@@ -294,7 +322,7 @@ tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
 	strncpy8 (info->name, plugin->name.c_str(), PClassInfo::kNameSize );
 	strncpy8 (info->sdkVersion, kVstVersionString, PClassInfo2::kVersionSize );
 	strncpy8 (info->vendor, plugin->vendorName.c_str(), PClassInfo2::kVendorSize );
-	strncpy8 (info->version, /*pluginInfo_.version_*/version.c_str(), PClassInfo2::kVersionSize );
+	strncpy8 (info->version, version.c_str(), PClassInfo2::kVersionSize );
 
 	const auto subCategories = calcSubCategories(*plugin);
 
@@ -329,14 +357,14 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 		return kInvalidArgument;
 	}
 
-	std::string version{ "1.0.0" }; // for now
-
 	const int pluginIndex = index / 2;
 	const int classIndex = index % 2;
 
 	auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo(pluginIndex);
 	if (!plugin)
 		return kResultFalse;
+
+	const auto version = pluginVersion(*plugin);
 
 	Steinberg::TUID procUUid{};
 	Steinberg::TUID ctrlUUid{};
@@ -363,7 +391,7 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 	info->cardinality = PClassInfo::kManyInstances;
 
 	str8ToStr16 (info->sdkVersion, kVstVersionString, PClassInfo2::kVersionSize );
-	str8ToStr16 (info->version, /*pluginInfo_.version_*/version.c_str(), PClassInfo2::kVersionSize );
+	str8ToStr16 (info->version, version.c_str(), PClassInfo2::kVersionSize );
 	str8ToStr16 (info->vendor, plugin->vendorName.c_str(), PClassInfo2::kVendorSize );
 	str8ToStr16 (info->name, plugin->name.c_str(), PClassInfo::kNameSize );
 

@@ -50,6 +50,68 @@ std::string attributeOr(const char* attribute, std::string def)
     return attribute ? attribute : def;
 }
 
+// An AudioComponent's version is a single integer, and Apple packs it as
+// 0xMMMMmmbb: SIXTEEN bits of major, then eight of minor and eight of bug-fix.
+// So 0x00010000, decimal 65536, is 1.0.0. It is the only version macOS's
+// AudioComponent registry carries, and what an AU host displays, so a plugin
+// that never changes this number looks unchanged to the host no matter what
+// shipped.
+//
+// The field widths are why the clamps below are not all the same. An earlier
+// draft clamped all three to 255 - which agrees with the shifts, and would have
+// pinned any plugin that ever reached major 256 at 255 forever. The format is
+// Apple's, so the code follows the format rather than the other way round.
+//
+// Reads the leading numbers of the declared version and ignores any tail, so
+// "2.1.0-beta" is 2.1.0 here while the bundle's own version strings keep the
+// text the author wrote. Each field is clamped rather than allowed to carry
+// into the one above it, which also keeps the running total from overflowing on
+// a long run of digits.
+constexpr uint32_t auVersionDefault = 65536; // 1.0.0
+
+uint32_t auVersionInteger(const std::string& version)
+{
+    // Index 0 is the 16-bit major; 1 and 2 are the two 8-bit fields.
+    unsigned int part[3]{};
+    const unsigned int limit[3]{ 65535, 255, 255 };
+    int index{};
+
+    for (auto c = version.begin(); c != version.end() && index < 3; ++c)
+    {
+        if (*c >= '0' && *c <= '9')
+        {
+            part[index] = part[index] * 10 + static_cast<unsigned int>(*c - '0');
+
+            if (part[index] > limit[index])
+                part[index] = limit[index];
+        }
+        else if (*c == '.')
+        {
+            ++index;
+        }
+        else
+        {
+            break; // a non-numeric tail ends the version proper.
+        }
+    }
+
+    const uint32_t packed = (part[0] << 16) | (part[1] << 8) | part[2];
+
+    // A version that begins with anything but a digit - "v1.2", "beta" - parses
+    // to nothing, and zero is the one value that must not be published: a host
+    // reads an AudioComponent version of 0 as older than every build that came
+    // before it, so an AU that shipped as 1.0.0 and then adopted a "v"-prefixed
+    // version would appear to go BACKWARDS. Before this attribute existed this
+    // tool wrote 65536 unconditionally, so falling back to it leaves such a
+    // plugin exactly where it already was rather than behind itself.
+    //
+    // A plugin that deliberately declares 0.0.0 is caught by the same test and
+    // published as 1.0.0. It is not distinguishable from a parse failure here,
+    // and of the two readings this is the safe one - the other publishes a
+    // version every host treats as a downgrade.
+    return packed == 0 ? auVersionDefault : packed;
+}
+
 int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, std::string exeName, std::ostream& out)
 {
     MP_DllEntry dll_entry_point{};
@@ -134,6 +196,21 @@ int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, std::string exe
 
         auto plugin_code = to4charId(plugin_id);
         auto name = attributeOr(PluginElement->Attribute("name"), "GMPI Plugin");
+
+        // The one place a plugin's version is written, and read here out of the
+        // XML this tool pulled from the BUILT MODULE - literally the document
+        // the VST3 factory parses at load, so the AU and the VST3 cannot report
+        // different versions of the same plugin.
+        //
+        // gmpi_plugin.cmake reads that attribute too, to stamp the Windows
+        // VERSIONINFO resource, but by searching the sources as text rather than
+        // by loading the module; gmpi::hosting::pluginInfo::version says where
+        // that can differ. "1.0.0" when the plugin declares none - the version
+        // this tool's AudioComponent integer hardcoded before, and
+        // gmpi::hosting::defaultPluginVersion.
+        auto version = attributeOr(PluginElement->Attribute("version"), "1.0.0");
+        if (version.empty())
+            version = "1.0.0";
 
         if (auto v = PluginElement->Attribute("vendor"); v)
         {
@@ -236,11 +313,10 @@ if (isSynth)
 }
 
 out << "\t\t\t<key>type</key>\n";
-out << "\t\t\t<string>" << effect_code << "</string>";
-out << R"XML(
-			<key>version</key>
-			<integer>65536</integer>
-		</dict>
+out << "\t\t\t<string>" << effect_code << "</string>\n";
+out << "\t\t\t<key>version</key>\n";
+out << "\t\t\t<integer>" << auVersionInteger(version) << "</integer>\n";
+out << R"XML(		</dict>
 	</array>)XML";
 
 		//out << "\t<key>CFBundleName</key>\n";
@@ -265,9 +341,25 @@ out << "\t<string>com." << vendor_code << "." << plugin_id << "</string>";
 out << R"XML(
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>CFBundleLongVersionString</key>
-	<string></string>
-	<key>CFBundlePackageType</key>
+)XML";
+
+// The bundle's own version, as opposed to the AudioComponent's integer above.
+// This plist REPLACES the one CMake generated, so the MACOSX_BUNDLE_* version
+// properties gmpi_plugin.cmake sets on the target do not survive into a
+// .component - these three keys are the only bundle version an AU ends up with,
+// and before this the first was empty and the other two were absent entirely.
+// Written verbatim, so a version with a tail ("2.1.0-beta") reads the way the
+// author wrote it; note that Apple wants period-separated integers in
+// CFBundleShortVersionString and CFBundleVersion, so such a version would fail
+// App Store validation.
+out << "\t<key>CFBundleLongVersionString</key>\n";
+out << "\t<string>" << version << "</string>\n";
+out << "\t<key>CFBundleShortVersionString</key>\n";
+out << "\t<string>" << version << "</string>\n";
+out << "\t<key>CFBundleVersion</key>\n";
+out << "\t<string>" << version << "</string>\n";
+
+out << R"XML(	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>

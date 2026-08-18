@@ -44,7 +44,7 @@ void CommandChannelHost::start(StandaloneHost& host, AppLayout& layout, Platform
     // what a caller adds to convert a plugin-relative coordinate.
     context.editorOriginY = MenuBarView::kHeight;
 
-    // The two questions only a platform can answer. Where the pixels come from
+    // The three questions only a platform can answer. Where the pixels come from
     // differs completely between the three - an shm buffer, a swap-chain
     // readback, a second draw of an NSView - and none of that is visible from
     // here, which is the point of routing them through the shell.
@@ -57,6 +57,14 @@ void CommandChannelHost::start(StandaloneHost& host, AppLayout& layout, Platform
     context.logicalSize = [&shell](float& w, float& h)
     {
         shell.logicalSize(w, h);
+    };
+
+    // The window's two measurements are asked as two questions, never derived
+    // from a frame: a shell whose capture bitmap is empty until a screenshot has
+    // been taken still knows perfectly well how big its window is.
+    context.canvasSize = [&shell](int& w, int& h)
+    {
+        shell.canvasSize(w, h);
     };
 
     // Input enters at the layout, which is what the frame has attached and

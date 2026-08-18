@@ -240,6 +240,23 @@ public:
         width  = scale > 0.0f ? client.right  / scale : static_cast<float>(client.right);
         height = scale > 0.0f ? client.bottom / scale : static_cast<float>(client.bottom);
     }
+
+    void canvasSize(int& width, int& height) override
+    {
+        // The client rect IS the pixel size here: GetClientRect reports physical
+        // pixels for a per-monitor-DPI-aware window, and the swap chain is
+        // created with a zero-sized DXGI_SWAP_CHAIN_DESC1, which makes DXGI take
+        // its extent from that same client area. So this is the number a
+        // screenshot comes back with, without needing one to have been taken.
+        //
+        // Read straight rather than as logicalSize() * scale, so the two answers
+        // divide into exactly the scale factor the frame is using.
+        RECT client{};
+        ::GetClientRect(window_.hwnd(), &client);
+
+        width  = client.right;
+        height = client.bottom;
+    }
 #endif
 
 private:

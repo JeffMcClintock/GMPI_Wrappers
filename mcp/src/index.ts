@@ -104,7 +104,8 @@ server.registerTool(
   {
     description:
       "Describe the running plugin: name, id, vendor, audio channel counts, whether it takes MIDI, whether audio is running, and the device's sample rate. " +
-      "Also reports the window geometry needed to map between spaces: windowWidth/windowHeight in logical DIPs (what the pointer tools take), canvasWidth/canvasHeight in pixels (what a screenshot is), their ratio as `scale`, and `editorOriginY` — the height of the app's menu bar, i.e. how far down the window the plugin's own editor starts.",
+      "Also reports the window geometry needed to map between spaces: windowWidth/windowHeight in logical DIPs (what the pointer tools take), canvasWidth/canvasHeight in pixels (what a screenshot is), their ratio as `scale`, and `editorOriginY` — the height of the app's menu bar, i.e. how far down the window the plugin's own editor starts. " +
+      "The geometry is read from the window itself, so it is correct on a freshly started app and does not need a screenshot first — call this before placing any pointer coordinate.",
     inputSchema: { pid: pidArg },
   },
   async ({ pid }) => one(["--info"], pid),

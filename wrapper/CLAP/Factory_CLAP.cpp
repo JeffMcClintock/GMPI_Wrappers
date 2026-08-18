@@ -28,7 +28,28 @@ ClapFactory::ClapFactory()
 	clap_desciptor.url         = plugin->vendorUrl.c_str();
 	clap_desciptor.manual_url  = "";
 	clap_desciptor.support_url = "";
+
+	// The plugin's declared version - the `version` attribute of <Plugin> in its
+	// metadata XML, read by the SDK's own parser, so this and what the VST3
+	// factory reports are one value. Borrowed from the pluginInfo like every
+	// other string here; that object belongs to the factory singleton and
+	// outlives this descriptor.
+	//
+	// gmpi_plugin.cmake stamps the .clap's VERSIONINFO resource from that same
+	// attribute, but by a textual search of the sources rather than through this
+	// parser, so the two agree in the ordinary case and not by construction -
+	// gmpi::hosting::pluginInfo::version says where they can part company. This
+	// is the value a host is told, and the authoritative one.
+	//
+	// Guarded because pluginInfo::version arrived in the SDK after this
+	// wrapper, and the two are separate repositories that are routinely at
+	// different revisions. An older SDK keeps the "1.0.0" this line held
+	// unconditionally before, so nothing regresses.
+#ifdef GMPI_HOSTING_PLUGININFO_HAS_VERSION
+	clap_desciptor.version     = plugin->version.c_str();
+#else
 	clap_desciptor.version     = "1.0.0";
+#endif
 	clap_desciptor.description = plugin->name.c_str();
 	clap_desciptor.features    = hasMidiInput ? instrument_features : effect_features;
 }
