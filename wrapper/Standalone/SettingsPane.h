@@ -128,8 +128,9 @@ private:
     // rates. applyAudio checks this before believing it.
     std::string sampleRatesDeviceId_;
 
-    // Status line under the audio controls: what actually opened, or why nothing
-    // did.
+    // Status line under the audio controls, and it carries one of three things:
+    // what actually opened, why nothing did, or - since a stream can end without
+    // anybody asking it to - why what had opened has stopped.
     std::string status_;
 
     // The line under THAT: what the device that did open could not give the

@@ -319,9 +319,37 @@ void StandaloneHost::stopAudio()
     processorLive_ = false;
 }
 
+bool StandaloneHost::isAudioRunning() const
+{
+    return audioRunning_ && audioDriver_ && audioDriver_->isStreamRunning();
+}
+
+std::string StandaloneHost::audioStoppedReason() const
+{
+    // Gated on the FLAG rather than on isAudioRunning(), which is the whole
+    // point of them being different: the case being reported is a stream this
+    // class started and did not stop. After stopAudio() the flag is down and
+    // there is nothing to tell anybody.
+    if (!audioRunning_ || !audioDriver_ || audioDriver_->isStreamRunning())
+        return {};
+
+    auto why = audioDriver_->stoppedReason();
+
+    // A driver is required to leave a sentence behind when its stream dies, but
+    // saying nothing at all about a stream that has stopped would be the bug
+    // this whole path exists to fix, so the generic answer stands in.
+    if (why.empty())
+        why = "Audio stopped: the device is no longer available.";
+
+    return why;
+}
+
 std::string StandaloneHost::audioWarning() const
 {
-    if (!audioDriver_ || !audioRunning_)
+    // isAudioRunning(), not the flag: a warning describes what the RUNNING
+    // stream cannot do for the plugin, and a stream that has died has stopped
+    // doing anything at all. Its own line on the settings page says so instead.
+    if (!isAudioRunning())
         return {};
 
     return audioDriver_->lastWarning();

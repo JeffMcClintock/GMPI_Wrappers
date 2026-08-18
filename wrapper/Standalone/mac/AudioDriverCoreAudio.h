@@ -83,6 +83,14 @@ public:
     std::string lastError() const override { return lastError_; }
     std::string lastWarning() const override { return warning_; }
 
+    bool isStreamRunning() const override { return streamRunning_; }
+
+    std::string stoppedReason() const override
+    {
+        const char* const why = stopReason_.load();
+        return why ? std::string(why) : std::string{};
+    }
+
 private:
     // --- realtime thread -------------------------------------------------
     static OSStatus renderProc(void* refCon,
@@ -98,6 +106,23 @@ private:
                               UInt32 busNumber,
                               UInt32 frames,
                               AudioBufferList* data);
+
+    // --- a HAL notification thread ---------------------------------------
+
+    // kAudioDevicePropertyDeviceIsAlive on the open device, which is how this
+    // platform says an interface has been unplugged. Nothing else here notices:
+    // AudioOutputUnitStart succeeds and then the IOProc simply stops being
+    // called, so without this listener the app would go on reporting a running
+    // stream at a device that is no longer on the desk.
+    //
+    // NOT the realtime thread, and not the main one either - the HAL delivers
+    // notifications on a thread of its own choosing. So this does what
+    // AudioMidiDevices.h::isStreamRunning asks of it and no more: two atomic
+    // stores, no allocation, no call back into anything.
+    static OSStatus deviceAliveProc(AudioObjectID object,
+                                    UInt32 addressCount,
+                                    const AudioObjectPropertyAddress* addresses,
+                                    void* clientData);
 
     // --- main thread -----------------------------------------------------
     // Resolves a settings-file id ("coreaudio:default", or a device UID) to a
@@ -170,6 +195,19 @@ private:
 
     std::atomic<bool> streamRunning_{ false };
     std::string lastError_;
+
+    // Whether deviceAliveProc is registered on device_, so that teardown()
+    // removes exactly the listeners open() added. A listener left behind on a
+    // driver that has been closed is a callback into a dead object.
+    bool aliveListener_ = false;
+
+    // AudioDriver::stoppedReason, and a string LITERAL rather than a
+    // std::string: it is written from a HAL notification thread while the main
+    // thread may be reading it, and a pointer to static text is what can cross
+    // that boundary without a lock. Null means nothing to report. Stored before
+    // streamRunning_ is lowered, so a reader that sees the stream stopped also
+    // sees why.
+    std::atomic<const char*> stopReason_{ nullptr };
 
     // AudioMidiDevices.h::lastWarning. Written on the main thread inside open()
     // - the only thread that decides whether the input opened - and cleared by

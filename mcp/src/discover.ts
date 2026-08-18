@@ -26,25 +26,36 @@ export interface RunningApp {
 
 /**
  * The Windows named-pipe namespace. A real directory as far as readdir is
- * concerned, and the only place a pipe can be published, so there is nothing
- * to search and no environment variable to consult.
+ * concerned, and the only place a pipe can be published: a pipe name is that
+ * prefix plus a leaf, with no directory component in it to point anywhere else.
+ * So there is nothing to search and no environment variable to consult.
  */
 const WINDOWS_PIPE_DIR = "\\\\.\\pipe\\";
 
 /**
  * The directories a standalone may publish its command channel in, in the same
- * order the app itself tries them (see mcp/IpcServer.h: chooseSocketPath).
+ * order the app itself tries them (see wrapper/Standalone/mcp/IpcServer.h:
+ * chooseSocketPath, and IpcServerWin.h beside it for the pipe).
  *
  * XDG_RUNTIME_DIR first because that is where a desktop session belongs: it is
  * per-user, mode 0700, on tmpfs, and cleared at logout. The /tmp fallback
  * exists for a bare ssh session or a container, where the pam module that
  * creates XDG_RUNTIME_DIR never ran.
+ *
+ * GMPI_STANDALONE_IPC_DIR overrides both, for a test that wants a directory of
+ * its own - and is read AFTER the win32 arm rather than before it, because
+ * IpcServerWin.h consults no environment at all. Honouring it there sent the
+ * client looking in an ordinary directory that no app ever publishes to, so a
+ * cross-platform script exporting the variable uniformly got an empty app list
+ * and no error to explain it. Windows needs no isolation of its own anyway: the
+ * pid already makes every name unique, and a pipe evaporates with its process
+ * instead of leaving a corpse for the next run to find.
  */
 export function channelDirs(): string[] {
+  if (process.platform === "win32") return [WINDOWS_PIPE_DIR];
+
   const override = process.env.GMPI_STANDALONE_IPC_DIR;
   if (override) return [override];
-
-  if (process.platform === "win32") return [WINDOWS_PIPE_DIR];
 
   const dirs: string[] = [];
   const uid = process.getuid?.();

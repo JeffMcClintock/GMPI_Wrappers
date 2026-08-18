@@ -170,6 +170,11 @@ std::string cmdInfo(AppContext& context)
            .num("parameterCount", static_cast<double>(info->parameters.size()));
     }
 
+    // "audioRunning" is asked of the DRIVER, not of whether startAudio()
+    // succeeded once (StandaloneHost::isAudioRunning): a device removed
+    // mid-session leaves a stream that has stopped, and this used to go on
+    // reporting true at it for the rest of the session - a harness waiting for
+    // audio to fail would have waited forever.
     obj.num("audioInputs", host->audioInputCount())
        .num("audioOutputs", host->audioOutputCount())
        .boolean("midiInput", host->wantsMidiInput())
@@ -197,6 +202,15 @@ std::string cmdInfo(AppContext& context)
     // to.
     if (!host->audioWarning().empty())
         obj.str("audioWarning", host->audioWarning());
+
+    // A fourth, and the only one that appears next to "audioRunning": false
+    // WITHOUT a "lastError" beside it: the stream opened, ran, and then stopped
+    // on its own (AudioMidiDevices.h::stoppedReason). Distinct from "lastError"
+    // - which means no stream was ever started - because those are two different
+    // things for a harness to do about it: one is a device that would not open,
+    // the other a device that has gone away since.
+    if (const auto stopped = host->audioStoppedReason(); !stopped.empty())
+        obj.str("audioStopped", stopped);
 
     if (auto* driver = host->audioDriver(); driver && host->isAudioRunning())
     {

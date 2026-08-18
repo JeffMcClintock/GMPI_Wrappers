@@ -246,7 +246,26 @@ public:
     bool startMidi(const MidiInputSelection& inputs);
     void stopMidi();
 
-    bool isAudioRunning() const { return audioRunning_; }
+    // Whether a sound is coming out, which is not the same question as whether
+    // startAudio() succeeded - and used to be answered as though it were.
+    //
+    // A stream can die where it stands (AudioMidiDevices.h::isStreamRunning), so
+    // the driver is asked every time rather than a flag being trusted: the flag
+    // below only records that THIS class started a stream and has not stopped
+    // it, and after a device was unplugged that flag and the truth are different
+    // things. The settings page and the command channel both used to read the
+    // flag, and both went on reporting "Running: 48000 Hz" at nothing.
+    bool isAudioRunning() const;
+
+    // Why the audio stream stopped ON ITS OWN, or empty - the third channel
+    // described in AudioMidiDevices.h::stoppedReason, and the only one that can
+    // fill up with no call having been made.
+    //
+    // Empty when audio never started (lastError() is that story), empty while it
+    // runs, and empty after a stopAudio() this app asked for. Non-empty is
+    // therefore exactly the news the app has to go and tell somebody, which is
+    // what runStandaloneApp's tick watches for.
+    std::string audioStoppedReason() const;
 
     // Why AUDIO is not running, or empty. MIDI has its own string below.
     std::string lastError() const { return lastError_; }
@@ -339,6 +358,8 @@ private:
     int audioOutCount_ = 0;
     bool hasMidiInPin_ = false;
 
+    // That a stream was STARTED here and not stopped here. Whether it is still
+    // running is the driver's to answer - see isAudioRunning() above.
     bool audioRunning_ = false;
     bool midiRunning_  = false;
     std::string lastError_;

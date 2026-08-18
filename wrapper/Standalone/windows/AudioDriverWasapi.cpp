@@ -439,6 +439,10 @@ bool AudioDriverWasapi::open(const std::string& deviceId,
     // Render FIRST, and this order is not negotiable: the capture stream opens
     // at whatever rate the render stream was granted, because the two are read
     // and written in the same callback and nothing here resamples between them.
+    //
+    // A true answer means the stream is not merely built but STARTED, and
+    // streamRunning_ is already raised - by that thread, not here. See the
+    // handshake in renderThread().
     auto renderReady = w_->renderReady.get_future();
     renderThread_ = std::thread(&AudioDriverWasapi::renderThread, this);
 
@@ -459,7 +463,6 @@ bool AudioDriverWasapi::open(const std::string& deviceId,
         captureReady.wait();
     }
 
-    streamRunning_ = true;
     return true;
 }
 
@@ -483,6 +486,12 @@ void AudioDriverWasapi::close()
     // This is the ONE place it is cleared, which is enough for the contract in
     // AudioMidiDevices.h::lastWarning because open() begins with close().
     warning_.clear();
+
+    // Likewise for the death sentence, and for the same reason the flag above
+    // is lowered here as well as on the render thread: a stop the app asked for
+    // is not news to it (AudioMidiDevices.h::stoppedReason), and the render
+    // thread that could still be writing this has been joined.
+    stopReason_ = nullptr;
 
     w_.reset();
     client_ = nullptr;
@@ -715,9 +724,37 @@ void AudioDriverWasapi::renderThread()
                 planarInPtr_.push_back(channel.data());
         }
 
+        // Prime with silence before Start(). An event-driven stream whose first
+        // buffer is never released stalls, and the engine's first event fires
+        // immediately - so there is no window in which to fill it afterwards.
+        {
+            BYTE* primed{};
+            if (SUCCEEDED(w_->render->GetBuffer(bufferFrameCount, &primed)))
+                w_->render->ReleaseBuffer(bufferFrameCount, AUDCLNT_BUFFERFLAGS_SILENT);
+        }
+
+        // Started INSIDE the handshake, so that a device which will not start is
+        // an open() that failed with a reason on it. Start() used to sit below
+        // the promise, where a failure produced the worst of both: open()
+        // returned true, the app reported a running stream, and not a sample was
+        // ever played - the same lie AudioDriver::isStreamRunning exists to stop
+        // a DYING stream from telling.
+        if (FAILED(w_->renderClient->Start()))
+        {
+            lastError_ = "The audio device would not start.";
+            break;
+        }
+
         ok = true;
     }
     while (false);
+
+    // Before the promise, not after: open() returns the moment that lands, and
+    // a caller must never see a started stream that answers isStreamRunning()
+    // with false. This thread is the only thing that raises it, which is what
+    // lets it be lowered below without open() racing it back up.
+    if (ok)
+        streamRunning_ = true;
 
     w_->renderReady.set_value(ok);
 
@@ -730,68 +767,98 @@ void AudioDriverWasapi::renderThread()
         DWORD taskIndex = 0;
         const HANDLE mmcss = ::AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
 
-        // Prime with silence before Start(). An event-driven stream whose first
-        // buffer is never released stalls, and the engine's first event fires
-        // immediately - so there is no window in which to fill it afterwards.
+        const HANDLE waitOn[2] = { w_->stopEvent, w_->renderEvent };
+
+        // Null while the stream is ours to end, a sentence once something else
+        // has ended it. The distinction is the whole point: close() signals
+        // stopEvent, and a stop the app asked for is not a death to report
+        // (AudioMidiDevices.h::stoppedReason).
+        const char* died = nullptr;
+
         BYTE* data{};
-        if (SUCCEEDED(w_->render->GetBuffer(bufferFrameCount, &data)))
-            w_->render->ReleaseBuffer(bufferFrameCount, AUDCLNT_BUFFERFLAGS_SILENT);
 
-        if (SUCCEEDED(w_->renderClient->Start()))
+        for (;;)
         {
-            const HANDLE waitOn[2] = { w_->stopEvent, w_->renderEvent };
+            // stopEvent is index 0: WaitForMultipleObjects reports the
+            // LOWEST signalled index, so a shutdown racing an audio event
+            // is seen as a shutdown rather than one more buffer.
+            const DWORD signalled = ::WaitForMultipleObjects(2, waitOn, FALSE, 2000);
 
-            for (;;)
+            if (signalled == WAIT_OBJECT_0)
+                break;
+
+            // A timeout means the engine has stopped asking, and there are two
+            // ordinary ways to arrive there. Either way this stream is finished
+            // and the user reopens from the settings page - which they will only
+            // think to do if the page has stopped claiming to be running.
+            if (signalled == WAIT_TIMEOUT)
             {
-                // stopEvent is index 0: WaitForMultipleObjects reports the
-                // LOWEST signalled index, so a shutdown racing an audio event
-                // is seen as a shutdown rather than one more buffer.
-                const DWORD signalled = ::WaitForMultipleObjects(2, waitOn, FALSE, 2000);
-
-                if (signalled == WAIT_OBJECT_0 || signalled == WAIT_FAILED)
-                    break;
-
-                // A timeout means the engine has stopped asking - the device
-                // was removed, or the service restarted. Either way this stream
-                // is finished; the user reopens from the settings page.
-                if (signalled == WAIT_TIMEOUT)
-                    break;
-
-                UINT32 padding = 0;
-                if (FAILED(w_->renderClient->GetCurrentPadding(&padding)))
-                    break;
-
-                const UINT32 frames = bufferFrameCount > padding
-                                    ? bufferFrameCount - padding : 0;
-                if (frames == 0)
-                    continue;
-
-                if (FAILED(w_->render->GetBuffer(frames, &data)))
-                    break;
-
-                if (inChannels_ > 0)
-                    ringRead(planarInPtr_.data(), inChannels_, frames);
-
-                {
-                    // Per call rather than once for the thread, so that all
-                    // three drivers apply it the same way - the other two are
-                    // handed a thread they do not own and have no other option.
-                    const ScopedNoDenormals noDenormals;
-
-                    client_->processAudio(
-                        static_cast<int>(frames),
-                        inChannels_ > 0 ? planarInPtr_.data() : nullptr, inChannels_,
-                        planarOutPtr_.data(), outChannels_);
-                }
-
-                interleaveOut(reinterpret_cast<float*>(data), static_cast<int>(frames));
-
-                if (FAILED(w_->render->ReleaseBuffer(frames, 0)))
-                    break;
+                died = "Audio stopped: the device was removed, or the audio service restarted.";
+                break;
             }
 
-            w_->renderClient->Stop();
+            // Every remaining way out of this loop - the wait itself failing,
+            // and each of the three calls below refusing one it has served a
+            // thousand times - shares one sentence. Which of them spoke first is
+            // a debugger's question; all the user can do about any of them is
+            // pick a device again.
+            if (signalled == WAIT_FAILED)
+            {
+                died = "Audio stopped: the device reported an error.";
+                break;
+            }
+
+            UINT32 padding = 0;
+            if (FAILED(w_->renderClient->GetCurrentPadding(&padding)))
+            {
+                died = "Audio stopped: the device reported an error.";
+                break;
+            }
+
+            const UINT32 frames = bufferFrameCount > padding
+                                ? bufferFrameCount - padding : 0;
+            if (frames == 0)
+                continue;
+
+            if (FAILED(w_->render->GetBuffer(frames, &data)))
+            {
+                died = "Audio stopped: the device reported an error.";
+                break;
+            }
+
+            if (inChannels_ > 0)
+                ringRead(planarInPtr_.data(), inChannels_, frames);
+
+            {
+                // Per call rather than once for the thread, so that all
+                // three drivers apply it the same way - the other two are
+                // handed a thread they do not own and have no other option.
+                const ScopedNoDenormals noDenormals;
+
+                client_->processAudio(
+                    static_cast<int>(frames),
+                    inChannels_ > 0 ? planarInPtr_.data() : nullptr, inChannels_,
+                    planarOutPtr_.data(), outChannels_);
+            }
+
+            interleaveOut(reinterpret_cast<float*>(data), static_cast<int>(frames));
+
+            if (FAILED(w_->render->ReleaseBuffer(frames, 0)))
+            {
+                died = "Audio stopped: the device reported an error.";
+                break;
+            }
         }
+
+        w_->renderClient->Stop();
+
+        // The stream is over however it got here. The reason goes down first so
+        // that the main thread, which sees the flag drop and then asks why,
+        // cannot find an empty answer.
+        if (died)
+            stopReason_ = died;
+
+        streamRunning_ = false;
 
         if (mmcss)
             ::AvRevertMmThreadCharacteristics(mmcss);

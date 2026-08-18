@@ -262,6 +262,11 @@ int runStandaloneApp(PlatformShell& shell)
 
     const auto services = shell.backendServices();
 
+    // What the tick below compares against to notice a stream that has stopped
+    // on its own. Seeded from the state startAudio left behind, so an app that
+    // never got a device is not reported as having lost one.
+    bool audioWasRunning = host.isAudioRunning();
+
     const int exitCode = shell.runEventLoop([&](int elapsedMs)
     {
         if (terminationRequested.load(std::memory_order_relaxed))
@@ -292,6 +297,45 @@ int runStandaloneApp(PlatformShell& shell)
         // Re-opening an audio device there would mean joining the driver's
         // threads with a click still on the stack.
         settingsPane->pumpDeferred();
+
+        // A stream that stopped without being asked to: the interface unplugged,
+        // the audio service restarted, the server dropping the client. The
+        // driver discovered it on a thread that could do nothing about it and
+        // left a flag (AudioMidiDevices.h::isStreamRunning); this is the main
+        // thread noticing, which is the first moment anything may be said or
+        // done about it.
+        //
+        // AFTER pumpDeferred, so that a device the user has just applied is
+        // already open and this compares against what they now have.
+        //
+        // Reported and no more. Nothing reopens a device here - see the same
+        // note on isStreamRunning - and the page is NOT switched to as it is on
+        // a failed startup: the plugin's editor is on screen and the user is
+        // using it, and a settings page appearing over the top of a knob being
+        // dragged is its own fault report. Startup could switch because there
+        // was nothing to interrupt.
+        const bool audioIsRunning = host.isAudioRunning();
+
+        if (audioWasRunning && !audioIsRunning)
+        {
+            // Empty when it was the app's own doing - the user applied a device
+            // that would not open, and applyAudio has already put lastError() on
+            // the page. Only a death has something to announce.
+            if (const auto why = host.audioStoppedReason(); !why.empty())
+            {
+                // No "Audio: " prefix, unlike the startup report above: the
+                // driver's sentence already names itself, and this one goes out
+                // whole so a log and the settings page say the same words.
+                shell.reportStatus(why);
+
+                // The page's status line is built by reload(), so without this
+                // it would go on saying "Running" for as long as it was left
+                // open - which is the whole of the fault this path exists for.
+                settingsPane->reload();
+            }
+        }
+
+        audioWasRunning = audioIsRunning;
     });
 
     // --- teardown ------------------------------------------------------------

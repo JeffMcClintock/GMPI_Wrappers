@@ -5,7 +5,9 @@
 // The Windows counterpart of IpcServer.h's unix socket (Linux) and of
 // SynthEditMac's; include "IpcServer.h", which selects between them. Same
 // newline framing, same JSONL responses, so one MCP client drives any of them
-// without knowing which it reached.
+// without knowing which it reached - and the same in the literal sense, since
+// the framing, the dispatch and the state around them are CommandProtocol.h's
+// and this file holds only the pipe.
 //
 // THREADING, unchanged from the other two: no thread here ever touches the
 // plugin. A line is parsed on a pipe thread and handed to MainThreadQueue,
@@ -36,10 +38,26 @@
 // find on a developer's machine. Commands are still globally serialised -
 // every one of them goes through MainThreadQueue, which runs them one at a
 // time on the app's thread - so what this buys is only that an IDLE client
-// costs nothing.
+// does not hold up the others.
+//
+// Idle is not free, though, and ONE idle client is dearer than the rest: the
+// one that arrives when the spare is the last free instance. Every other client
+// costs a thread parked in a wait and nothing more. That one leaves nothing
+// listening, so the listener sits in awaitFreeInstance() retrying every
+// kInstanceRetryMs - a 4 Hz poll, measured at 0.39% CPU - for exactly as long
+// as the client lives, which for an orphaned MCP server is indefinitely. It is
+// the price of the alternative, which is what this replaced: a channel that
+// died at that moment and never came back.
+//
+// The cap on that is the pipe's own nMaxInstances, which differs from the unix
+// server's cap in one way that has to be handled rather than inherited: there,
+// reaching the cap is a decision this code makes and it simply closes the
+// excess fd and keeps accepting; here it is the kernel refusing to create an
+// instance, which arrives as a FAILURE at exactly the moment the listener needs
+// to re-arm. Treating that failure as terminal killed the channel for the rest
+// of the process - see awaitFreeInstance(), which is why it does not.
 
 #include <atomic>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -49,6 +67,7 @@
 
 #include <windows.h>
 
+#include "CommandProtocol.h"
 #include "MainThreadQueue.h"
 
 namespace gmpi
@@ -105,9 +124,10 @@ inline std::string describeLastError(const std::string& what, DWORD err)
 class IpcServer
 {
 public:
-    /// Handles ONE command line and returns the response line. Invoked on the
-    /// main thread via the queue, so it may touch anything the app owns.
-    using CommandHandler = std::function<std::string(const std::string& line)>;
+    /// Both transports take the same handler, declared and described in
+    /// CommandProtocol.h. Spelled here as well because a caller reaches for it
+    /// through the server it is handing it to.
+    using CommandHandler = mcp::CommandHandler;
 
     IpcServer() = default;
     ~IpcServer() { stop(); }
@@ -116,14 +136,14 @@ public:
     IpcServer& operator=(const IpcServer&) = delete;
 
     /// Drained once per tick by the app. This is what actually runs commands.
-    MainThreadQueue& mainThreadQueue() { return queue_; }
+    MainThreadQueue& mainThreadQueue() { return core_.mainThreadQueue(); }
 
     /// Begins listening. Reports false and leaves the app running normally when
     /// the pipe cannot be created - a missing command channel must never be
     /// fatal to an app the user launched to make sound with.
     bool start(CommandHandler handler)
     {
-        if (running_)
+        if (core_.running())
             return true;
 
         // Empty after a successful start, as AudioDriver and MidiDriver promise
@@ -163,10 +183,25 @@ public:
             return false;
         }
 
+        // AUTO-reset, unlike stopEvent_: this one reports a single event that
+        // has happened rather than a state the server is now in, and the
+        // listener wants each wait to block again afterwards. Missing a signal
+        // when two clients leave together is harmless - one retry is all it
+        // takes to get an instance back, and awaitFreeInstance() retries until
+        // it has one.
+        slotFreed_ = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (!slotFreed_)
+        {
+            lastError_ = describeLastError("could not create the slot-freed event", ::GetLastError());
+            ::CloseHandle(stopEvent_);
+            stopEvent_ = {};
+            ::CloseHandle(first);
+            pipeName_.clear();
+            return false;
+        }
+
         channelName_ = narrow(pipeName_);
-        handler_  = std::move(handler);
-        stopping_ = false;
-        running_  = true;
+        core_.arm(std::move(handler));
         listener_ = std::thread([this, first] { listenerMain(first); });
         return true;
     }
@@ -176,17 +211,13 @@ public:
     /// guarantees no handler can still be reaching for them.
     void stop()
     {
-        if (!running_ && !listener_.joinable())
+        if (!core_.running() && !listener_.joinable())
             return;
 
-        // Order matters, as on the other platforms. Refuse further model access
-        // FIRST, so a client thread already blocked in run() is released with
-        // an error rather than waiting on a main thread that will never tick
-        // again; then wake every thread; and only then join. Signalling before
-        // joining is what stops the two sides waiting on each other.
-        queue_.shutdown();
+        // Step 1 of the shutdown order beginStop() sets out. The wake and the
+        // joins below are steps 2 and 3, and swapping them is the deadlock.
+        core_.beginStop();
 
-        stopping_ = true;
         if (stopEvent_)
             ::SetEvent(stopEvent_);
 
@@ -207,19 +238,28 @@ public:
             clients_.clear();
         }
 
+        // After the client join above, not before: a client thread signals
+        // slotFreed_ as it finishes, so the handle has to outlive every one of
+        // them. The same argument applies to stopEvent_, which serveClient's
+        // waits watch.
         if (stopEvent_)
         {
             ::CloseHandle(stopEvent_);
             stopEvent_ = {};
         }
 
-        running_ = false;
-        handler_ = nullptr;
+        if (slotFreed_)
+        {
+            ::CloseHandle(slotFreed_);
+            slotFreed_ = {};
+        }
+
+        core_.endStop();
         pipeName_.clear();
         channelName_.clear();
     }
 
-    bool running() const { return running_; }
+    bool running() const { return core_.running(); }
 
     /// Why the last start() returned false. Empty when it succeeded, matching
     /// the contract AudioDriver::lastError and MidiDriver::lastError state in
@@ -231,11 +271,35 @@ public:
     const std::string& channelName() const { return channelName_; }
 
 private:
-    /// Connections served at once. Small: this is a command channel, not a
-    /// server. The cap is enforced by the pipe itself (nMaxInstances), so a
-    /// client that leaks connections is refused by the kernel rather than
-    /// growing this process a thread at a time.
+    /// The concurrency this transport SUSTAINS: this many clients connected
+    /// with an instance still listening for the next. NOT the most that can be
+    /// connected at once, which is one higher - see below. Small either way:
+    /// this is a command channel, not a server, and the cap is the pipe's own
+    /// (nMaxInstances), so a client that leaks connections is refused by the
+    /// kernel rather than growing this process a thread at a time.
+    ///
+    /// Sustained is why createInstance() asks the kernel for one MORE than
+    /// this. An instance always sits unconnected waiting to accept, and it is
+    /// no more a client than the unix server's listening socket is; passing
+    /// this number straight through as nMaxInstances made the advertised eight
+    /// sustain only seven.
+    ///
+    /// The client that arrives when the spare is the last free instance is
+    /// where the two transports genuinely differ. The unix server accepts it
+    /// and closes it again; here the kernel hands it that spare rather than
+    /// refusing it, so it IS served. Which is what puts the peak one above this
+    /// number - nine connected and answered at once, as it stands - with
+    /// nothing listening until one of them goes, and awaitFreeInstance() is
+    /// what re-arms then.
     static constexpr DWORD kMaxClients = 8;
+
+    /// How long the listener sleeps between attempts to re-arm while
+    /// createInstance() keeps failing transiently. At the instance cap it is
+    /// only a backstop - slotFreed_ wakes it the instant a client goes, and
+    /// this bounds the damage if that signal is ever missed; for the resource
+    /// failures it is the whole retry clock. Short enough not to be noticed,
+    /// long enough not to be a spin.
+    static constexpr DWORD kInstanceRetryMs = 250;
 
     static std::string narrow(const std::wstring& text)
     {
@@ -263,7 +327,7 @@ private:
             pipeName_.c_str(),
             PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
             PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-            kMaxClients,
+            kMaxClients + 1,   // the spare is the one waiting to accept - see kMaxClients
             4096,    // out buffer
             4096,    // in buffer
             0,       // default timeout, unused: nothing here calls WaitNamedPipe
@@ -291,19 +355,87 @@ private:
         return ::GetOverlappedResult(pipe, &ov, &transferred, FALSE) != FALSE;
     }
 
+    /// The CreateNamedPipeW failures that clear by themselves, and are
+    /// therefore worth waiting out rather than ending the listener on.
+    ///
+    /// ERROR_PIPE_BUSY is the pipe at nMaxInstances, and every served
+    /// connection that ends hands an instance back. The other two are the
+    /// system briefly unable to afford one - a resource or quota exhausted, an
+    /// allocation refused - and they are here for the same reason: nothing
+    /// about either says the NEXT attempt cannot succeed, and a listener that
+    /// ended on one would be the permanent-death bug awaitFreeInstance() exists
+    /// to prevent, reached through a different error code.
+    ///
+    /// Everything else is terminal, and deliberately: a name held by another
+    /// process, or a parameter the system rejected, will not come right on the
+    /// next attempt.
+    static bool isTransientInstanceError(DWORD err)
+    {
+        return err == ERROR_PIPE_BUSY
+            || err == ERROR_NO_SYSTEM_RESOURCES
+            || err == ERROR_NOT_ENOUGH_MEMORY;
+    }
+
+    /// A fresh listening instance, or INVALID_HANDLE_VALUE when the listener
+    /// should end. `why` is the GetLastError() of the attempt that already
+    /// failed, so the first thing this decides is whether to try again at all -
+    /// see isTransientInstanceError().
+    ///
+    /// Ending the listener on a condition that clears by itself - which this
+    /// code used to do for ERROR_PIPE_BUSY, the loop simply running out on an
+    /// INVALID_HANDLE_VALUE - left the app with no command channel for the rest
+    /// of its life even after every client had gone, because listener_ is
+    /// created only by start() and start() early-returns while core_.running().
+    /// The unix server reaches the same moment at `close(fd)` in its accept arm
+    /// and just keeps polling; this is that behaviour spelled for a transport
+    /// whose cap is the kernel's to enforce.
+    ///
+    /// Retrying cannot become a spin however long the condition lasts: each
+    /// attempt is preceded by a wait, so this is bounded to one attempt per
+    /// kInstanceRetryMs plus one per departing client, and a client can only
+    /// depart as many times as it connected.
+    HANDLE awaitFreeInstance(DWORD why)
+    {
+        while (isTransientInstanceError(why) && !core_.stopping())
+        {
+            // Timed rather than INFINITE so that slotFreed_ is an optimisation
+            // and not the thing correctness rests on - and it has to be, since
+            // the two resource failures are conditions no departing client will
+            // ever signal. There the timeout is the ONLY wake.
+            const HANDLE waits[2] = { slotFreed_, stopEvent_ };
+            const DWORD signalled = ::WaitForMultipleObjects(2, waits, FALSE, kInstanceRetryMs);
+
+            if (signalled != WAIT_OBJECT_0 && signalled != WAIT_TIMEOUT)
+                break;   // stop(), or a wait that failed: retrying either is pointless
+
+            // The accept path reaps too, but it is not reached while the
+            // listener is parked here - so without this a long spell at the cap
+            // would carry a thread object for every client that had departed.
+            {
+                std::lock_guard<std::mutex> lock(clientsMutex_);
+                reapFinishedClients();
+            }
+
+            const HANDLE pipe = createInstance();
+            if (pipe != INVALID_HANDLE_VALUE)
+                return pipe;
+
+            why = ::GetLastError();
+        }
+
+        return INVALID_HANDLE_VALUE;
+    }
+
     void listenerMain(HANDLE firstInstance)
     {
         HANDLE pipe = firstInstance;
 
-        while (!stopping_ && pipe != INVALID_HANDLE_VALUE)
+        while (!core_.stopping() && pipe != INVALID_HANDLE_VALUE)
         {
             OVERLAPPED ov{};
             ov.hEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
             if (!ov.hEvent)
-            {
-                ::CloseHandle(pipe);
-                break;
-            }
+                break;   // `pipe` is closed once, on the way out - see below
 
             bool connected = false;
 
@@ -339,17 +471,25 @@ private:
 
             ::CloseHandle(ov.hEvent);
 
-            if (!connected || stopping_)
-            {
-                ::CloseHandle(pipe);
+            // The ordinary shutdown path: stop() sets stopEvent_, waitOverlapped
+            // reports false, and `connected` is false. `pipe` is left for the
+            // single close below rather than closed here - closing it twice, as
+            // this used to, hands a handle value back to the kernel while a
+            // sibling thread may already have been given it for something else.
+            if (!connected || core_.stopping())
                 break;
-            }
 
-            // Re-arm BEFORE serving, so the channel is never unlistened. If a
-            // new instance cannot be created (the cap is reached) this one is
-            // still served and the loop ends - which is the right shape: the
-            // cap exists to bound the damage, not to drop the client in hand.
+            // Attempted BEFORE serving, so the window in which no instance sits
+            // waiting is as short as the kernel allows: a client that calls
+            // CreateFile inside it is told ERROR_PIPE_BUSY, and not every
+            // client library retries that.
             HANDLE next = createInstance();
+
+            // Read HERE, not where it is used: the hand-off below allocates,
+            // locks and starts a thread, any of which may overwrite this
+            // thread's last error before awaitFreeInstance() could ask for it.
+            const DWORD reArmError = (next == INVALID_HANDLE_VALUE) ? ::GetLastError()
+                                                                    : ERROR_SUCCESS;
 
             {
                 std::lock_guard<std::mutex> lock(clientsMutex_);
@@ -374,9 +514,21 @@ private:
                 clients_.push_back(std::move(slot));
             }
 
+            // Only now that the client in hand has a thread of its own. Waiting
+            // for a free instance any earlier would starve the very client
+            // whose arrival exhausted the pipe: the only thing that frees an
+            // instance is a served connection ending, and an unserved one never
+            // ends.
+            if (next == INVALID_HANDLE_VALUE)
+                next = awaitFreeInstance(reArmError);
+
             pipe = next;
         }
 
+        // The one owner of the un-handed-off instance. Every break above leaves
+        // `pipe` alive for this, and every instance handed to a client thread is
+        // that thread's to close (serveClient) - so each instance is closed once
+        // and by exactly one thread.
         if (pipe != INVALID_HANDLE_VALUE)
             ::CloseHandle(pipe);
     }
@@ -400,13 +552,16 @@ private:
     /// Reads lines from one client until it disconnects or we are stopping.
     void serveClient(HANDLE pipe)
     {
-        std::string inbox;
+        // Per connection, and it has to be: a ReadFile returns whatever the
+        // client happened to have written, which can stop mid-line.
+        LineFramer framer;
+
         char buf[4096];
         bool clientGone = false;
 
         HANDLE readEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
 
-        while (readEvent && !stopping_ && !clientGone)
+        while (readEvent && !core_.stopping() && !clientGone)
         {
             OVERLAPPED ov{};
             ov.hEvent = readEvent;
@@ -426,28 +581,13 @@ private:
             if (got == 0)
                 break;                                      // client closed its end
 
-            inbox.append(buf, got);
-
-            // Newline-framed, matching SynthEditCL's `--script -` grammar and
-            // every other transport, so one client implementation drives all.
-            size_t nl;
-            while (!clientGone && (nl = inbox.find('\n')) != std::string::npos)
+            // A client that stopped reading mid-response is finished with, and
+            // there is nothing useful to do with the rest of its inbox - which
+            // is what the framer stopping at the first refused line means here.
+            clientGone = !framer.feed(buf, got, [this, pipe](const std::string& line)
             {
-                std::string line = inbox.substr(0, nl);
-                inbox.erase(0, nl + 1);
-                if (!line.empty() && line.back() == '\r')
-                    line.pop_back();
-                if (line.empty())
-                    continue;
-
-                // Blocks until the main thread's next tick runs it.
-                std::string response = queue_.run([this, line] { return handler_(line); });
-                response += '\n';
-
-                // A client that stopped reading mid-response is finished with;
-                // there is nothing useful to do with the rest of its inbox.
-                clientGone = !writeAll(pipe, response);
-            }
+                return writeAll(pipe, core_.respondTo(line));
+            });
         }
 
         if (readEvent)
@@ -459,6 +599,13 @@ private:
         ::FlushFileBuffers(pipe);
         ::DisconnectNamedPipe(pipe);
         ::CloseHandle(pipe);
+
+        // The instance goes back to the kernel's pool on that CloseHandle, and
+        // nothing else would tell the listener so: it has no handle on this
+        // connection and gets no callback. Without this it only finds out on
+        // its next timed retry, which is a wait the user can feel.
+        if (slotFreed_)
+            ::SetEvent(slotFreed_);
     }
 
     bool writeAll(HANDLE pipe, const std::string& data)
@@ -516,8 +663,10 @@ private:
         std::atomic<bool> finished{ false };
     };
 
-    MainThreadQueue queue_;
-    CommandHandler handler_;
+    /// The queue, the handler, and the running/stopping flags - all of it
+    /// shared with the unix transport (CommandProtocol.h). Everything else in
+    /// this class is the pipe.
+    ChannelCore core_;
 
     std::thread listener_;
     std::mutex clientsMutex_;
@@ -528,10 +677,11 @@ private:
 
     HANDLE stopEvent_{};
 
-    std::string lastError_;
+    /// Set by each client thread as it exits, so a listener parked at the
+    /// instance cap learns of a free slot at once rather than on a timer.
+    HANDLE slotFreed_{};
 
-    std::atomic<bool> running_{ false };
-    std::atomic<bool> stopping_{ false };
+    std::string lastError_;
 };
 
 } // namespace mcp

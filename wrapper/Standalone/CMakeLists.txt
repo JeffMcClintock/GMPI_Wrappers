@@ -110,6 +110,7 @@ option(GMPI_STANDALONE_COMMAND_CHANNEL
 # header stays portable and is listed above - see there.
 set(standalone_mcp_srcs
     mcp/MainThreadQueue.h
+    mcp/CommandProtocol.h     # the wire format, shared by both transports
     mcp/IpcServer.h
     mcp/CommandChannelHost.cpp
     mcp/TextUtil.h

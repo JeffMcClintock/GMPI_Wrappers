@@ -202,10 +202,25 @@ void SettingsPane::reload()
     }
 
     // --- status -------------------------------------------------------------
+    // Three states, and the middle one is the reason this is not two: a stream
+    // that OPENED and has since died. Its sentence comes from the driver
+    // (AudioMidiDevices.h::stoppedReason), and it has to be asked for before
+    // lastError(), which by then is empty - the open it belongs to succeeded.
+    //
+    // Both halves are needed. A device removed mid-session used to leave this
+    // line saying "Running: 48000 Hz, 1056 frames" at nothing, because
+    // isAudioRunning() answered from a flag that only startAudio and stopAudio
+    // ever moved; that flag now asks the driver, and with only that much this
+    // would fall through to "Audio is not running." - true, and nothing the user
+    // can act on.
     if (host_.isAudioRunning() && audio)
     {
         status_ = "Running: " + std::to_string(audio->getSampleRate()) + " Hz, "
                 + std::to_string(audio->getBufferFrames()) + " frames";
+    }
+    else if (auto stopped = host_.audioStoppedReason(); !stopped.empty())
+    {
+        status_ = std::move(stopped);
     }
     else
     {
@@ -454,8 +469,13 @@ void SettingsPane::Body()
         };
     }
 
+    // Full width, like the warning line below it and unlike the controls above:
+    // "Running: 48000 Hz, 1056 frames" fits in the control column, but the other
+    // two things this line can hold - why an open failed, and why a stream that
+    // was running has stopped - are sentences, and a sentence clipped at the
+    // combo boxes' width is a sentence the user cannot act on.
     {
-        Label _(status_, { left, y, right, y + kRowH });
+        Label _(status_, { left, y, bounds.right - 16.0f, y + kRowH });
         y += kRowH + kGap;
     }
 
