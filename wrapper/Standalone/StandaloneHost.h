@@ -21,6 +21,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "AudioMidiDevices.h"
@@ -66,6 +67,63 @@ private:
     uint8_t buffer_[kCapacity]{};
     std::atomic<uint32_t> writePos_{ 0 };
     std::atomic<uint32_t> readPos_{ 0 };
+};
+
+// Which MIDI inputs the USER asked for, which is not the same thing as the id
+// list MidiDriver::open takes. Down at the driver an empty list means "connect
+// everything readable" (see AudioMidiDevices.h) - the right answer on a machine
+// nobody has configured, and the exact opposite of what someone who has just
+// unticked the last input asked for. Both are an empty vector, so the choice
+// travels as this instead, which can say "nothing" out loud.
+//
+// There is no public constructor and no conversion from a vector: a caller has
+// to name which of the two it means, and StandaloneHost::startMidi is the only
+// thing that turns the answer back into a list a driver can take.
+class MidiInputSelection
+{
+public:
+    // Nothing configured, so connect everything readable - what makes a fresh
+    // install play the moment a keyboard is plugged in.
+    static MidiInputSelection all() { return MidiInputSelection(false, {}); }
+
+    // Exactly these inputs, and NOTHING when the list is empty. "Everything"
+    // cannot be spelled here at all; that is what all() is for.
+    static MidiInputSelection ids(std::vector<std::string> chosen)
+    {
+        return MidiInputSelection(true, std::move(chosen));
+    }
+
+    // A settings file's two halves resolved together, because neither means
+    // anything without the other: keyMidiInputs is an empty list both before
+    // the user has chosen and after they have chosen nothing, and only
+    // keyMidiInputsSet separates them. Every shell's startup path goes through
+    // here, so none of them can resolve it differently from the others.
+    //
+    // `configured` is false until a tick box is actually ticked or unticked -
+    // SettingsPane::writeMidiInputs is the only thing that ever sets the flag,
+    // and merely opening the settings page and closing it again does not reach
+    // it. So a user who has only LOOKED at the page still gets everything.
+    static MidiInputSelection saved(bool configured, std::vector<std::string> chosen)
+    {
+        return configured ? ids(std::move(chosen)) : all();
+    }
+
+    // True when the answer is "no MIDI input at all". Must be tested before
+    // driverIds(), which then hands back the empty vector a driver would read
+    // as "connect everything".
+    bool isNone() const { return configured_ && ids_.empty(); }
+
+    const std::vector<std::string>& driverIds() const { return ids_; }
+
+private:
+    MidiInputSelection(bool configured, std::vector<std::string> chosen)
+        : configured_(configured)
+        , ids_(std::move(chosen))
+    {
+    }
+
+    bool configured_;
+    std::vector<std::string> ids_;
 };
 
 class StandaloneHost :
@@ -137,7 +195,26 @@ public:
     bool startAudio(const std::string& deviceId, int sampleRate, int bufferFrames);
     void stopAudio();
 
-    bool startMidi(const std::vector<std::string>& inputIds);
+    // Connect the chosen MIDI inputs. Safe to call again to apply a settings
+    // change: a running driver is closed first, so a selection of nothing
+    // really does end up with nothing listening.
+    //
+    // True means the selection was applied, INCLUDING a deliberate selection of
+    // nothing: the user asked for no MIDI input and now has none, which is a
+    // success rather than a failure to connect anything.
+    //
+    // False means it was not applied, and there are two ways to get there:
+    //
+    //   * this run has no MIDI at all - no driver was set, or the plugin has no
+    //     MIDI input pin. That arm returns before the close above, which strands
+    //     nothing: startMidi is the only caller of MidiDriver::open, and
+    //     setMidiDriver closes the outgoing driver. lastError() is left alone.
+    //   * the driver could not open the inputs that were chosen, and
+    //     lastError() carries what it said.
+    //
+    // No shell checks the result - a standalone with no keyboard attached is an
+    // ordinary way to run one.
+    bool startMidi(const MidiInputSelection& inputs);
     void stopMidi();
 
     bool isAudioRunning() const { return audioRunning_; }
@@ -159,7 +236,14 @@ public:
 
 private:
     // Rebuilds the plugin's Processor instance for a new rate/block size, and
-    // primes it with the current parameter values. Called with audio stopped.
+    // primes it with the current parameter values.
+    //
+    // The device stream may already be RUNNING when this is called - all three
+    // drivers start it inside open() - so what makes the swap safe is that
+    // processorLive_ is false for the whole rebuild and a callback arriving
+    // meanwhile is turned back at the top of processAudio. Calling this while
+    // the flag is true would free the processor under a callback executing
+    // inside it.
     void restartProcessor(float sampleRate, int blockSize);
 
     gmpi::hosting::pluginInfo* info_{};

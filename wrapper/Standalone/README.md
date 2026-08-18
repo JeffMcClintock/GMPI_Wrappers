@@ -36,10 +36,14 @@ bundles. `GMPI-plugins/plugins/SawDemo` (a synth: MIDI in, stereo out) and
 | Windows | Win32 + Direct2D (gmpi_ui's `DrawingFrame`, the one the VST3 wrapper embeds) | WASAPI, shared mode | winmm | named pipe |
 | macOS | Cocoa + CoreGraphics (gmpi_ui's `createNativeView`, the one the AU and VST3 wrappers hand their host) | CoreAudio (AUHAL) | CoreMIDI | unix socket |
 
-`gmpi_plugin()` drops `STANDALONE` from the format list on a platform with no
-shell, with a `message(STATUS)` saying so, and this directory's `CMakeLists.txt`
-returns immediately. A cross-platform project can therefore list `STANDALONE`
-unconditionally.
+`gmpi_plugin()` drops `STANDALONE` from the format list rather than failing, in
+both of the cases where no wrapper gets built: a platform with no shell, and a
+Linux box missing one of the dependencies the wrapper probes for (see *Building
+on Linux*). It decides the second by running that probe itself —
+`dependencies.cmake`, the same file this directory's `CMakeLists.txt` includes —
+so the two cannot disagree. Either way a `message(STATUS)` says so and this
+directory's `CMakeLists.txt` returns immediately. A cross-platform project can
+therefore list `STANDALONE` unconditionally.
 
 **macOS builds an `.app`**, unlike the bare binary the other two produce. Not
 for tidiness: an app that opens an audio *input* needs
@@ -210,15 +214,18 @@ SynthEdit's own Linux CI runs on. Ubuntu 22.04 is **too old**: gmpi_ui's CPU
 text engine needs HarfBuzz 4+ and its Wayland backend needs libwayland 1.22+
 and wayland-protocols 1.32+.
 
-```
-sudo apt-get install -y \
-  libwayland-dev wayland-protocols libxkbcommon-dev libdecor-0-dev \
-  libdbus-1-dev libfreetype-dev libfontconfig1-dev libharfbuzz-dev libpng-dev \
-  libpipewire-0.3-dev libasound2-dev
-```
+The package list is deliberately not repeated here. It lives in
+`CMakeLists.txt`, beside the message that reports what is missing, as one
+`sudo apt install` line naming the whole set — and configuring prints it whenever
+anything is absent, whether the wrapper is being skipped or
+`GMPI_STANDALONE_STRICT` is failing the configure. A configure message has to be
+complete at a terminal where nothing else is open, so that copy is the
+authoritative one and this paragraph is the pointer; to install before your
+first configure, read the line straight out of the file.
 
-Install `libdecor-0-plugin-1-gtk` too, or libdecor finds no plugin and the
-window has no title bar or border.
+One name in it is not a build dependency: `libdecor-0-plugin-1-gtk` is loaded at
+run time, so without it the build succeeds and the window then has no title bar
+or border.
 
 `GMPI_WAYLAND_PROTOCOLS_DIR` (a CMake cache variable) is searched ahead of the
 system `wayland-protocols` tree, for a build host whose packages are older than
@@ -229,9 +236,19 @@ the staging protocols the backend binds.
 - **Audio failing to open is not fatal.** The app comes up on the settings page
   with the error on it, rather than refusing to start — the settings page is
   the only thing that can fix a busy or missing device.
-- **An empty MIDI input list means "connect everything readable"**, so a fresh
-  install plays as soon as a keyboard is plugged in. Once the user has visited
-  the settings page, the saved list is honoured exactly, including empty.
+- **"Never configured" and "configured to nothing" are different things.** With
+  nothing saved, every readable MIDI input is connected, so a fresh install
+  plays as soon as a keyboard is plugged in. Only actually ticking or unticking
+  an input saves a list — opening the settings page and closing it again does
+  not — and from then on that list is honoured exactly, so unticking every box
+  stops MIDI input rather than connecting all of it. The driver seam only speaks
+  in id lists, where empty means "everything", so `MidiInputSelection` is what
+  carries the difference as far as `StandaloneHost::startMidi`.
+- **Upgrading unticks a saved Linux MIDI selection, once.** Persisted ALSA input
+  ids are now the client and port *names* rather than the numeric `client:port`
+  address, which the sequencer reassigns as devices come and go — so a list
+  written by an older build matches nothing and those inputs come back unticked.
+  Tick them again; ids that survive a replug are what that buys.
 - **Settings apply instantly, with no OK button**, and the apply is deferred to
   the next frame — re-opening an audio device inside a click's event dispatch
   would join the driver's threads with the compositor waiting on us.

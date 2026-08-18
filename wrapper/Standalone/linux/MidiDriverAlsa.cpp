@@ -1,6 +1,7 @@
 #include "MidiDriverAlsa.h"
 
 #include <algorithm>
+#include <set>
 #include <poll.h>
 
 #include <alsa/asoundlib.h>
@@ -13,36 +14,42 @@ namespace standalone
 namespace
 {
 
-// The sequencer describes ports as "client:port"; the ids carry a prefix so a
-// saved setting can never be mistaken for another driver's.
-std::string portId(const snd_seq_addr_t& a)
-{
-    return "ALSA:MIDIIN:" + std::to_string(a.client) + ":" + std::to_string(a.port);
-}
-
 constexpr unsigned kReadable = SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ;
 
-} // namespace
-
-MidiDriverAlsa::~MidiDriverAlsa()
+// The one place ports are enumerated, so that the id a settings file holds and
+// the sequencer address subscribed to are derived side by side, from one query
+// of one port. MidiDriverWin is built the same way and says why: two walks
+// deriving an id independently is how the id in the settings file and the
+// device actually opened drift apart.
+//
+// The two callers do pass different handles, so the client each walk skips as
+// its own differs - the throwaway handle in inputs(), seq_ in connectInputs().
+// The lists still match because neither of those clients owns a readable port:
+// the throwaway creates no port at all, and seq_'s only port is write-only.
+// Give this client a readable port and they would stop matching.
+struct EnumeratedPort
 {
-    close();
-}
+    snd_seq_addr_t addr;   // what snd_seq_connect_from wants
+    std::string    id;     // what the settings file holds
+    std::string    name;   // what the user sees
+};
 
-std::vector<DeviceInfo> MidiDriverAlsa::inputs()
+// The handle is a parameter because enumeration happens against two of them:
+// inputs() must work before open() and after close(), when seq_ is null, so it
+// opens a throwaway handle of its own, and connectInputs() must walk the same
+// list through the handle it is subscribing.
+std::vector<EnumeratedPort> enumeratePorts(snd_seq_t* seq)
 {
-    std::vector<DeviceInfo> results;
-
-    // A throwaway connection: enumeration must work before open() and after
-    // close(), so it cannot rely on seq_ being open.
-    snd_seq_t* seq{};
-    if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_INPUT, 0) < 0)
-        return results;
+    std::vector<EnumeratedPort> result;
+    if (!seq)
+        return result;
 
     snd_seq_client_info_t* client{};
     snd_seq_port_info_t* port{};
     snd_seq_client_info_alloca(&client);
     snd_seq_port_info_alloca(&port);
+
+    std::set<std::string> emitted;
 
     snd_seq_client_info_set_client(client, -1);
     while (snd_seq_query_next_client(seq, client) >= 0)
@@ -61,12 +68,63 @@ std::vector<DeviceInfo> MidiDriverAlsa::inputs()
 
             // A port that can be read FROM is one of our INPUT choices: the
             // capability names are from the port's point of view, not ours.
-            const auto* addr = snd_seq_port_info_get_addr(port);
-            results.push_back({
-                portId(*addr),
-                std::string(snd_seq_client_info_get_name(client)) + ": " + snd_seq_port_info_get_name(port) });
+            const std::string base = std::string(snd_seq_client_info_get_name(client))
+                                   + ": " + snd_seq_port_info_get_name(port);
+
+            // The id is the NAME, not the sequencer address. Client numbers are
+            // handed out in card and connection order, so they shift whenever a
+            // device is added, removed, or simply enumerates differently at
+            // boot, and a settings file keyed on them would silently start
+            // listening to the wrong keyboard; the names survive that. This is
+            // MidiDriverWin's scheme; macOS instead has kMIDIPropertyUniqueID,
+            // which ALSA has no equivalent of. The prefix is what keeps a saved
+            // id from being mistaken for another driver's.
+            //
+            // Not every name is stable, though: ALSA calls a client "Client-<n>"
+            // until its owner calls snd_seq_set_client_name, so an application
+            // that publishes a readable port without naming itself still lands
+            // on an id built from a number that moves. Hardware always carries
+            // a real name, and so does any application that bothered to set
+            // one; for the rest there is nothing better here to key on.
+            //
+            // Two identical interfaces produce identical names, which is what
+            // the suffix is for - deterministic given the same set of devices,
+            // and degrading to "the first one with this name" when the set has
+            // changed since the settings were written. Each name is claimed
+            // against the ones already EMITTED, not against the raw ones: a
+            // device genuinely called "Foo #2" would otherwise be handed the
+            // same id as the synthesized second "Foo", and connectInputs would
+            // subscribe to both of them from one saved id.
+            std::string name = base;
+            for (int ordinal = 2; !emitted.insert(name).second; ++ordinal)
+                name = base + " #" + std::to_string(ordinal);
+
+            result.push_back({ *snd_seq_port_info_get_addr(port), "ALSA:MIDIIN:" + name, name });
         }
     }
+
+    return result;
+}
+
+} // namespace
+
+MidiDriverAlsa::~MidiDriverAlsa()
+{
+    close();
+}
+
+std::vector<DeviceInfo> MidiDriverAlsa::inputs()
+{
+    std::vector<DeviceInfo> results;
+
+    // A throwaway connection: enumeration must work before open() and after
+    // close(), so it cannot rely on seq_ being open.
+    snd_seq_t* seq{};
+    if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_INPUT, 0) < 0)
+        return results;
+
+    for (const auto& port : enumeratePorts(seq))
+        results.push_back({ port.id, port.name });
 
     snd_seq_close(seq);
     return results;
@@ -76,35 +134,14 @@ void MidiDriverAlsa::connectInputs(const std::vector<std::string>& inputIds)
 {
     const bool openAll = inputIds.empty();
 
-    snd_seq_client_info_t* client{};
-    snd_seq_port_info_t* port{};
-    snd_seq_client_info_alloca(&client);
-    snd_seq_port_info_alloca(&port);
-
-    snd_seq_client_info_set_client(client, -1);
-    while (snd_seq_query_next_client(seq_, client) >= 0)
+    for (const auto& port : enumeratePorts(seq_))
     {
-        const int clientId = snd_seq_client_info_get_client(client);
-        if (clientId == SND_SEQ_CLIENT_SYSTEM || clientId == snd_seq_client_id(seq_))
-            continue;
-
-        snd_seq_port_info_set_client(port, clientId);
-        snd_seq_port_info_set_port(port, -1);
-        while (snd_seq_query_next_port(seq_, port) >= 0)
-        {
-            const unsigned caps = snd_seq_port_info_get_capability(port);
-            if ((caps & kReadable) != kReadable || (caps & SND_SEQ_PORT_CAP_NO_EXPORT))
-                continue;
-
-            const auto* addr = snd_seq_port_info_get_addr(port);
-            const auto id = portId(*addr);
-
-            // Exact match on the id, not a substring search: client 1 port 0
-            // and client 11 port 0 both contain "ALSA:MIDIIN:1", and matching
-            // by substring would subscribe to a device the user unticked.
-            if (openAll || std::find(inputIds.begin(), inputIds.end(), id) != inputIds.end())
-                snd_seq_connect_from(seq_, inputPort_, addr->client, addr->port);
-        }
+        // Exact match on the id, not a substring search: an id is now a name,
+        // and a name is a prefix of its own disambiguated duplicate - "Novation
+        // SL: MIDI 1" sits inside "Novation SL: MIDI 1 #2" - so a substring
+        // match would subscribe to a device the user unticked.
+        if (openAll || std::find(inputIds.begin(), inputIds.end(), port.id) != inputIds.end())
+            snd_seq_connect_from(seq_, inputPort_, port.addr.client, port.addr.port);
     }
 }
 

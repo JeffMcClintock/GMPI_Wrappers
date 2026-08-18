@@ -40,7 +40,8 @@
 //    clears it at logout so a crashed app cannot leave a corpse across
 //    sessions. macOS has no equivalent, so it lands on the /tmp fallback -
 //    which is why that path is ownership-checked rather than trusted, and why
-//    the MCP client's discovery lists it on every unix (mcp/src/discover.ts).
+//    the MCP client's discovery lists it on every unix (the node server at the
+//    repo root, <repo>/mcp/src/discover.ts - not this directory).
 
 #include <algorithm>
 #include <atomic>
@@ -64,12 +65,21 @@
 #include "MainThreadQueue.h"
 
 // ---------------------------------------------------------------------------
-// The four calls Linux has atomic forms of and macOS does not. Each shim below
-// does the same thing in two steps, and the RACE that costs is worth naming:
-// between the create and the fcntl, a fork+exec on another thread leaks the
-// descriptor into the child. This app forks nothing, and the alternative -
-// declining to build on macOS over a hazard it does not have - is worse. The
-// atomic form is still used wherever the platform has it.
+// The descriptor setup the two unixes spell differently, and the two plain
+// helpers it is built out of.
+//
+// socketCloExec, acceptCloExec and wakePipe are the ones Linux has atomic forms
+// of and macOS does not, so on macOS they do in separate steps what Linux does
+// in one - and the RACE that costs is worth naming: between the create and the
+// fcntl, a fork+exec on another thread leaks the descriptor into the child.
+// This app forks nothing, and the alternative - declining to build on macOS
+// over a hazard it does not have - is worse. The atomic form is still used
+// wherever the platform has it.
+//
+// setCloExec and setNonBlocking are those separate steps, with no atomic form
+// of their own to prefer. setNonBlocking is also reached on both platforms for
+// the listening socket, which socketCloExec() does not ask non-blocking for -
+// see start().
 // ---------------------------------------------------------------------------
 
 namespace gmpi
@@ -89,6 +99,21 @@ inline void setCloExec(int fd)
     ::fcntl(fd, F_SETFD, (flags < 0 ? 0 : flags) | FD_CLOEXEC);
 }
 
+/// False if `fd` could not be put in non-blocking mode. Unlike FD_CLOEXEC,
+/// which only matters to a child this app never spawns, a socket that stays
+/// blocking is one the caller has to act on: every descriptor the listener
+/// thread waits on has to be non-blocking or that thread can be parked
+/// somewhere stop() cannot reach - see acceptCloExec() and start().
+inline bool setNonBlocking(int fd)
+{
+    if (fd < 0)
+        return false;
+    const int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags < 0)
+        return false;
+    return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+}
+
 /// A SOCK_STREAM unix socket with close-on-exec set. Also the one place
 /// SO_NOSIGPIPE can be applied on macOS - it is a socket option there, not a
 /// send() flag - so writeAll() below needs no platform arm of its own.
@@ -103,13 +128,36 @@ inline int socketCloExec()
 #endif
 }
 
+/// A connected client socket, close-on-exec and NON-BLOCKING.
+///
+/// Non-blocking is not a detail: ONE poll loop serves every client, so a
+/// ::send() to a peer that stopped reading would park this thread inside the
+/// kernel, where the wake fd cannot reach it and no other client is served.
+/// stop() would then join a thread only that peer could release, and the app
+/// would hang on exit. writeAll() waits on POLLOUT instead, which is what its
+/// EAGAIN arm is for; macOS reaches it soonest, its unix-socket send buffer
+/// being smaller than one large response.
+///
+/// `listenFd` is non-blocking for the same reason (see start()), so a negative
+/// return is not necessarily a failure: POLLIN on a listening socket is not a
+/// promise that a connection will still be queued by the time we ask for it,
+/// and EAGAIN is that case. Both answers mean the same thing to the caller -
+/// no new client this round - so neither is distinguished here.
 inline int acceptCloExec(int listenFd)
 {
 #if defined(__linux__)
-    const int fd = ::accept4(listenFd, nullptr, nullptr, SOCK_CLOEXEC);
+    const int fd = ::accept4(listenFd, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
 #else
     const int fd = ::accept(listenFd, nullptr, nullptr);
     setCloExec(fd);
+    if (fd >= 0 && !setNonBlocking(fd))
+    {
+        // Refused, and reported the way a failed accept() is: a client socket
+        // left blocking is the one that would park the shared thread inside
+        // ::send(), so losing this one connection is what keeps the rest served.
+        ::close(fd);
+        return -1;
+    }
 #endif
 
 #if defined(SO_NOSIGPIPE)
@@ -268,6 +316,25 @@ public:
         listenFd_ = compat::socketCloExec();
         if (listenFd_ < 0)
         {
+            socketPath_.clear();
+            return false;
+        }
+
+        // Non-blocking for the same reason the accepted sockets are: the ONE
+        // thread that polls is also the one that accepts, and POLLIN on a
+        // listening socket is a report, not a promise - a peer that connects
+        // and aborts before we get there leaves the queue empty again. On a
+        // blocking fd that ::accept() then parks the thread in the kernel,
+        // where the wake fd cannot reach it and no existing client is served
+        // either. Rare on AF_UNIX, and free to rule out.
+        //
+        // Refusing to start is right rather than carrying on regardless: this
+        // is the reason the rest of the loop can be trusted, and the caller
+        // already treats a channel that will not open as non-fatal. Nothing is
+        // bound yet, so there is no socket file to unlink on the way out.
+        if (!compat::setNonBlocking(listenFd_))
+        {
+            cleanupFds();
             socketPath_.clear();
             return false;
         }
@@ -450,6 +517,11 @@ private:
 
             if (fds[0].revents & POLLIN)
             {
+                // A negative covers both "the pending connection went away
+                // before we asked" (EAGAIN - the listen fd is non-blocking) and
+                // a genuine accept failure. Neither is worth abandoning the
+                // clients already being served, so both just fall through to
+                // the next poll.
                 const int fd = compat::acceptCloExec(listenFd_);
                 if (fd >= 0)
                 {
@@ -490,6 +562,8 @@ private:
     /// the client is finished with (disconnected, or errored).
     bool serviceClient(Client& client, char* buf, size_t bufSize)
     {
+        // The socket is non-blocking, so a poll() that reported POLLIN can still
+        // turn up nothing here: that is a quiet client, not a gone one.
         const ssize_t got = ::read(client.fd, buf, bufSize);
         if (got < 0)
             return errno == EINTR || errno == EAGAIN;   // nothing yet; keep it
@@ -519,11 +593,24 @@ private:
         return true;
     }
 
-    /// Never blocks indefinitely on a client that stopped reading - the wake fd
-    /// is in every wait. A peer that died mid-response must not raise SIGPIPE
-    /// and take the app down with it: on Linux that is compat::kSendFlags
-    /// carrying MSG_NOSIGNAL here, on macOS it is the SO_NOSIGPIPE that
-    /// compat::acceptCloExec already set on this socket.
+    /// Never blocks UNINTERRUPTIBLY on a client that stopped reading, which
+    /// rests on the socket being non-blocking (compat::acceptCloExec): a full
+    /// send buffer surfaces here as EAGAIN, so the wait for room is a poll()
+    /// that also watches the wake fd - on a blocking socket ::send would park
+    /// in the kernel where stop() could never reach it.
+    ///
+    /// That wait carries no deadline, as the pipe's waits in IpcServerWin.h
+    /// carry none: a peer that never drains holds this thread, and with it
+    /// every other client, until it drains or stop() wakes us. Bounding it on
+    /// the unixes alone would close a client mid-response that the pipe keeps
+    /// serving, which the MCP client reports as the app having crashed (the
+    /// node server at the repo root, <repo>/mcp/src/session.ts - not this
+    /// directory) - a bound has to arrive on both transports or neither.
+    ///
+    /// A peer that died mid-response must not raise SIGPIPE and take the app
+    /// down with it: on Linux that is compat::kSendFlags carrying MSG_NOSIGNAL
+    /// here, on macOS it is the SO_NOSIGPIPE that compat::acceptCloExec already
+    /// set on this socket.
     bool writeAll(int fd, const std::string& data)
     {
         size_t sent = 0;

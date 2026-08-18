@@ -239,15 +239,17 @@ int main(int argc, char** argv)
 
         if (host.wantsMidiInput())
         {
-            // An empty list means "connect everything readable", which is what
-            // makes a fresh install play the moment a keyboard is plugged in.
-            // Only a user who has actually visited the settings page gets the
-            // narrower list.
-            const auto midiInputs = settings.getBool(Settings::keyMidiInputsSet, false)
-                                  ? settings.getStringList(Settings::keyMidiInputs)
-                                  : std::vector<std::string>{};
-
-            host.startMidi(midiInputs);
+            // The flag and the list are resolved together, in one place all
+            // three shells share. With nothing saved, every readable input is
+            // connected, so a fresh install plays the moment a keyboard is
+            // plugged in. Only actually ticking or unticking an input saves a
+            // list - opening the settings page and closing it again does not -
+            // and from then on that list is honoured exactly, including an
+            // empty one, which means no MIDI input at all rather than all of
+            // them.
+            host.startMidi(MidiInputSelection::saved(
+                settings.getBool(Settings::keyMidiInputsSet, false),
+                settings.getStringList(Settings::keyMidiInputs)));
         }
     }
 

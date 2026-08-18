@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <map>
 #include <memory>
+#include <set>
 #include <utility>
 
 #include <windows.h>
@@ -70,7 +70,7 @@ std::vector<EnumeratedPort> enumeratePorts()
     std::vector<EnumeratedPort> result;
 
     const UINT count = ::midiInGetNumDevs();
-    std::map<std::string, int> seen;
+    std::set<std::string> emitted;
 
     for (UINT i = 0; i < count; ++i)
     {
@@ -78,18 +78,29 @@ std::vector<EnumeratedPort> enumeratePorts()
         if (::midiInGetDevCapsW(i, &caps, sizeof(caps)) != MMSYSERR_NOERROR)
             continue;
 
-        const auto name = gmpi::unicode::to_utf8(caps.szPname);
+        const auto base = gmpi::unicode::to_utf8(caps.szPname);
 
         // The id is the NAME, not the index. Indices renumber every time a
         // device is plugged in or removed, so a settings file keyed on them
         // would silently start listening to the wrong keyboard; a name
-        // survives that. Two identical interfaces produce identical names,
-        // which is what the suffix is for - deterministic given the same set
-        // of devices, and degrading to "the first one with this name" when the
-        // set has changed since the settings were written.
-        const int ordinal = seen[name]++;
+        // survives that. macOS instead has kMIDIPropertyUniqueID, which winmm
+        // has no equivalent of.
+        //
+        // Two identical interfaces produce identical names, which is what the
+        // suffix is for - deterministic given the same set of devices, and
+        // degrading to "the first one with this name" when the set has changed
+        // since the settings were written. Each name is claimed against the
+        // ones already EMITTED, not against the raw ones: a device genuinely
+        // called "Foo #2" would otherwise be handed the same id as the
+        // synthesized second "Foo", and open() - which matches ids exactly -
+        // would then open both of them from one saved id. MidiDriverAlsa
+        // disambiguates identically, so a duplicate name reads the same on
+        // both platforms.
+        std::string name = base;
+        for (int ordinal = 2; !emitted.insert(name).second; ++ordinal)
+            name = base + " #" + std::to_string(ordinal);
 
-        result.push_back({ i, ordinal == 0 ? name : name + " #" + std::to_string(ordinal + 1) });
+        result.push_back({ i, name });
     }
 
     return result;

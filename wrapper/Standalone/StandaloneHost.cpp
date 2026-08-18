@@ -281,14 +281,26 @@ void StandaloneHost::stopAudio()
     processorLive_ = false;
 }
 
-bool StandaloneHost::startMidi(const std::vector<std::string>& inputIds)
+bool StandaloneHost::startMidi(const MidiInputSelection& inputs)
 {
     if (!midiDriver_ || !hasMidiInPin_)
         return false;
 
     stopMidi();
 
-    if (!midiDriver_->open(inputIds, this))
+    // The one place the two readings of an empty id list are told apart. The
+    // driver has no way to express "none" - it would open every readable input
+    // instead - so a selection of nothing is answered by not opening it at all,
+    // and the stopMidi() above is what makes that take effect on a driver that
+    // was already running.
+    //
+    // True: the selection was applied. Nothing is listening because nothing is
+    // what was asked for, which is not the same answer as a driver that refused
+    // to open the inputs someone did choose.
+    if (inputs.isNone())
+        return true;
+
+    if (!midiDriver_->open(inputs.driverIds(), this))
     {
         lastError_ = midiDriver_->lastError();
         return false;

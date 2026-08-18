@@ -572,10 +572,13 @@ bool AudioDriverCoreAudio::open(const std::string& deviceId,
         return false;
     }
 
-    // The plugin is built against what was GRANTED, never what was asked for.
-    // Called before the unit starts, so the first callback already has a
-    // processor sized for these numbers.
-    client_->onAudioFormatChanged(static_cast<float>(activeSampleRate_), activeBufferFrames_);
+    // NOT client_->onAudioFormatChanged: what the device GRANTED is reported by
+    // getSampleRate()/getBufferFrames(), which StandaloneHost reads once this
+    // has returned. That is the contract the WASAPI and PipeWire drivers are
+    // built on - neither notifies at all - and it is what makes the plugin's
+    // processor get built exactly once per start. Announcing the format from
+    // here would build it a second time, on return, while the callbacks started
+    // below were already executing inside the first.
 
     streamRunning_ = true;
 

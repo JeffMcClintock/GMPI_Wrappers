@@ -230,7 +230,10 @@ void SettingsPane::applyMidi()
             enabled.push_back(in.id);
     }
 
-    host_.startMidi(enabled);
+    // A selection, not a bare list: writeMidiInputs has just recorded that the
+    // user HAS chosen, so an empty list here means they chose nothing - which
+    // is the one thing a driver's own id list cannot say.
+    host_.startMidi(MidiInputSelection::ids(std::move(enabled)));
 }
 
 void SettingsPane::writeMidiInputs()

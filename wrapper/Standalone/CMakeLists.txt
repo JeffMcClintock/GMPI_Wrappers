@@ -14,9 +14,11 @@ project(Standalone_Wrapper)
 # add_library and the target_* calls at the bottom are shared.
 #
 # The three arms are not symmetrical, and the reason is worth stating: on Linux
-# every dependency is a package that may be absent, so that arm probes for
-# thirteen of them and can decline; on Windows and macOS they all ship with the
-# OS, so there is nothing to probe and nothing that can decline.
+# every dependency is a package that may be absent, so that arm probes for the
+# whole set and can decline; on Windows and macOS they all ship with the OS, so
+# there is nothing to probe and nothing that can decline. What the set is lives
+# in dependencies.cmake, deliberately not restated here -- a second copy of a
+# list is a second thing to keep true.
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -233,13 +235,19 @@ endif()
 # The parent's add_subdirectory() promises "safe to add unconditionally", and
 # with REQUIRED probes that promise was false: on a Linux box without the
 # pipewire SDK the whole tree stopped configuring, so nothing at all could be
-# built -- no VST3, no CLAP, no plugin of any kind -- over an optional bare-app
-# target that, today, nothing links.
+# built -- no VST3, no CLAP, no plugin of any kind -- over one optional
+# bare-app target.
 #
 # A hard dependency is the right call for something a product ships; this is a
-# developer convenience with no consumers yet, so the cost of stopping every
-# other target is far larger than the cost of quietly not building it. See
-# TideSynth issue #53.
+# developer convenience, so the cost of stopping every other target is far
+# larger than the cost of quietly not building it. See TideSynth issue #53.
+#
+# Declining is not free any more, though: the GMPI SDK's STANDALONE format links
+# this target, and an executable that links a target nobody created is only a
+# raw linker flag as far as CMake is concerned -- the configure passes and the
+# default build then fails. That is why the probe lives in dependencies.cmake
+# rather than inline here: gmpi_plugin.cmake includes the same file and drops
+# the STANDALONE format when this arm is going to decline.
 #
 # Set GMPI_STANDALONE_STRICT=ON to turn the skip back into a hard error --
 # for CI, or for a developer who means to build this and wants to be told why
@@ -250,110 +258,52 @@ if(UNIX AND NOT APPLE)
 option(GMPI_STANDALONE_STRICT
     "Fail the configure if Standalone_Wrapper's dependencies are missing, rather than skipping it" OFF)
 
-find_package(PkgConfig REQUIRED)
+# Not OPTIONAL, unlike gmpi_plugin.cmake's include of the same file: that one
+# reaches across repos and has to tolerate a wrapper tree older than the probe,
+# whereas this is a sibling file and its absence means a broken checkout.
+include("${CMAKE_CURRENT_LIST_DIR}/dependencies.cmake")
 
-set(_standalone_missing "")
-
-# name <-> pkg-config module. Probed without REQUIRED so a miss is recoverable.
-foreach(dep
-    "WL:wayland-client"
-    "XKB:xkbcommon"
-    "DECOR:libdecor-0"
-    "DBUS:dbus-1"
-    "FONTCONFIG:fontconfig"
-    "HARFBUZZ:harfbuzz"
-    "FREETYPE:freetype2"
-    "ALSA:alsa"
-    "PIPEWIRE:libpipewire-0.3"
-    # Was linked as a bare `png` and reached through /usr/include/png.h, which
-    # is a Debian-ism: the canonical header lives in libpng16/, and pkg-config
-    # is what knows the current soname. Probed properly now that the command
-    # channel's screenshot verb includes <png.h> directly.
-    "PNG:libpng"
-)
-    string(REPLACE ":" ";" _pair ${dep})
-    list(GET _pair 0 _prefix)
-    list(GET _pair 1 _module)
-    # Deliberately not QUIET: the per-module "Found X, version Y" lines are how
-    # you tell "absent" from "present but too old", and the summary below only
-    # names what was missing.
-    pkg_check_modules(${_prefix} ${_module})
-    if(NOT ${_prefix}_FOUND)
-        list(APPEND _standalone_missing ${_module})
-    endif()
-endforeach()
-
-# Wayland protocol bindings are generated, not shipped: wayland-scanner emits a
-# header plus a C file of message signatures for each protocol the backend
-# binds. The set is dictated by backends/DrawingFrameWayland.h.
-pkg_get_variable(WL_PROTOCOLS_DIR wayland-protocols pkgdatadir)
-find_program(WAYLAND_SCANNER wayland-scanner)
-if(NOT WAYLAND_SCANNER)
-    list(APPEND _standalone_missing "wayland-scanner")
-endif()
-
-# fractional-scale-v1 and cursor-shape-v1 are staging protocols that landed in
-# wayland-protocols 1.31 and 1.32; a distro older than that (Ubuntu 22.04 ships
-# 1.25) has the scanner and the client library but not these XML files. Point
-# this at a directory laid out like wayland-protocols' own and it is searched
-# first, so an old build host can be topped up without replacing its packages.
-set(GMPI_WAYLAND_PROTOCOLS_DIR "" CACHE PATH
-    "Extra wayland-protocols tree searched before the system one")
-
-set(WL_PROTOCOL_PATHS
-    stable/xdg-shell/xdg-shell
-    stable/viewporter/viewporter
-    staging/fractional-scale/fractional-scale-v1
-    staging/cursor-shape/cursor-shape-v1
-    unstable/tablet/tablet-unstable-v2          # cursor-shape-v1 references it
-    unstable/xdg-foreign/xdg-foreign-unstable-v2
-)
-
-# Resolve every protocol XML BEFORE generating anything, so a missing one joins
-# the same missing-dependency list as the pkg-config modules and is reported in
-# one message. Resolving and generating in a single loop would emit custom
-# commands for the protocols found so far and only then discover the gap.
-set(_wl_protocol_xml "")
-foreach(proto ${WL_PROTOCOL_PATHS})
-    set(xml "")
-    foreach(dir ${GMPI_WAYLAND_PROTOCOLS_DIR} ${WL_PROTOCOLS_DIR})
-        if(EXISTS "${dir}/${proto}.xml")
-            set(xml "${dir}/${proto}.xml")
-            break()
-        endif()
-    endforeach()
-
-    # Named individually rather than as "wayland-protocols", because the usual
-    # cause is a distro too old for the staging protocols rather than the
-    # package being absent -- Ubuntu 22.04 ships 1.25 and has neither
-    # fractional-scale-v1 nor cursor-shape-v1. Naming the file is what tells
-    # those two cases apart, and GMPI_WAYLAND_PROTOCOLS_DIR is the fix for the
-    # first without touching system packages.
-    if(NOT xml)
-        list(APPEND _standalone_missing "${proto}.xml (wayland-protocols >= 1.32)")
-    else()
-        list(APPEND _wl_protocol_xml ${xml})
-    endif()
-endforeach()
-
-# The single gate. Everything above only probed; nothing below runs unless the
+# The single gate. The include above only probed; nothing below runs unless the
 # whole set is present.
-if(_standalone_missing)
-    list(JOIN _standalone_missing "\n    " _standalone_missing_pretty)
+if(GMPI_STANDALONE_MISSING_DEPENDENCIES)
+    list(JOIN GMPI_STANDALONE_MISSING_DEPENDENCIES "\n    " _standalone_missing_pretty)
+
+    # The Debian/Ubuntu packages, and the only copy of them: README.md's
+    # "Building on Linux" points here rather than repeating the line, because a
+    # configure message has to be complete at a terminal where nothing else is
+    # open -- it is the one that cannot be the pointer.
+    #
+    # The whole set, not only what is missing: apt does not mind being told
+    # about packages already installed, and one line pasted unedited is worth
+    # more than a shorter one assembled per machine. Every name answers
+    # something dependencies.cmake can report -- libwayland-bin is where
+    # wayland-scanner lives, and wayland-protocols supplies both the XML files
+    # and the .pc file whose pkgdatadir they are looked for under -- so a probe
+    # added there needs its package added here.
+    #
+    # libdecor-0-plugin-1-gtk is the one name no probe can report: libdecor
+    # loads it at run time, so its absence costs the window its title bar and
+    # border rather than costing the build anything. Listed anyway, so that
+    # pasting this once is enough.
+    string(CONCAT _standalone_apt
+        "sudo apt install pkg-config "
+        "libwayland-dev libwayland-bin wayland-protocols libxkbcommon-dev "
+        "libdecor-0-dev libdecor-0-plugin-1-gtk libdbus-1-dev "
+        "libfontconfig1-dev libharfbuzz-dev libfreetype-dev libpng-dev "
+        "libasound2-dev libpipewire-0.3-dev")
+
     if(GMPI_STANDALONE_STRICT)
         message(FATAL_ERROR
             "Standalone_Wrapper: GMPI_STANDALONE_STRICT is ON and these dependencies are missing:\n"
             "    ${_standalone_missing_pretty}\n"
-            "On Debian/Ubuntu: sudo apt install libwayland-dev libxkbcommon-dev libdecor-0-dev "
-            "libdbus-1-dev libfontconfig-1-dev libharfbuzz-dev libfreetype-dev libasound2-dev "
-            "libpipewire-0.3-dev wayland-protocols")
+            "On Debian/Ubuntu the whole set is: ${_standalone_apt}")
     endif()
     message(STATUS
         "Standalone_Wrapper: skipped -- missing:\n"
         "    ${_standalone_missing_pretty}\n"
-        "  Every other target still builds. To build the standalone host: "
-        "sudo apt install libpipewire-0.3-dev libasound2-dev wayland-protocols "
-        "(and see the list above). Set GMPI_STANDALONE_STRICT=ON to make this fatal.")
+        "  Every other target still builds. On Debian/Ubuntu the whole set is: "
+        "${_standalone_apt}\n"
+        "  Set GMPI_STANDALONE_STRICT=ON to make this fatal.")
     return()
 endif()
 
