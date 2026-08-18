@@ -91,6 +91,14 @@ public:
     std::string lastError() const override { return lastError_; }
     std::string lastWarning() const override { return warning_; }
 
+    bool isStreamRunning() const override { return streamRunning_; }
+
+    std::string stoppedReason() const override
+    {
+        const char* const why = stopReason_.load();
+        return why ? std::string(why) : std::string{};
+    }
+
 private:
     // WASAPI's headers stay out of this one. Everything COM lives in the .cpp,
     // in a pimpl the two threads share.
@@ -144,8 +152,20 @@ private:
     int activeSampleRate_   = 48000;
     int activeBufferFrames_ = 512;
 
+    // AudioDriver::isStreamRunning, and the render thread owns it: it is raised
+    // there before open()'s handshake completes and lowered there when the loop
+    // ends, so the two can never disagree about a stream that died in between.
+    // close() lowers it too, but only after joining that thread.
     std::atomic<bool> streamRunning_{ false };
     std::string lastError_;
+
+    // AudioDriver::stoppedReason, and a string LITERAL rather than a
+    // std::string: it is written by the render thread on its way out, where an
+    // allocation the main thread could be reading at the same moment is exactly
+    // what the polled-flag design exists to avoid. Null means nothing to report.
+    // Stored before streamRunning_ is lowered, so a reader that sees the stream
+    // stopped also sees why.
+    std::atomic<const char*> stopReason_{ nullptr };
 
     // AudioMidiDevices.h::lastWarning - written by the CAPTURE thread, which is
     // the only thing that can discover a degraded open, and read by the main

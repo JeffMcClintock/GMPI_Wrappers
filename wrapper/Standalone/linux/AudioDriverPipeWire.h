@@ -72,6 +72,14 @@ public:
     std::string lastError() const override { return lastError_; }
     std::string lastWarning() const override { return warning_; }
 
+    bool isStreamRunning() const override { return streamRunning_; }
+
+    std::string stoppedReason() const override
+    {
+        const char* const why = stopReason_.load();
+        return why ? std::string(why) : std::string{};
+    }
+
 private:
     // PipeWire types stay out of this header. Pw owns the loop and streams;
     // PwGlue (in the .cpp) adapts pw_stream_events' C callbacks - whose
@@ -127,6 +135,21 @@ private:
 
     std::atomic<bool> streamRunning_{ false };
     std::string lastError_;
+
+    // AudioDriver::stoppedReason, and a string LITERAL rather than a
+    // std::string: onStateChanged runs on the PipeWire loop thread while the
+    // main thread may be reading this at the same moment, and static text is
+    // what an atomic can hand across that. The reason is the SHARING, not the
+    // cost of the allocation - a std::string cannot be read at all while it is
+    // being written, however cheap the write. Null means nothing to report.
+    //
+    // That thread is also where onProcess() runs (see the note over the stream
+    // callbacks in the .cpp), so it is on the graph's clock - but it is the
+    // loop thread and not a realtime one, which is what makes the std::fprintf
+    // in onStateChanged acceptable where it would not be in onProcess. The
+    // server's own wording is longer than the settings pane's line anyway, so
+    // it goes to stderr - see AudioMidiDevices.h::stoppedReason.
+    std::atomic<const char*> stopReason_{ nullptr };
 
     // AudioMidiDevices.h::lastWarning. Written on the main thread inside open()
     // - openCapture is called from there, not from the graph thread - and

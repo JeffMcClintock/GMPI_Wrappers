@@ -317,6 +317,60 @@ public:
     // always belongs to the stream now running, and a stopped device has
     // nothing to say.
     virtual std::string lastWarning() const = 0;
+
+    // Whether the stream a successful open() started is still running.
+    //
+    // The one question on this interface whose answer changes with nobody having
+    // called anything. A stream can end where it stands - the interface
+    // unplugged, the audio service restarted, the server dropping the client -
+    // and each driver notices on a thread of its own: WASAPI's render thread,
+    // PipeWire's loop thread, a CoreAudio property listener. The main thread is
+    // not involved in the discovery, so it does not know until it asks.
+    //
+    // Which is why this is a flag to be POLLED rather than a callback to be
+    // fired. The discovery happens on, or beside, a realtime thread that is in
+    // the middle of dying, and calling from there into the host - which would
+    // then want the settings page, the drivers, the plugin's processor - is how
+    // a teardown race becomes a use-after-free. So an implementation does the
+    // smallest thing such a thread can safely do: clear an atomic, and point
+    // stoppedReason() at a string literal. StandaloneApp's tick asks once a
+    // frame, on the main thread, where acting on the answer is safe.
+    //
+    // False before the first open(), after an open() that FAILED, and after
+    // close(). True from a successful open() until the stream ends, whichever of
+    // the two ways it ends.
+    //
+    // NO DRIVER REOPENS ANYTHING. One that notices its device vanish must not go
+    // looking for another: this app deliberately does not follow a mid-session
+    // change of default device, and quietly playing out of a different speaker
+    // is a worse answer than saying that the stream stopped. Reporting is the
+    // whole job here.
+    virtual bool isStreamRunning() const = 0;
+
+    // Why the stream stopped by itself, or empty. The third of this interface's
+    // three sentences, and the three do not overlap:
+    //
+    //   lastError()   - open() returned false. There is no stream.
+    //   lastWarning() - open() returned true and something the plugin has pins
+    //                   for is not working. There IS a stream, and it is running.
+    //   this          - open() returned true, the stream ran, and then it ended
+    //                   with nobody having called close().
+    //
+    // Its own channel rather than a second use of lastWarning() because of where
+    // the two are read: a warning is drawn BESIDE "Running: 48000 Hz, 512
+    // frames" and qualifies it, and this REPLACES that line, being the news that
+    // the line has stopped being true. A dead stream is not a degraded one.
+    //
+    // ONE SHORT SENTENCE in the same voice as lastWarning's, naming what
+    // happened rather than the call that failed - "Audio stopped: the device was
+    // removed, or the audio service restarted." A driver with more to say prints
+    // the rest on stderr, as the warnings do.
+    //
+    // Empty while the stream runs, empty before it ever ran, and empty after a
+    // close() the app asked for: a stop the app performed itself is not news to
+    // it. Cleared by close(), which every open() begins with, so what is read
+    // here always belongs to the stream that has just stopped.
+    virtual std::string stoppedReason() const = 0;
 };
 
 // Implemented by StandaloneHost. Called from the MIDI driver's thread.

@@ -419,13 +419,72 @@ void AudioDriverPipeWire::teardownLoop()
 }
 
 // --- stream callbacks -------------------------------------------------------
-// process() runs on the loop's RT thread; the others run on the loop thread
-// with its lock held.
+// ALL of these run on the pw_thread_loop's own thread, with its lock held -
+// process() included, which is not the arrangement a reader coming from another
+// audio API expects. pw_stream documents process as "normally called from the
+// mainloop", moved to the realtime data thread only by the caller asking for
+// PW_STREAM_FLAG_RT_PROCESS, and neither pw_stream_connect below asks for it;
+// the mainloop of a thread loop is that loop's thread.
+//
+// Two things follow. The LoopLock a caller takes to reach pw_stream_* really
+// does wait out an in-flight process(), which is the guarantee close() owes its
+// caller. And onProcess(), while under no realtime SCHEDULING, is still on the
+// graph's clock - overrunning a quantum here is an xrun exactly as it would be
+// on a data thread, so it is written as though it were on one.
 
 void AudioDriverPipeWire::onStateChanged(int newState, const char* error)
 {
-    if (newState == PW_STREAM_STATE_ERROR && streamRunning_)
-        lastError_ = std::string("PipeWire: ") + (error ? error : "stream error");
+    // Only the PLAYBACK stream is wired to this handler (see captureEvents), so
+    // a state here is a statement about the stream that clocks the plugin.
+    //
+    // And only while it was RUNNING: the same states are walked through during
+    // open()'s own negotiation wait, which reads them from pw_stream_get_state
+    // and reports its own failures through lastError_. This arm is for a stream
+    // that had already started.
+    if (streamRunning_)
+    {
+        // ERROR is the daemon going away or refusing to carry us any further;
+        // UNCONNECTED is the node being taken out from under the stream. Both
+        // end it for good, and nothing here tries to get it back - see
+        // AudioMidiDevices.h::isStreamRunning.
+        //
+        // PAUSED IS NOT DEATH, which is the thing to know before adding it to
+        // this list: PipeWire pauses a stream to MOVE it, so a sink disappearing
+        // under a stream the server can re-route shows up as
+        // STREAMING->PAUSED->STREAMING and the plugin never stops playing.
+        // Calling that a stopped stream would report a fault where the server
+        // has just fixed one.
+        const char* died = nullptr;
+
+        if (newState == PW_STREAM_STATE_ERROR)
+            died = "Audio stopped: the PipeWire stream failed.";
+        else if (newState == PW_STREAM_STATE_UNCONNECTED)
+            died = "Audio stopped: the PipeWire server disconnected the stream.";
+
+        if (died)
+        {
+            // The server's own wording, which is the specific half and is too
+            // long for the pane's line, goes to stderr - the same division
+            // AudioMidiDevices.h::lastWarning describes. To stderr rather than
+            // into a member because a std::string written here is one the main
+            // thread could not safely read; stopReason_ carries the fixed half
+            // instead, as a literal an atomic can publish.
+            //
+            // And stdio is affordable here even though this thread also runs
+            // onProcess(): the lock it takes is a cost paid only on a stream
+            // that has just died, so the audio a slow reader could stall is
+            // audio that has already stopped.
+            if (error)
+                std::fprintf(stderr, "%s (%s)\n", died, error);
+            else
+                std::fprintf(stderr, "%s\n", died);
+
+            // Reason first, flag second: a main thread that sees the stream
+            // stopped and then asks why must not find an empty answer.
+            stopReason_    = died;
+            streamRunning_ = false;
+        }
+    }
 
     // open() may be sitting in a timed wait for negotiation to land.
     pw_thread_loop_signal(pw_->loop, false);
@@ -901,12 +960,17 @@ bool AudioDriverPipeWire::open(
 
 void AudioDriverPipeWire::close()
 {
+    // FIRST, and the disconnect below is why: taking the stream down walks it
+    // through UNCONNECTED, which onStateChanged reads as a death for any stream
+    // that was still running. Lowering the flag here is what tells it that this
+    // one was not - a stop the app asked for is not news to it.
     streamRunning_  = false;
     captureRunning_ = false;
 
-    // The one place it is cleared - AudioMidiDevices.h::lastWarning promises a
-    // closed driver has nothing to say, and open() begins here.
+    // The one place they are cleared - AudioMidiDevices.h promises that a closed
+    // driver has nothing to say through either channel, and open() begins here.
     warning_.clear();
+    stopReason_ = nullptr;
 
     if (pw_->stream || pw_->capture)
     {

@@ -637,6 +637,26 @@ bool AudioDriverCoreAudio::open(const std::string& deviceId,
 
     streamRunning_ = true;
 
+    // Raised above BEFORE the listener is added, not after: deviceAliveProc
+    // ignores a notification that arrives while the flag is down, so adding the
+    // listener first would leave a moment in which the device could go away and
+    // be disregarded. There is nothing to disregard the other way round - no
+    // listener, no notifications.
+    //
+    // On the resolved device rather than on the system object: this device is
+    // what the plugin is playing through, and asking the system object about
+    // every device that comes and goes would be the beginning of following a
+    // default-device change, which this app deliberately does not do.
+    //
+    // Failure to register is not fatal. A stream that plays but cannot report
+    // its own death is what every version before this one was, and that is still
+    // better than refusing to open.
+    {
+        const auto aliveAddress = addr(kAudioDevicePropertyDeviceIsAlive);
+        aliveListener_ = AudioObjectAddPropertyListener(
+            device_, &aliveAddress, &AudioDriverCoreAudio::deviceAliveProc, this) == noErr;
+    }
+
     if (AudioOutputUnitStart(unit_) != noErr)
     {
         streamRunning_ = false;
@@ -657,6 +677,16 @@ void AudioDriverCoreAudio::close()
 
     if (!unit_)
     {
+        // Cleared on THIS path too, or AudioMidiDevices.h::stoppedReason would
+        // be promising something macOS does not deliver: a driver whose open()
+        // registered the listener and then failed at AudioOutputUnitStart has
+        // no unit left but may already have been handed a sentence.
+        //
+        // Safe to do here, where the full path below has to wait until teardown
+        // has run: the listener is only ever registered against a unit that
+        // exists, and teardown() removes it before releasing that unit - so no
+        // unit means there is nothing registered to write a reason back in.
+        stopReason_ = nullptr;
         client_ = nullptr;
         return;
     }
@@ -664,14 +694,33 @@ void AudioDriverCoreAudio::close()
     // Stop BEFORE anything is released. AudioOutputUnitStop returns only once
     // the IOProc is off the device, so after this line no callback can still be
     // running and the scratch below it is safe to drop.
+    //
+    // Lowering the flag first also tells deviceAliveProc that this stream is
+    // ending because the app asked: a notification arriving while the device is
+    // being let go finds it already stopped and says nothing.
     streamRunning_ = false;
     AudioOutputUnitStop(unit_);
 
     teardown();
+
+    // LAST, once teardown has removed the listener that writes it. Clearing it
+    // any earlier would let a notification already in flight leave a sentence
+    // behind on a driver nobody has open.
+    stopReason_ = nullptr;
 }
 
 void AudioDriverCoreAudio::teardown()
 {
+    // Before the unit goes, and before device_ is forgotten: removing a listener
+    // needs the same object, address and client data it was added with.
+    if (aliveListener_)
+    {
+        const auto aliveAddress = addr(kAudioDevicePropertyDeviceIsAlive);
+        AudioObjectRemovePropertyListener(
+            device_, &aliveAddress, &AudioDriverCoreAudio::deviceAliveProc, this);
+        aliveListener_ = false;
+    }
+
     if (unit_)
     {
         AudioUnitUninitialize(unit_);
@@ -690,6 +739,45 @@ void AudioDriverCoreAudio::teardown()
     planarIn_.clear();
     planarInPtr_.clear();
     inputListStorage_.clear();
+}
+
+// --- a HAL notification thread -------------------------------------------
+
+OSStatus AudioDriverCoreAudio::deviceAliveProc(AudioObjectID object,
+                                               UInt32 /*addressCount*/,
+                                               const AudioObjectPropertyAddress* /*addresses*/,
+                                               void* clientData)
+{
+    auto* self = static_cast<AudioDriverCoreAudio*>(clientData);
+
+    // Already stopped, or being stopped: close() lowers this before it removes
+    // the listener, so a notification racing a teardown reports nothing.
+    if (!self->streamRunning_)
+        return noErr;
+
+    // A notification says the property CHANGED, not what it changed to, so it is
+    // read back rather than assumed to be zero. `object` rather than device_,
+    // because it is the id the notification arrived about and needs no member
+    // the main thread could be clearing underneath. A device that has actually
+    // gone answers nothing at all, so a read that fails is the same news as a
+    // zero.
+    UInt32 alive = 0;
+    UInt32 size  = sizeof(alive);
+    const auto address = addr(kAudioDevicePropertyDeviceIsAlive);
+
+    if (AudioObjectGetPropertyData(object, &address, 0, nullptr, &size, &alive) == noErr && alive != 0)
+        return noErr;
+
+    // Reason first, flag second: a main thread that sees the stream stopped and
+    // then asks why must not find an empty answer.
+    //
+    // And that is all that happens here. The unit is not stopped and nothing is
+    // released - this is a HAL thread, the main thread owns all of that, and it
+    // will find out on its next tick (AudioMidiDevices.h::isStreamRunning).
+    self->stopReason_    = "Audio stopped: the audio device was removed.";
+    self->streamRunning_ = false;
+
+    return noErr;
 }
 
 // --- the realtime thread -------------------------------------------------
