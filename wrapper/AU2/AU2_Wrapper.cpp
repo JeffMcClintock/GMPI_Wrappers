@@ -1648,10 +1648,31 @@ OSStatus AU2_Wrapper::SaveState(CFPropertyListRef* outData)
 //		processor.getPresetState(chunk, true);
 		const auto chunk = gmpiController.getPreset();
 
-		CFStringRef s = CFStringCreateWithCString(NULL, chunk.c_str(), kCFStringEncodingUTF8);
-		CFDictionaryAddValue(dict, CFSTR("GMPIPRESET"), s);
-
-		CFRelease(s);
+		// CFStringCreateWithCString answers NULL - it does not fail loudly -
+		// when the bytes are not valid UTF-8. Passing that NULL on is undefined
+		// twice over: CFDictionaryAddValue may not take a NULL value, and
+		// CFRelease(NULL) is a crash rather than a no-op.
+		//
+		// It should now be unreachable. writePresetXml base64s a String
+		// parameter exactly as it does a Blob, so every byte of this document is
+		// ASCII; before that commit a String went out as valueReal()'s "0" and
+		// arbitrary plug-in bytes never got here at all. The check stays anyway,
+		// because "the writer promises" is not something this call can verify,
+		// and the failure it guards against is undefined behaviour in a host
+		// rather than a wrong value.
+		//
+		// Dropping the entry is the right failure: AUBase::SaveState has already
+		// filled the dictionary with the state the AU standard defines, so the
+		// host still gets a loadable preset, just one without the GMPI chunk.
+		if (CFStringRef s = CFStringCreateWithCString(NULL, chunk.c_str(), kCFStringEncodingUTF8))
+		{
+			CFDictionaryAddValue(dict, CFSTR("GMPIPRESET"), s);
+			CFRelease(s);
+		}
+		else
+		{
+			assert(false); // preset text is not valid UTF-8 - see writePresetXml
+		}
 	}
 
 	return result;

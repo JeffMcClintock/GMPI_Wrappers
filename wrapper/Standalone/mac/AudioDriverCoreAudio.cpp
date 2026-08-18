@@ -3,8 +3,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <mutex>
 #include <thread>
 
 namespace gmpi
@@ -154,6 +157,50 @@ AudioStreamBasicDescription planarFloat32(double sampleRate, int channels)
 // the INPUT bus's OUTPUT scope is what the microphone hands us.
 constexpr AudioUnitElement kOutputBus = 0;
 constexpr AudioUnitElement kInputBus  = 1;
+
+// What makes deviceAliveProc's driver pointer safe to dereference.
+//
+// AudioObjectRemovePropertyListener does NOT wait for a callback that is
+// already running: it stops future ones being dispatched and returns. Apple
+// publishes no remove-and-drain primitive, so a driver that passed `this` as
+// its clientData could be destroyed while a HAL notification thread was inside
+// the callback holding that pointer - and the callback's first act is to
+// dereference it. Lowering streamRunning_ before the remove, which close()
+// does, makes the REPORT safe; it cannot make the DEREFERENCE safe, because
+// reading the flag is itself the dereference.
+//
+// So the callback is handed a token instead, and looks the driver up here
+// under a mutex it holds for as long as it touches the driver. teardown()
+// removes the listener and then erases under the same mutex, which is the
+// synchronisation the HAL does not provide: a callback that already found the
+// driver finishes before erase() can acquire the lock, and one that has not
+// yet looked it up finds nothing and returns.
+//
+// A monotonic token rather than the driver's address, because addresses are
+// reused: a notification in flight for a driver that has just been destroyed
+// would otherwise find whatever was allocated in its place and stop a stream
+// that is playing perfectly well.
+//
+// NEVER DESTROYED, deliberately. A notification can arrive during static
+// destruction at process exit, and a mutex or map that had already run its own
+// destructor is precisely the failure this exists to prevent.
+struct AliveRegistry
+{
+    std::mutex mutex;
+    std::map<uintptr_t, AudioDriverCoreAudio*> drivers;
+    uintptr_t nextToken = 1; // 0 means "not registered"
+};
+
+AliveRegistry& aliveRegistry()
+{
+    static auto* const instance = new AliveRegistry;
+    return *instance;
+}
+
+void* asClientData(uintptr_t token)
+{
+    return reinterpret_cast<void*>(token);
+}
 
 } // namespace
 
@@ -652,9 +699,36 @@ bool AudioDriverCoreAudio::open(const std::string& deviceId,
     // its own death is what every version before this one was, and that is still
     // better than refusing to open.
     {
+        // Into the registry BEFORE the listener exists, so that the first
+        // notification the HAL can possibly deliver already has something to
+        // find. The reverse order would drop a real device removal that landed
+        // in the gap. See AliveRegistry for why the callback gets a token
+        // rather than `this`.
+        {
+            auto& registry = aliveRegistry();
+            const std::lock_guard<std::mutex> lock(registry.mutex);
+
+            aliveToken_ = registry.nextToken++;
+            registry.drivers.emplace(aliveToken_, this);
+        }
+
         const auto aliveAddress = addr(kAudioDevicePropertyDeviceIsAlive);
         aliveListener_ = AudioObjectAddPropertyListener(
-            device_, &aliveAddress, &AudioDriverCoreAudio::deviceAliveProc, this) == noErr;
+            device_, &aliveAddress, &AudioDriverCoreAudio::deviceAliveProc,
+            asClientData(aliveToken_)) == noErr;
+
+        // Nothing will ever call back for this token, so it must not sit in the
+        // registry until close(). teardown() would erase it anyway; this keeps
+        // a failed open() from leaving an entry behind for the lifetime of a
+        // stream that never had a listener.
+        if (!aliveListener_)
+        {
+            auto& registry = aliveRegistry();
+            const std::lock_guard<std::mutex> lock(registry.mutex);
+
+            registry.drivers.erase(aliveToken_);
+            aliveToken_ = 0;
+        }
     }
 
     if (AudioOutputUnitStart(unit_) != noErr)
@@ -717,8 +791,28 @@ void AudioDriverCoreAudio::teardown()
     {
         const auto aliveAddress = addr(kAudioDevicePropertyDeviceIsAlive);
         AudioObjectRemovePropertyListener(
-            device_, &aliveAddress, &AudioDriverCoreAudio::deviceAliveProc, this);
+            device_, &aliveAddress, &AudioDriverCoreAudio::deviceAliveProc,
+            asClientData(aliveToken_));
         aliveListener_ = false;
+    }
+
+    // THIS is what makes the callback safe, and it has to be here rather than
+    // in close(): every path that destroys the driver comes through teardown(),
+    // and the destructor runs it before a single member is destroyed.
+    //
+    // After the remove above, no NEW callback can start. This erase waits out
+    // the one that may already have started: deviceAliveProc holds the same
+    // mutex for the whole time it touches the driver, so acquiring it here
+    // means any in-flight callback has finished, and any that arrives later
+    // will not find the token. Unconditional, because open() puts the token in
+    // the registry before it knows whether the listener took.
+    if (aliveToken_)
+    {
+        auto& registry = aliveRegistry();
+        const std::lock_guard<std::mutex> lock(registry.mutex);
+
+        registry.drivers.erase(aliveToken_);
+        aliveToken_ = 0;
     }
 
     if (unit_)
@@ -748,13 +842,10 @@ OSStatus AudioDriverCoreAudio::deviceAliveProc(AudioObjectID object,
                                                const AudioObjectPropertyAddress* /*addresses*/,
                                                void* clientData)
 {
-    auto* self = static_cast<AudioDriverCoreAudio*>(clientData);
-
-    // Already stopped, or being stopped: close() lowers this before it removes
-    // the listener, so a notification racing a teardown reports nothing.
-    if (!self->streamRunning_)
-        return noErr;
-
+    // The property read comes FIRST because it needs no driver at all - `object`
+    // is a parameter - and because a HAL call can block. Doing it before the
+    // lock keeps teardown() from ever waiting on CoreAudio to answer.
+    //
     // A notification says the property CHANGED, not what it changed to, so it is
     // read back rather than assumed to be zero. `object` rather than device_,
     // because it is the id the notification arrived about and needs no member
@@ -768,8 +859,33 @@ OSStatus AudioDriverCoreAudio::deviceAliveProc(AudioObjectID object,
     if (AudioObjectGetPropertyData(object, &address, 0, nullptr, &size, &alive) == noErr && alive != 0)
         return noErr;
 
+    // EVERY dereference of the driver happens inside this lock, and that is the
+    // whole safety argument - teardown() erases under the same lock after it
+    // has removed the listener, so it cannot return while this is mid-flight,
+    // and anything it has already erased is not found here. Moving a driver
+    // access outside this block reintroduces the use-after-free.
+    auto& registry = aliveRegistry();
+    const std::lock_guard<std::mutex> lock(registry.mutex);
+
+    const auto entry = registry.drivers.find(reinterpret_cast<uintptr_t>(clientData));
+
+    // Closed while this notification was in flight. Nothing to tell: whoever
+    // closed the driver knows why the stream stopped.
+    if (entry == registry.drivers.end())
+        return noErr;
+
+    auto* const self = entry->second;
+
+    // Already stopped, or being stopped: close() lowers this before it removes
+    // the listener, so a notification racing a teardown reports nothing.
+    if (!self->streamRunning_)
+        return noErr;
+
     // Reason first, flag second: a main thread that sees the stream stopped and
-    // then asks why must not find an empty answer.
+    // then asks why must not find an empty answer. Still atomics, and still for
+    // the original reason - the lock here is about the driver's LIFETIME, and
+    // the main thread reads both of these through isStreamRunning() and
+    // stoppedReason() without taking it.
     //
     // And that is all that happens here. The unit is not stopped and nothing is
     // released - this is a HAL thread, the main thread owns all of that, and it

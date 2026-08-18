@@ -39,6 +39,7 @@
 // on the SAME thread in the same IO cycle, so it needs no synchronisation.
 
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -119,6 +120,12 @@ private:
     // notifications on a thread of its own choosing. So this does what
     // AudioMidiDevices.h::isStreamRunning asks of it and no more: two atomic
     // stores, no allocation, no call back into anything.
+    //
+    // Its clientData is an aliveToken_, NOT a `this`. Removing a listener does
+    // not wait for a callback already running, so a raw driver pointer here
+    // would be a use-after-free the moment a device was unplugged during
+    // teardown. The token is looked up in a registry that outlives every
+    // driver - see AliveRegistry in the .cpp for the full argument.
     static OSStatus deviceAliveProc(AudioObjectID object,
                                     UInt32 addressCount,
                                     const AudioObjectPropertyAddress* addresses,
@@ -200,6 +207,13 @@ private:
     // removes exactly the listeners open() added. A listener left behind on a
     // driver that has been closed is a callback into a dead object.
     bool aliveListener_ = false;
+
+    // This driver's key in the .cpp's AliveRegistry, and the clientData
+    // deviceAliveProc is registered with. 0 when nothing is registered.
+    // Non-zero for a moment longer than aliveListener_ is true: open() takes a
+    // token before it adds the listener, and teardown() gives it back after it
+    // has removed it.
+    uintptr_t aliveToken_ = 0;
 
     // AudioDriver::stoppedReason, and a string LITERAL rather than a
     // std::string: it is written from a HAL notification thread while the main
