@@ -12,6 +12,8 @@
 
 #include "helpers/unicode_conversion.h"
 
+#include "../MidiStreamParser.h"
+
 namespace gmpi
 {
 namespace standalone
@@ -26,30 +28,6 @@ namespace
 // callbacks rather than failing, so a bigger buffer buys only memory.
 constexpr int  kSysexBuffers     = 2;
 constexpr int  kSysexBufferBytes = 1024;
-
-// How many bytes of dwParam1 a status byte actually carries. Getting this wrong
-// would feed the plugin's MIDI parser trailing zero bytes, which it would read
-// as note-offs on channel 1.
-int shortMessageLength(uint8_t status)
-{
-    switch (status & 0xF0)
-    {
-    case 0x80: case 0x90: case 0xA0: case 0xB0: case 0xE0: return 3;
-    case 0xC0: case 0xD0:                                  return 2;
-
-    case 0xF0:
-        switch (status)
-        {
-        case 0xF1: return 2;   // MTC quarter frame
-        case 0xF2: return 3;   // song position pointer
-        case 0xF3: return 2;   // song select
-        default:   return 1;   // clock, start/stop/continue, active sensing, reset
-        }
-
-    default:
-        return 0;              // a data byte as status: not a message
-    }
-}
 
 // The one place ports are enumerated, so that the id a settings file holds and
 // the winmm index open() passes to midiInOpen can never disagree.
@@ -118,6 +96,11 @@ struct MidiDriverWin::Port
 
     std::array<MIDIHDR, kSysexBuffers> headers{};
     std::array<std::array<uint8_t, kSysexBufferBytes>, kSysexBuffers> buffers{};
+
+    // Per PORT, not per driver, exactly as macOS keeps one per connected source:
+    // two keyboards' callbacks interleave, and a shared parser would splice one
+    // device's dump around the other's notes.
+    MidiStreamParser parser;
 };
 
 namespace
@@ -153,8 +136,12 @@ void CALLBACK midiInProc(HMIDIIN, UINT message, DWORD_PTR instance,
             static_cast<uint8_t>((param1 >> 16) & 0xFF),
         };
 
-        if (const int length = shortMessageLength(packed[0]); length > 0)
-            port->client->onMidiIn(packed, length);
+        // Straight on rather than through the parser: winmm has already done the
+        // splitting for this path - one MIM_DATA is one complete short message,
+        // with the status byte present even when the device used running status.
+        // The length table is the parser's, though, so the two cannot drift.
+        if (const size_t length = midiMessageLength(packed[0]); length > 0)
+            port->client->onMidiIn(packed, static_cast<int>(length));
 
         break;
     }
@@ -171,8 +158,20 @@ void CALLBACK midiInProc(HMIDIIN, UINT message, DWORD_PTR instance,
         if (header->dwBytesRecorded == 0)
             break;
 
-        port->client->onMidiIn(reinterpret_cast<const uint8_t*>(header->lpData),
-                               static_cast<int>(header->dwBytesRecorded));
+        // Through the parser, NOT handed on verbatim. A dump larger than
+        // kSysexBufferBytes arrives as several MIM_LONGDATA callbacks, and only
+        // the first of them begins with 0xF0 - every continuation chunk starts
+        // on a data byte. Passed straight to the plugin those chunks are
+        // malformed by construction: MidiConverter2 reads byte 0 as a status and
+        // decodes the middle of somebody's patch dump as notes. The parser
+        // rejoins them, which is also what gives Windows the same cap and the
+        // same all-or-nothing termination rule as macOS and Linux.
+        port->parser.parse(reinterpret_cast<const uint8_t*>(header->lpData),
+                           static_cast<size_t>(header->dwBytesRecorded),
+                           [port](const uint8_t* message, size_t size)
+                           {
+                               port->client->onMidiIn(message, static_cast<int>(size));
+                           });
 
         header->dwBytesRecorded = 0;
         ::midiInAddBuffer(port->handle, header, sizeof(MIDIHDR));
@@ -217,17 +216,14 @@ bool MidiDriverWin::open(const std::vector<std::string>& inputIds, MidiCallback*
     client_  = client;
     running_ = true;
 
-    const auto available = enumeratePorts();
+    // The selection test and the outcome count in one object, shared with
+    // MidiDriverAlsa and MidiDriverCoreMidi - see MidiOpenTally.
+    MidiOpenTally tally(inputIds);
 
-    int opened = 0;
-    for (const auto& candidate : available)
+    for (const auto& candidate : enumeratePorts())
     {
-        // Empty list means "everything readable". See the header.
-        if (!inputIds.empty()
-            && std::find(inputIds.begin(), inputIds.end(), candidate.id) == inputIds.end())
-        {
+        if (!tally.wants(candidate.id))
             continue;
-        }
 
         auto port = std::make_unique<Port>();
         port->client  = client_;
@@ -243,9 +239,10 @@ bool MidiDriverWin::open(const std::vector<std::string>& inputIds, MidiCallback*
         if (result != MMSYSERR_NOERROR)
         {
             // One unavailable port (already open in a DAW, most likely) must
-            // not cost the user the others.
-            if (lastError_.empty())
-                lastError_ = "Could not open MIDI input \"" + candidate.id + "\".";
+            // not cost the user the others - so the loop goes on, and the tally
+            // decides later whether this mattered. The id doubles as the display
+            // name here; see inputs().
+            tally.failed(candidate.id);
             continue;
         }
 
@@ -265,26 +262,21 @@ bool MidiDriverWin::open(const std::vector<std::string>& inputIds, MidiCallback*
         ::midiInStart(port->handle);
 
         ports_.push_back(port.release());
-        ++opened;
+        tally.opened();
     }
 
-    if (opened == 0)
+    if (!tally.success())
     {
-        if (lastError_.empty())
-        {
-            lastError_ = available.empty()
-                       ? "No MIDI input devices were found."
-                       : "None of the selected MIDI inputs could be opened.";
-        }
+        lastError_ = tally.failure();
 
         close();
         return false;
     }
 
-    // Any port that failed while others succeeded is not worth reporting as a
-    // failure - the app is playable, and a stale message on the settings page
-    // would outlive the condition that caused it.
-    lastError_.clear();
+    // lastError_ is left EMPTY even if a port along the way refused: at least
+    // one input is live, the app is playable, and a stale sentence on the
+    // settings page would outlive the condition that caused it. The tally is
+    // asked for its sentence only on the arm above.
     return true;
 }
 

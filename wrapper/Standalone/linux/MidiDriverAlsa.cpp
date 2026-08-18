@@ -130,18 +130,31 @@ std::vector<DeviceInfo> MidiDriverAlsa::inputs()
     return results;
 }
 
-void MidiDriverAlsa::connectInputs(const std::vector<std::string>& inputIds)
+void MidiDriverAlsa::connectInputs(MidiOpenTally& tally)
 {
-    const bool openAll = inputIds.empty();
-
     for (const auto& port : enumeratePorts(seq_))
     {
-        // Exact match on the id, not a substring search: an id is now a name,
-        // and a name is a prefix of its own disambiguated duplicate - "Novation
-        // SL: MIDI 1" sits inside "Novation SL: MIDI 1 #2" - so a substring
-        // match would subscribe to a device the user unticked.
-        if (openAll || std::find(inputIds.begin(), inputIds.end(), port.id) != inputIds.end())
-            snd_seq_connect_from(seq_, inputPort_, port.addr.client, port.addr.port);
+        // The selection test, and the count of what it was offered, both belong
+        // to the tally - which is shared with MidiDriverWin and
+        // MidiDriverCoreMidi so that the three cannot answer differently.
+        if (!tally.wants(port.id))
+            continue;
+
+        // The subscription's result, which this driver used to discard. That is
+        // what left Linux reporting a success whatever happened: a saved id that
+        // matches nothing, or a port already subscribed exclusively elsewhere,
+        // both ended with an open sequencer, no keyboard, and nothing said.
+        if (snd_seq_connect_from(seq_, inputPort_, port.addr.client, port.addr.port) < 0)
+        {
+            // One unreachable port must not cost the user the others, exactly as
+            // on the other two - so the loop goes on, and the tally decides later
+            // whether this mattered. The name rather than the id, which carries
+            // an "ALSA:MIDIIN:" prefix no user needs to read.
+            tally.failed(port.name);
+            continue;
+        }
+
+        tally.opened();
     }
 }
 
@@ -180,7 +193,8 @@ bool MidiDriverAlsa::open(const std::vector<std::string>& inputIds, MidiCallback
         return false;
     }
 
-    connectInputs(inputIds);
+    MidiOpenTally tally(inputIds);
+    connectInputs(tally);
 
     // Sized for the longest sysex a controller is likely to send.
     snd_midi_event_new(4096, &decoder_);
@@ -193,6 +207,34 @@ bool MidiDriverAlsa::open(const std::vector<std::string>& inputIds, MidiCallback
     readerRun_ = true;
     reader_ = std::thread([this] { readerLoop(); });
 
+    // The client, its port, the decoder and the reader are all up BEFORE the
+    // verdict below, and stay up whichever way it goes. That is the one place
+    // this driver parts company with MidiDriverWin and MidiDriverCoreMidi, which
+    // both close() on the way out of a failed open.
+    //
+    // What is being kept is an escape hatch rather than a formality. "GMPI
+    // Standalone" is a sequencer client with a writable, subscribable port, so
+    // it shows up in aconnect(1) and in every patchbay on the machine, and a
+    // user whose saved selection has gone stale - the exact situation the tally
+    // is about to report - can wire a keyboard to it by hand without touching
+    // the app. Closing it here would take away the one route they had left. The
+    // reader thread has to stay with it, or a subscription made from outside
+    // would deliver into a queue nobody drains.
+    //
+    // Safe to leave open because a false return promises nothing about the
+    // driver's state (see MidiDriver::open) and close() is idempotent: open()
+    // itself begins with one, so a second attempt takes this down before
+    // building anything, and StandaloneHost::stopMidi takes it down at shutdown.
+    if (!tally.success())
+    {
+        lastError_ = tally.failure();
+        return false;
+    }
+
+    // lastError_ is left EMPTY even if a port along the way refused: at least one
+    // input is subscribed, the app is playable, and a stale sentence on the
+    // settings page would outlive the condition that caused it. The tally is
+    // asked for its sentence only on the arm above, as on the other two.
     return true;
 }
 
@@ -215,6 +257,11 @@ void MidiDriverAlsa::close()
         snd_midi_event_free(decoder_);
         decoder_ = nullptr;
     }
+
+    // After the reader has been joined, so nothing is mid-parse. A dump that was
+    // still arriving when the user changed devices must not resume into the next
+    // session's stream.
+    parsers_.clear();
 
     client_ = nullptr;
 }
@@ -242,7 +289,52 @@ void MidiDriverAlsa::readerLoop()
             {
                 const long n = snd_midi_event_decode(decoder_, bytes, sizeof(bytes), ev);
                 if (n > 0)
-                    client_->onMidiIn(bytes, static_cast<int>(n));
+                {
+                    // Through the parser rather than straight on, and NOT only
+                    // because of sysex: ONE SEQUENCER EVENT IS NOT ONE MIDI
+                    // MESSAGE, in either direction.
+                    //
+                    // Several event types decode to a RUN of complete messages.
+                    // Measured against libasound 1.2.6.1, with the no_status
+                    // setting above: SND_SEQ_EVENT_CONTROL14 comes back as SIX
+                    // bytes - controller 1 at 0x2000 decodes to "b0 01 40 b0 21
+                    // 00", the MSB controller and its LSB partner, two CC
+                    // messages - and NONREGPARAM and REGPARAM as TWELVE, the
+                    // four CCs that spell an NRPN or an RPN out on the wire
+                    // (99/98/6/38 and 101/100/6/38). Handed on whole, the far
+                    // end decodes byte 0 and converts that one message, so a
+                    // 14-bit controller lost its LSB and an NRPN arrived as one
+                    // CC of four. Splitting the run here is what fixes that, and
+                    // it is ordinary traffic rather than an edge case.
+                    //
+                    // Ordinary from SOFTWARE, to be exact. These are plain
+                    // members of the sequencer's event set and any client can
+                    // compose one - snd_seq_ev_set_control14 does it in a line -
+                    // but the encoder that carries a hardware keyboard's bytes
+                    // in never builds them: snd_midi_event_encode_byte returns
+                    // CONTROLLER for every CC of a 14-bit pair or an NRPN, one
+                    // event each (measured the same way). So it is the other
+                    // applications on the sequencer this covers, not a
+                    // keyboard's own cable - and it is a hazard the other two
+                    // platforms do not have at all, because winmm and CoreMIDI
+                    // only ever hand over wire bytes.
+                    //
+                    // And a long dump arrives the other way round, as a RUN OF
+                    // EVENTS: the decoder hands back one event's worth of bytes
+                    // at a time, so every chunk after the first begins on a data
+                    // byte with no 0xF0 in front of it, exactly as winmm's
+                    // continuation buffers do. The parser rejoins those, and
+                    // gives Linux the same cap and the same all-or-nothing
+                    // termination rule as the other two platforms.
+                    const uint16_t source =
+                        static_cast<uint16_t>((ev->source.client << 8) | ev->source.port);
+
+                    parsers_[source].parse(bytes, static_cast<size_t>(n),
+                        [this](const uint8_t* message, size_t size)
+                        {
+                            client_->onMidiIn(message, static_cast<int>(size));
+                        });
+                }
             }
 
             if (!readerRun_)

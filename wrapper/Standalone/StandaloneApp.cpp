@@ -216,9 +216,24 @@ int runStandaloneApp(PlatformShell& shell)
             // list - opening the settings page and closing it again does not -
             // and from then on that list is honoured exactly, including an empty
             // one, which means no MIDI input at all rather than all of them.
-            host.startMidi(MidiInputSelection::saved(
-                settings.getBool(Settings::keyMidiInputsSet, false),
-                settings.getStringList(Settings::keyMidiInputs)));
+            if (!host.startMidi(MidiInputSelection::saved(
+                    settings.getBool(Settings::keyMidiInputsSet, false),
+                    settings.getStringList(Settings::keyMidiInputs))))
+            {
+                // Said, but not acted on - no page switch, unlike the audio
+                // failure above. What is left is an app that still runs and
+                // still makes a sound, just without the keyboard.
+                //
+                // By MidiOpenTally's rule this fires only when something was
+                // asked for and none of it arrived: a saved selection whose
+                // devices have been unplugged or are held by another program,
+                // or - with nothing saved, where the request is "everything
+                // readable" - every readable input on the machine refusing at
+                // once. Nothing saved and nothing plugged in is a success and
+                // stays quiet, on all three platforms, whether or not the
+                // platform lists a software port of its own.
+                shell.reportStatus("MIDI: " + host.midiError());
+            }
         }
     }
 

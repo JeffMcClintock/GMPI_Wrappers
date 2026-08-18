@@ -160,6 +160,8 @@ void SettingsPane::reload()
                                         std::make_unique<gmpi_forms::State<bool>>(on) });
             }
         }
+
+        midiStatus_ = host_.midiError();
     }
 
     // --- status -------------------------------------------------------------
@@ -234,6 +236,14 @@ void SettingsPane::applyMidi()
     // user HAS chosen, so an empty list here means they chose nothing - which
     // is the one thing a driver's own id list cannot say.
     host_.startMidi(MidiInputSelection::ids(std::move(enabled)));
+
+    // Just the status line, not the reload() applyAudio does: the tick boxes
+    // were built from the same device list a moment ago and rebuilding them here
+    // would destroy the State objects the visuals are still bound to. Whether
+    // the line is there at all changes the layout, so the form is rebuilt.
+    midiStatus_ = host_.midiError();
+    formIsDirty_ = true;
+    redraw();
 }
 
 void SettingsPane::writeMidiInputs()
@@ -378,6 +388,22 @@ void SettingsPane::Body()
                 y += kRowH;
             }
             y += kGap;
+        }
+
+        // Only when there is something wrong to say, which under
+        // MidiOpenTally's rule means inputs were NAMED and not one of them could
+        // be connected. A machine with no keyboard on it says nothing here.
+        //
+        // Not because the tick list above is empty - it is on Windows and macOS,
+        // and it is not on Linux, where ALSA offers a software "Midi Through:
+        // Midi Through Port-0" whether any hardware exists or not. The reason is
+        // that nothing went wrong: an app nobody has configured asked for
+        // whatever was readable and got it. Putting that on the line where
+        // errors appear would read as a fault on an ordinary configuration.
+        if (!midiStatus_.empty())
+        {
+            Label _(midiStatus_, { left, y, right, y + kRowH });
+            y += kRowH + kGap;
         }
     }
 

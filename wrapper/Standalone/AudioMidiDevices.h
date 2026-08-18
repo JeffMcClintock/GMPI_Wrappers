@@ -21,8 +21,10 @@
 //     a lock-free FIFO the audio thread drains.
 //   * everything else (devices(), open(), close()) is main-thread only.
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gmpi
@@ -187,11 +189,187 @@ public:
     // this list themselves: they hand a MidiInputSelection (StandaloneHost.h)
     // to StandaloneHost::startMidi, which never calls open() at all for that
     // case. Drivers need do nothing about it beyond keeping the rule above.
+    //
+    // Nor does an implementation decide for itself what to make of the list, or
+    // what to return when nothing came of it: MidiOpenTally below is the one
+    // answer to both, and every driver runs its open loop through it.
+    //
+    // A FALSE RETURN DOES NOT PROMISE THE DRIVER IS CLOSED. Two of the three
+    // always close on the way out; MidiDriverAlsa does on the paths where the
+    // sequencer itself would not open, and deliberately does NOT when the
+    // subscriptions were the problem, because by then it has a routable
+    // sequencer client that another program can still wire a keyboard into - its
+    // open() says why at length. So close() must be safe after a failed open,
+    // and callers must actually call it: StandaloneHost::startMidi calls
+    // stopMidi() before every attempt, and the shells call it again on the way
+    // down.
     virtual bool open(const std::vector<std::string>& inputIds, MidiCallback* client) = 0;
 
+    // Safe at any point: before any open(), after a failed one, and twice in a
+    // row. Every driver's open() begins with it, which is what stops the
+    // paragraph above from leaking one.
     virtual void close() = 0;
 
+    // Empty when the last open() succeeded. When the open LOOP came to nothing,
+    // what it says comes from MidiOpenTally::failure(), so that the settings
+    // pane describes the same situation in the same words on all three
+    // platforms. A driver that could not get as far as that loop - no ALSA
+    // sequencer, no CoreMIDI client - speaks for itself, in its own words.
     virtual std::string lastError() const = 0;
+};
+
+// What open() above makes of a selection: which inputs to connect, whether the
+// attempt as a whole succeeded, and what to say when it did not. One
+// implementation, driven by all three drivers.
+//
+// Here rather than in each of them because it HAD been written three times over
+// and the three had already drifted. winmm chose its "nothing opened" sentence
+// on whether any devices EXISTED and CoreMIDI on whether the user had SELECTED
+// any, so a machine with no MIDI hardware and a stale saved selection got two
+// different explanations from the two. ALSA counted nothing at all -
+// snd_seq_connect_from returned into the void and open() reported success as
+// long as the sequencer handle had opened - so the one platform that can
+// silently subscribe to nothing was also the one that never said so.
+//
+// The selection test and the counting are ONE object rather than two, because
+// two is what ALSA had: it tested the selection and counted nothing. A driver
+// that has to call wants() anyway gets the count of what it was offered for
+// free. What became of each yes it still has to report, and opened()/failed()
+// below are the only two ways to do that.
+class MidiOpenTally
+{
+public:
+    // The selection by value: open() is not a realtime path, and a few strings
+    // are a small price for a tally that cannot outlive the vector it reads.
+    explicit MidiOpenTally(std::vector<std::string> inputIds)
+        : selection_(std::move(inputIds))
+    {
+    }
+
+    // Ask once per input the driver enumerated - EVERY one of them, including
+    // the ones about to be skipped, because this is also what counts them, and
+    // "was there anything here at all" is what success() falls back on when
+    // nothing connected. True means connect it.
+    //
+    // An empty selection wants everything, which is the empty-list contract
+    // above. A selection of NOTHING never arrives here: StandaloneHost::startMidi
+    // answers that one by not calling open() at all (see MidiInputSelection),
+    // which is what lets an empty list keep its other meaning down here.
+    //
+    // Matched exactly, never as a substring. Two of the three platforms derive
+    // an id from the device name, and a name is a prefix of its own
+    // disambiguated duplicate - "Novation SL: MIDI 1" sits inside "Novation SL:
+    // MIDI 1 #2" - so a substring match connects a device the user unticked.
+    bool wants(const std::string& deviceId)
+    {
+        ++available_;
+
+        return selection_.empty()
+            || std::find(selection_.begin(), selection_.end(), deviceId) != selection_.end();
+    }
+
+    // Exactly ONE of the next two per input wants() said yes to. failure() below
+    // tells "nothing was even attempted" from "everything attempted refused"
+    // purely by which of them were called, so an input dropped without saying
+    // which way it went would make it describe the wrong situation.
+
+    // Once the port is open and delivering - not merely once wants() said yes.
+    // "Could not be opened" and "is not present" are different sentences, and
+    // only the driver knows which of the two happened.
+    void opened() { ++opened_; }
+
+    // ... and the other outcome, named rather than skipped in silence: a port
+    // another application is holding is the one thing here a user can go and
+    // free. `deviceName` is what to call it in front of the user - the display
+    // name where the driver's id is not one, since CoreMIDI's is a number.
+    //
+    // Only the FIRST is kept. Every port on a machine refusing for one reason is
+    // one thing that went wrong rather than a list, and the settings pane has a
+    // line for it, not a paragraph.
+    void failed(const std::string& deviceName)
+    {
+        if (firstFailure_.empty())
+            firstFailure_ = "Could not open MIDI input \"" + deviceName + "\".";
+    }
+
+    // What open() returns: whether the driver did what it was ASKED, which is a
+    // different question from whether anything ended up connected.
+    //
+    // Asked to "connect everything readable" - the empty selection, which is
+    // what an app nobody has configured asks for - the request is satisfied by
+    // whatever happens to be there, including nothing. A machine with no MIDI
+    // inputs at all is an ordinary way to run a standalone synth: a laptop with
+    // no keyboard plugged in, with nothing for the user to act on, and the
+    // command channel can inject MIDI regardless. Only inputs that exist and
+    // then refuse are a failure of that request.
+    //
+    // Asked to "connect exactly these", failure is getting none of them, and the
+    // reason does not change the answer: absent, and present but refusing, are
+    // equally a device the user chose and did not get. That is the case worth a
+    // sentence, because it is the one the user can act on.
+    //
+    // What does NOT enter into it is anything ELSE on the machine, and that part
+    // has to be said out loud, because available_ is the number that differs
+    // most between platforms. A bare Windows box enumerates no MIDI inputs
+    // (midiInGetNumDevs() == 0), and so does a bare Mac (the IAC driver is off
+    // until someone turns it on) - but a bare desktop Linux has ALSA's "Midi
+    // Through", snd-seq-dummy at client 14, wherever that module is loaded,
+    // which on a desktop distribution is everywhere. It is READ|SUBS_READ and
+    // not NO_EXPORT, so enumeration lists it. This predicate used to be
+    // `opened_ > 0 || available_ == 0`, and under it one physical event - the
+    // user unplugging the single keyboard they had ticked - was a silent success
+    // on Windows and macOS and a reported failure on Linux. Asking what was
+    // SELECTED rather than what is plugged in is what makes the three agree.
+    bool success() const
+    {
+        if (opened_ > 0)
+            return true;
+
+        // Nothing was connected, so this is a success only if nothing was really
+        // asked for: "everything readable", on a machine with no MIDI inputs to
+        // read. (An empty selection wants every enumerated input, so available_
+        // == 0 also means nothing was skipped and nothing refused - there was
+        // simply nothing there.)
+        return selection_.empty() && available_ == 0;
+    }
+
+    // What lastError() should say when success() is false. There are exactly two
+    // situations to be in, because opened_ is zero and an input was therefore
+    // either attempted and refused, or never attempted at all.
+    //
+    //   * Attempted and refused - all of them, or success() would be true. The
+    //     driver named the first through failed(), and a named port beats any
+    //     summary of the same fact. This is why there is no summary here: two
+    //     carefully worded ones used to sit in this function ("No MIDI input
+    //     could be opened.", "None of the selected MIDI inputs could be
+    //     opened.") and neither could ever reach a screen, because all three
+    //     drivers name the port that refused and the callers preferred the name.
+    //
+    //   * Never attempted, which is what an empty firstFailure_ means: the
+    //     selection named inputs and not one of them is on this machine. No
+    //     driver can say anything more specific - it opened no port - so this
+    //     sentence is all there is. It cannot be reached with an EMPTY
+    //     selection, which is what makes the word "selected" honest: an empty
+    //     one wants every input there is, so attempting none of them would mean
+    //     available_ == 0, which success() has already called a success.
+    std::string failure() const
+    {
+        if (!firstFailure_.empty())
+            return firstFailure_;
+
+        return "None of the selected MIDI inputs are present.";
+    }
+
+private:
+    std::vector<std::string> selection_;
+
+    // The sentence failed() built for the first input that refused, empty until
+    // one does. Doubles as the record of whether anything was attempted at all -
+    // see failure().
+    std::string firstFailure_;
+
+    int available_ = 0;   // inputs the driver enumerated
+    int opened_    = 0;   // ... of those, the ones that opened
 };
 
 } // namespace standalone

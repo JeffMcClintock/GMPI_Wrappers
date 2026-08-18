@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "AudioMidiDevices.h"
+#include "MidiStreamParser.h"
 #include "Hosting/controller_holder.h"
 #include "Hosting/gmpi_factory.h"
 #include "Hosting/processor_holder.h"
@@ -50,11 +51,23 @@ namespace standalone
 // message. Overflow DROPS the incoming message rather than blocking or
 // overwriting - a dropped note is bad, a stuck note or an audio dropout is
 // worse, and a full queue only happens when audio has already stopped.
+//
+// A message too LONG to frame is dropped the same way, and for a stronger
+// reason: it used to be cut to kMaxMessage instead, which delivered half a sysex
+// dump with no 0xF7 on it - and at 256, one byte past what a one-byte length
+// prefix can hold, wrote a length of zero and left the reader permanently one
+// byte behind the writer, so every event after the first big dump was garbage.
+// Whole or not at all.
 class MidiFifo
 {
 public:
     static constexpr int kCapacity = 8192;      // bytes; ~2700 note events
-    static constexpr int kMaxMessage = 256;     // longest message accepted (sysex is truncated)
+
+    // Longest message accepted; anything longer is dropped whole. The value is
+    // shared with MidiStreamParser, which is what stops the drivers reassembling
+    // a dump this cannot then carry - see kMaxMidiMessage for why it is 255 and
+    // what raising it would take.
+    static constexpr int kMaxMessage = static_cast<int>(kMaxMidiMessage);
 
     // Producer side (MIDI thread).
     void push(const uint8_t* data, int size);
@@ -203,22 +216,49 @@ public:
     // nothing: the user asked for no MIDI input and now has none, which is a
     // success rather than a failure to connect anything.
     //
+    // True also when the answer was "everything readable" and there was nothing
+    // readable: a laptop nobody has configured, with no keyboard plugged into
+    // it, is an ordinary way to run a standalone synth and not a failure to be
+    // reported. The full rule is MidiOpenTally::success. For a NAMED selection
+    // it turns on what was ASKED for rather than on what happens to be plugged
+    // in, which is what stops Linux's ever-present "Midi Through" port from
+    // making the same physical situation read differently there.
+    //
+    // The never-configured default is the one case that still varies by
+    // platform, and honestly so: "everything readable" is satisfied by whatever
+    // WAS readable, and on Linux Midi Through always is. So a keyboard that
+    // another program is holding gets named on Windows and macOS, where it was
+    // the only candidate, and passes quietly on Linux, where something else
+    // genuinely did connect.
+    //
     // False means it was not applied, and there are two ways to get there:
     //
     //   * this run has no MIDI at all - no driver was set, or the plugin has no
     //     MIDI input pin. That arm returns before the close above, which strands
     //     nothing: startMidi is the only caller of MidiDriver::open, and
-    //     setMidiDriver closes the outgoing driver. lastError() is left alone.
-    //   * the driver could not open the inputs that were chosen, and
-    //     lastError() carries what it said.
+    //     setMidiDriver closes the outgoing driver.
+    //   * inputs were named and not one of them could be connected - absent, or
+    //     present and refusing - and midiError() carries what the driver said.
     //
-    // No shell checks the result - a standalone with no keyboard attached is an
-    // ordinary way to run one.
+    // A false return does NOT mean the driver is closed; MidiDriverAlsa stays
+    // open on purpose (see MidiDriver::open). stopMidi() is what closes one, and
+    // every path to a second startMidi goes through it.
     bool startMidi(const MidiInputSelection& inputs);
     void stopMidi();
 
     bool isAudioRunning() const { return audioRunning_; }
+
+    // Why AUDIO is not running, or empty. MIDI has its own string below.
     std::string lastError() const { return lastError_; }
+
+    // Why the last startMidi could not connect what was asked for, or empty.
+    //
+    // Separate from lastError() because the two used to share one string, and
+    // startMidi runs after startAudio: on a machine whose soundcard was busy AND
+    // whose keyboard was missing, the settings page showed only the MIDI
+    // sentence - the problem the user could do nothing about - in place of the
+    // audio one that had actually stopped the app making a sound.
+    std::string midiError() const { return midiError_; }
 
     // --- AudioCallback (realtime thread) ---------------------------------
     void processAudio(int frames,
@@ -284,6 +324,7 @@ private:
     bool audioRunning_ = false;
     bool midiRunning_  = false;
     std::string lastError_;
+    std::string midiError_;
 
     float sampleRate_ = 44100.0f;
     int   blockSize_  = 512;

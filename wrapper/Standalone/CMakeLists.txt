@@ -52,6 +52,12 @@ set(standalone_srcs
     # everything the three shells used to hold a copy of each - so it belongs
     # here beside the views rather than in any arm below.
     AudioMidiDevices.h
+
+    # Here rather than in the three platform arms, even though its only callers
+    # are the three MIDI drivers: it is what makes them hand the plugin the same
+    # bytes, and a copy per arm is three copies to keep true.
+    MidiStreamParser.h
+
     StandaloneApp.h
     StandaloneApp.cpp
     StandaloneHost.h

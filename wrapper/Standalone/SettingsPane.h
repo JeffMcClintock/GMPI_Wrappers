@@ -122,8 +122,17 @@ private:
     std::vector<std::string> deviceIds_;
     std::vector<int> sampleRates_;
 
-    // Status line under the controls: what actually opened, or why nothing did.
+    // Status line under the audio controls: what actually opened, or why nothing
+    // did.
     std::string status_;
+
+    // The same for MIDI, and separate because the two failures are unrelated and
+    // the audio one is the one that stops the app making a sound. It sits under
+    // the tick boxes it is about, and is empty in the ordinary case - including
+    // on a machine with no MIDI hardware, where an app nobody has configured
+    // asked for whatever was readable and got it. It fills only when inputs were
+    // named and not one of them could be connected.
+    std::string midiStatus_;
 };
 
 } // namespace standalone
