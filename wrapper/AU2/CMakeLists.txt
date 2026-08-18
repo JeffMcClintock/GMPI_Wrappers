@@ -82,6 +82,12 @@ gmpi_find_frameworks(au_frameworks
     AudioUnit           # the component this wrapper implements
     AudioToolbox
 )
+
+# gmpi_ui's Mac backend compiles MacFileDialog, whose UTType path must be
+# linked weakly - see gmpi_weak_frameworks() for why. A static library, so an
+# omission here surfaces only when a plugin module links it.
+gmpi_weak_frameworks(au_weak_frameworks)
+list(APPEND au_frameworks ${au_weak_frameworks})
 endif()
 
 include (GenerateExportHeader)

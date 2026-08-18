@@ -40,3 +40,23 @@ function(gmpi_find_frameworks out_var)
 
     set(${out_var} "${libs}" PARENT_SCOPE)
 endfunction()
+
+# gmpi_weak_frameworks(<out_var>)
+#
+# The frameworks every target that compiles gmpi_ui's Mac backend must link
+# WEAKLY, returned as raw linker flags to append to the list above.
+#
+# Weak, not plain -framework: gmpi_ui's MacFileDialog prefers UTType /
+# allowedContentTypes and falls back to -allowedFileTypes below macOS 11,
+# guarded by @available. UniformTypeIdentifiers does not exist on macOS 10.x,
+# and these projects deploy back to 10.15, so a hard link would stop the plugin
+# loading at all rather than letting it take that fallback.
+#
+# Here rather than spelled out in each wrapper because the four wrappers all
+# compile DrawingFrameMac.mm, which includes that header: when only the
+# standalone named the flag, every VST3 module failed to link with an undefined
+# _OBJC_CLASS_$_UTType (GMPI-plugins macOS CI, July-August 2026). A wrapper is
+# a static library, so nothing catches this until a module links it.
+function(gmpi_weak_frameworks out_var)
+    set(${out_var} "-weak_framework UniformTypeIdentifiers" PARENT_SCOPE)
+endfunction()

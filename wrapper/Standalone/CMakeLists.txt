@@ -237,16 +237,15 @@ if(APPLE)
     )
     list(APPEND standalone_libs ${standalone_frameworks})
 
-    # WEAK, and the header that needs it says why: gmpi_ui's MacFileDialog
-    # prefers UTType / allowedContentTypes and falls back to allowedFileTypes
-    # below macOS 11, guarded by @available. The framework does not exist on
-    # 10.x, so a hard link would stop the app starting at all rather than
-    # taking that fallback.
-    #
-    # The AU, VST3 and CLAP wrappers never had to name this: they are loaded
-    # into a host that has already linked it. A standalone is the first target
-    # here that links its own executable.
-    list(APPEND standalone_libs "-weak_framework UniformTypeIdentifiers")
+    # The weakly-linked half of the set - gmpi_weak_frameworks() carries the
+    # reason. Shared with the other three wrappers rather than spelled out here:
+    # the claim this comment used to make - that a wrapper is loaded into a host
+    # that has already linked UniformTypeIdentifiers, so only a standalone need
+    # name it - is not how linking works. A VST3 module is linked, not merely
+    # loaded, and every one of them failed on the undefined _OBJC_CLASS_$_UTType
+    # until the wrappers named the flag too.
+    gmpi_weak_frameworks(standalone_weak_frameworks)
+    list(APPEND standalone_libs ${standalone_weak_frameworks})
 endif()
 
 # ---------------------------------------------------------------------------

@@ -216,6 +216,12 @@ gmpi_find_frameworks(vst3_frameworks
     CoreGraphics
     Accelerate
 )
+
+# gmpi_ui's Mac backend compiles MacFileDialog, whose UTType path must be
+# linked weakly - see gmpi_weak_frameworks() for why. A static library, so an
+# omission here surfaces only when a plugin module links it.
+gmpi_weak_frameworks(vst3_weak_frameworks)
+list(APPEND vst3_frameworks ${vst3_weak_frameworks})
 endif()
 
 include (GenerateExportHeader)

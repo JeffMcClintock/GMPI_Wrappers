@@ -80,6 +80,12 @@ gmpi_find_frameworks(clap_frameworks
     CoreGraphics
     Accelerate
 )
+
+# gmpi_ui's Mac backend compiles MacFileDialog, whose UTType path must be
+# linked weakly - see gmpi_weak_frameworks() for why. A static library, so an
+# omission here surfaces only when a plugin module links it.
+gmpi_weak_frameworks(clap_weak_frameworks)
+list(APPEND clap_frameworks ${clap_weak_frameworks})
 endif()
 
 include (GenerateExportHeader)
