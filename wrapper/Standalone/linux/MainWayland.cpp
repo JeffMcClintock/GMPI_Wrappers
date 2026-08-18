@@ -156,11 +156,6 @@ public:
         return std::make_unique<MidiDriverAlsa>();
     }
 
-    std::string defaultAudioDeviceId() const override
-    {
-        return AudioDriverPipeWire::defaultDeviceId();
-    }
-
     BackendServices backendServices() const override
     {
         // Neither timer framework has a native source here, and the frame has no

@@ -183,8 +183,13 @@ int runStandaloneApp(PlatformShell& shell)
 
     // --- devices -------------------------------------------------------------
     {
+        // The driver names its own sentinel, so the fallback here always agrees
+        // with what open() will test for. Null only if a shell chose to build
+        // without audio at all, which startAudio below reports.
+        const auto* audio = host.audioDriver();
+
         const auto deviceId = settings.getString(
-            Settings::keyAudioDevice, shell.defaultAudioDeviceId());
+            Settings::keyAudioDevice, audio ? audio->defaultDeviceId() : "");
         const int sampleRate   = settings.getInt(Settings::keySampleRate, 48000);
         const int bufferFrames = settings.getInt(Settings::keyBufferFrames, 512);
 

@@ -42,12 +42,19 @@ public:
     AudioDriverWasapi();
     ~AudioDriverWasapi() override;
 
-    // The id of the "follow the system default" entry. An unconfigured app
-    // opens this, and unlike an endpoint id it stays meaningful when the user
-    // changes their default device or unplugs the interface it named.
-    static const char* defaultDeviceId() { return "wasapi:default"; }
-
     const char* name() const override { return "WASAPI"; }
+
+    // Unlike an endpoint id this stays meaningful when the user changes their
+    // default device or unplugs the interface the saved id named.
+    //
+    // Spelled as a constant as well as the virtual, which the CoreAudio and
+    // PipeWire drivers have no reason to do: openEndpoint() in the .cpp is a
+    // free helper in an anonymous namespace with no driver to ask, and handing
+    // it one would mean threading `this` through a function whose whole job is
+    // to turn an id into an IMMDevice. Everything outside this file's own
+    // helpers asks the virtual.
+    static constexpr const char* kDefaultDeviceId = "wasapi:default";
+    const char* defaultDeviceId() const override { return kDefaultDeviceId; }
 
     std::vector<DeviceInfo> devices() override;
     std::vector<int> sampleRates() override;

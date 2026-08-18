@@ -419,7 +419,9 @@ HRESULT openEndpoint(IMMDeviceEnumerator* enumerator,
                      EDataFlow flow,
                      IMMDevice** returnDevice)
 {
-    if (!deviceId.empty() && deviceId != AudioDriverWasapi::defaultDeviceId())
+    // The constant, not the virtual: this helper has no driver instance. Same
+    // string either way - see the note on kDefaultDeviceId.
+    if (!deviceId.empty() && deviceId != AudioDriverWasapi::kDefaultDeviceId)
     {
         const auto wide = gmpi::unicode::to_wide(deviceId);
         if (SUCCEEDED(enumerator->GetDevice(wide.c_str(), returnDevice)))

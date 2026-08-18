@@ -178,12 +178,9 @@ public:
     // Only called when the plugin has a MIDI input pin.
     virtual std::unique_ptr<MidiDriver> createMidiDriver() = 0;
 
-    // What an unconfigured app opens: the driver's "...:default" sentinel,
-    // which is the one entry that survives the device behind it being
-    // unplugged. On the shell rather than on AudioDriver so that this change
-    // stops at the three Main files; a virtual on the driver itself is the
-    // better end state and the obvious follow-up.
-    virtual std::string defaultAudioDeviceId() const = 0;
+    // No defaultAudioDeviceId() here. What an unconfigured app opens is asked
+    // of the driver this just made - AudioDriver::defaultDeviceId - because a
+    // shell answering for its driver is a second place to get one string right.
 
     // --- the loop ---------------------------------------------------------
 

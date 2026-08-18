@@ -50,12 +50,12 @@ public:
     AudioDriverCoreAudio() = default;
     ~AudioDriverCoreAudio() override;
 
-    // The id of the "follow the system default" entry. An unconfigured app
-    // opens this, and unlike a device UID it stays meaningful when the user
-    // changes their default output or unplugs the interface it named.
-    static const char* defaultDeviceId() { return "coreaudio:default"; }
-
     const char* name() const override { return "CoreAudio"; }
+
+    // Unlike a device UID this stays meaningful when the user changes their
+    // default output or unplugs the interface the saved id named. resolveDevice
+    // is the other half of it - see AudioDriver::defaultDeviceId.
+    const char* defaultDeviceId() const override { return "coreaudio:default"; }
 
     std::vector<DeviceInfo> devices() override;
     std::vector<int> sampleRates() override;

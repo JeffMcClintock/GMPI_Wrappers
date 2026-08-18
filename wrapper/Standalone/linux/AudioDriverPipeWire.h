@@ -38,12 +38,12 @@ public:
     AudioDriverPipeWire();
     ~AudioDriverPipeWire() override;
 
-    // The id of the "let the desktop decide" entry. An unconfigured app opens
-    // this, and it stays valid across reboots and device changes - which a
-    // node name does not.
-    static const char* defaultDeviceId() { return "pipewire:default"; }
-
     const char* name() const override { return "PipeWire"; }
+
+    // The "let the desktop decide" entry. It stays valid across reboots and
+    // device changes, which a node name does not; open() answers it by leaving
+    // PW_KEY_TARGET_OBJECT unset - see AudioDriver::defaultDeviceId.
+    const char* defaultDeviceId() const override { return "pipewire:default"; }
 
     std::vector<DeviceInfo> devices() override;
     std::vector<int> sampleRates() override;

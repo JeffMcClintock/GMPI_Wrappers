@@ -102,6 +102,28 @@ public:
     // Shown in the settings pane's driver list ("PipeWire", "WASAPI", ...).
     virtual const char* name() const = 0;
 
+    // The id of this driver's "...:default" sentinel - the entry devices()
+    // lists first, and what an app with nothing saved opens.
+    //
+    // Asked of the DRIVER because the driver is what invents the string, and
+    // what tests incoming ids against it: each open() below decides "system
+    // default" by comparing the id it was handed to this one. Two spellings and
+    // a fresh install silently opens the wrong thing, or nothing.
+    //
+    // PlatformShell used to answer this on the driver's behalf. That worked
+    // only for as long as whoever wrote a shell also wrote its driver and
+    // happened to keep the two in step; there was nothing to catch a platform
+    // that answered one string here and matched another over there. A new
+    // platform now cannot get it inconsistent, because there is only one answer
+    // to give.
+    //
+    // An EMPTY id means the same thing, and every driver must accept it: that
+    // is what a settings file written before this key existed contains.
+    //
+    // const char* like name() above - always a literal, never computed. The
+    // settings layer deals in std::string and converts.
+    virtual const char* defaultDeviceId() const = 0;
+
     // Output devices, most-useful-first. The first entry is the one an
     // unconfigured app opens, so it must be the system default.
     virtual std::vector<DeviceInfo> devices() = 0;

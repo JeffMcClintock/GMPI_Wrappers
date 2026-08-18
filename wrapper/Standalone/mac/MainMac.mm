@@ -270,11 +270,6 @@ public:
         return std::make_unique<MidiDriverCoreMidi>();
     }
 
-    std::string defaultAudioDeviceId() const override
-    {
-        return AudioDriverCoreAudio::defaultDeviceId();
-    }
-
     BackendServices backendServices() const override
     {
         // CFRunLoopTimer on kCFRunLoopCommonModes, so timers tick even while a

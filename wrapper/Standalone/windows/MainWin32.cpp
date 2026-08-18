@@ -180,11 +180,6 @@ public:
         return std::make_unique<MidiDriverWin>();
     }
 
-    std::string defaultAudioDeviceId() const override
-    {
-        return AudioDriverWasapi::defaultDeviceId();
-    }
-
     BackendServices backendServices() const override
     {
         // SetTimer is gmpi::TimerManager's source here, and DrawingFrameWin's
