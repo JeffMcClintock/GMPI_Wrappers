@@ -83,14 +83,21 @@ void CommandChannelHost::start(StandaloneHost& host, AppLayout& layout, Platform
             return dispatchCommand(impl_->context, line);
         });
 
-    // The unix transports used to name the likely cause here ("no writable
-    // runtime directory"). Neither IpcServer records a reason, and this line is
-    // now shared with a platform where that cause does not exist, so it says
-    // what is true of all three. Restoring the detail wants an
-    // IpcServer::lastError() on both transports.
-    shell.reportStatus(started
-        ? "command channel: " + impl_->server.channelName()
-        : std::string("command channel: unavailable (the endpoint could not be created)."));
+    // The reason comes from the transport rather than from here. This line is
+    // shared by a unix socket and a named pipe, whose failures have nothing in
+    // common - a runtime directory that is unset or unwritable on one, a pipe
+    // the system refused on the other - so the only honest thing this file can
+    // say by itself is that it did not work.
+    if (started)
+    {
+        shell.reportStatus("command channel: " + impl_->server.channelName());
+    }
+    else
+    {
+        const std::string reason = impl_->server.lastError();
+        shell.reportStatus("command channel: unavailable"
+            + (reason.empty() ? std::string(".") : " (" + reason + ")."));
+    }
 }
 
 void CommandChannelHost::drain()

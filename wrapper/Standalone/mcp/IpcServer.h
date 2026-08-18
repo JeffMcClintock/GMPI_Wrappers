@@ -175,6 +175,15 @@ inline int acceptCloExec(int listenFd)
 
 /// The self-pipe stop() writes to. Non-blocking on both ends so a stop() that
 /// races an earlier unread wake byte cannot block the main thread.
+///
+/// False leaves both fds -1 and errno describing the step that failed, so the
+/// caller can name it. Linux gets that from pipe2() atomically; the fallback
+/// has to prove it, and DOES prove it rather than hoping - a wake pipe left
+/// blocking is one whose write end can fill, and then the stop() racing an
+/// unread wake byte blocks the main thread, which is the hang O_NONBLOCK is
+/// here to rule out in the first place. FD_CLOEXEC is still unchecked, for the
+/// reason setNonBlocking() gives above: it only matters to a child this app
+/// never spawns.
 inline bool wakePipe(int fds[2])
 {
 #if defined(__linux__)
@@ -185,8 +194,18 @@ inline bool wakePipe(int fds[2])
     for (int i = 0; i < 2; ++i)
     {
         setCloExec(fds[i]);
-        const int fl = ::fcntl(fds[i], F_GETFL, 0);
-        ::fcntl(fds[i], F_SETFL, (fl < 0 ? 0 : fl) | O_NONBLOCK);
+        if (!setNonBlocking(fds[i]))
+        {
+            // The fcntl's errno is what the caller reports; ::close is allowed
+            // to have an opinion of its own and must not overwrite it. Both are
+            // reset to -1 because start() calls cleanupFds() on this path.
+            const int err = errno;
+            ::close(fds[0]);
+            ::close(fds[1]);
+            fds[0] = fds[1] = -1;
+            errno = err;
+            return false;
+        }
     }
     return true;
 #endif
@@ -216,21 +235,51 @@ namespace mcp
 /// registry, config file or port to keep in sync - exactly as SynthEdit does it.
 inline constexpr std::string_view kSocketPrefix = "gmpi-standalone.";
 
+/// "<what>: <the system's own words>". The Windows transport spells the same
+/// idea with FormatMessage (IpcServerWin.h); the shared point is that a bare
+/// error NUMBER in a status line helps nobody, and every failure below has the
+/// system's own sentence to hand.
+inline std::string describeErrno(const std::string& what, int err)
+{
+    return what + ": " + std::strerror(err);
+}
+
 /// Creates `dir` (and parents) mode 0700, and returns true only if what ends up
 /// there is a directory we own. Refusing an unexpected owner or a symlink is
 /// what makes the /tmp fallback safe to use at all.
-inline bool ensurePrivateDir(const std::string& dir)
+///
+/// The three refusals are three different things to go and fix, so `whyNot`
+/// (when supplied) says which - it ends up inside the app's "command channel:
+/// unavailable (...)" line, where "no writable runtime directory" alone leaves
+/// the reader guessing which directory and in what way.
+inline bool ensurePrivateDir(const std::string& dir, std::string* whyNot = nullptr)
 {
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);   // ignore ec: the lstat below is the real test
 
     struct stat st{};
     if (::lstat(dir.c_str(), &st) != 0)
+    {
+        // Nothing is there, which means create_directories could not make it -
+        // so this errno is really that failure showing through: EACCES on a
+        // directory we may not write, EROFS, ENOSPC.
+        if (whyNot)
+            *whyNot = describeErrno("could not be created", errno);
         return false;
+    }
     if (!S_ISDIR(st.st_mode))
-        return false;                                // symlink or file squatting on the name
-    if (st.st_uid != ::getuid())
+    {
+        if (whyNot)
+            *whyNot = "a symlink or file is squatting on the name";
         return false;
+    }
+    if (st.st_uid != ::getuid())
+    {
+        if (whyNot)
+            *whyNot = "owned by uid " + std::to_string(static_cast<long>(st.st_uid))
+                    + ", not by us";
+        return false;
+    }
 
     ::chmod(dir.c_str(), 0700);
     return true;
@@ -243,7 +292,14 @@ inline bool ensurePrivateDir(const std::string& dir)
 /// that does not fit is refused, never truncated, and the next candidate is
 /// tried. sizeof(sun_path) is read from the struct rather than assumed, so the
 /// shorter macOS limit needs no arm of its own.
-inline std::string chooseSocketPath()
+///
+/// Returning empty is the historical reason this app reports no command
+/// channel - XDG_RUNTIME_DIR unset or unwritable - so `whyNot` (when supplied)
+/// names every candidate that was tried and what was wrong with each. That
+/// list IS the diagnosis: whether the fallback was even reached tells you
+/// whether XDG_RUNTIME_DIR was set, and GMPI_STANDALONE_IPC_DIR appearing
+/// alone tells you the override suppressed both defaults.
+inline std::string chooseSocketPath(std::string* whyNot = nullptr)
 {
     const std::string leaf = std::string(kSocketPrefix) + std::to_string(static_cast<long>(::getpid()));
 
@@ -264,15 +320,30 @@ inline std::string chooseSocketPath()
     }
 
     sockaddr_un probe{};
+    std::string rejected;
+
     for (const auto& dir : candidates)
     {
         const std::string full = (std::filesystem::path(dir) / leaf).string();
+
+        std::string reason;
         if (full.size() >= sizeof(probe.sun_path))
-            continue;
-        if (!ensurePrivateDir(dir))
-            continue;
-        return full;
+        {
+            reason = "path is " + std::to_string(full.size()) + " bytes, over the "
+                   + std::to_string(sizeof(probe.sun_path) - 1) + "-byte sun_path limit";
+        }
+        else if (ensurePrivateDir(dir, &reason))
+        {
+            return full;
+        }
+
+        if (!rejected.empty())
+            rejected += "; ";
+        rejected += dir + " (" + reason + ")";
     }
+
+    if (whyNot)
+        *whyNot = "no writable runtime directory - tried " + rejected;
     return {};
 }
 
@@ -295,15 +366,30 @@ public:
 
     /// Begins listening. Reports false and leaves the app running normally when
     /// the socket cannot be created - a missing command channel must never be
-    /// fatal to an app the user launched to make sound with.
+    /// fatal to an app the user launched to make sound with. lastError() says
+    /// why, and every false below sets it.
     bool start(CommandHandler handler)
     {
         if (running_)
             return true;
-        if (!handler)
-            return false;
 
-        socketPath_ = chooseSocketPath();
+        // Cleared once here rather than on each success path. Setting it on a
+        // path that SUCCEEDS is the failure mode to avoid - the PipeWire audio
+        // driver shipped exactly that bug, leaving a note about missing input
+        // in lastError_ after a good open, which reads to every caller as an
+        // open that failed.
+        lastError_.clear();
+
+        if (!handler)
+        {
+            // Unreachable from the app, whose handler is a lambda it always
+            // supplies. Named anyway: a bare false with nothing in lastError()
+            // is the exact hole this accessor exists to close.
+            lastError_ = "no command handler was supplied";
+            return false;
+        }
+
+        socketPath_ = chooseSocketPath(&lastError_);
         if (socketPath_.empty())
             return false;
 
@@ -316,6 +402,7 @@ public:
         listenFd_ = compat::socketCloExec();
         if (listenFd_ < 0)
         {
+            lastError_ = describeErrno("socket(AF_UNIX, SOCK_STREAM) failed", errno);
             socketPath_.clear();
             return false;
         }
@@ -334,6 +421,7 @@ public:
         // bound yet, so there is no socket file to unlink on the way out.
         if (!compat::setNonBlocking(listenFd_))
         {
+            lastError_ = describeErrno("could not put the listening socket in non-blocking mode", errno);
             cleanupFds();
             socketPath_.clear();
             return false;
@@ -343,6 +431,12 @@ public:
         addr.sun_family = AF_UNIX;
         if (socketPath_.size() >= sizeof(addr.sun_path))   // checked again: never truncate
         {
+            // Not reachable: chooseSocketPath() applies the same test against
+            // the same struct and would have moved on to the next candidate.
+            // It is the memcpy below that makes the belt worth the braces.
+            lastError_ = "'" + socketPath_ + "' is " + std::to_string(socketPath_.size())
+                       + " bytes, over the " + std::to_string(sizeof(addr.sun_path) - 1)
+                       + "-byte sun_path limit";
             cleanupFds();
             socketPath_.clear();
             return false;
@@ -355,10 +449,33 @@ public:
         // could drive the app.
         const mode_t oldMask = ::umask(0077);
         const int bound = ::bind(listenFd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+
+        // Read BEFORE restoring the mask. POSIX says umask() cannot fail and
+        // must not touch errno, but a diagnostic is a poor thing to stake on
+        // that, and one line is a cheap way not to.
+        const int bindErrno = errno;
         ::umask(oldMask);
 
-        if (bound != 0 || ::listen(listenFd_, 4) != 0)
+        if (bound != 0)
         {
+            // The path is in the message because it is half the answer: EACCES
+            // or EROFS means the directory passed ownership but not writing,
+            // and EADDRINUSE means the unlink above did not clear the name -
+            // which, since the name carries OUR pid, means a live process is
+            // holding it and something outside this app is wrong.
+            lastError_ = describeErrno("bind(" + socketPath_ + ") failed", bindErrno);
+            cleanupFds();
+            ::unlink(socketPath_.c_str());
+            socketPath_.clear();
+            return false;
+        }
+
+        if (::listen(listenFd_, 4) != 0)
+        {
+            // Split from bind() rather than sharing its arm: the two fail for
+            // unrelated reasons, and "which call" is most of what a reader
+            // needs before the errno means anything.
+            lastError_ = describeErrno("listen() failed", errno);
             cleanupFds();
             ::unlink(socketPath_.c_str());
             socketPath_.clear();
@@ -367,6 +484,11 @@ public:
 
         if (!compat::wakePipe(wakeFd_))
         {
+            // Without it the listener would park in poll() with nothing able
+            // to wake it and stop() would hang joining it, so this is refused
+            // rather than started. EMFILE is the realistic cause: descriptors
+            // exhausted, two of them needed here.
+            lastError_ = describeErrno("could not create the wake pipe", errno);
             cleanupFds();
             ::unlink(socketPath_.c_str());
             socketPath_.clear();
@@ -430,6 +552,16 @@ public:
     /// address this app published - rather than for the transport, so the two
     /// implementations can be swapped without the app noticing.
     const std::string& channelName() const { return socketPath_; }
+
+    /// Why the last start() returned false. EMPTY WHEN THE LAST start()
+    /// SUCCEEDED - the same contract AudioDriver and MidiDriver carry
+    /// (AudioMidiDevices.h), so the app reads all three the same way.
+    ///
+    /// Both transports have this and the app never learns which it is talking
+    /// to; the Windows one (IpcServerWin.h) renders GetLastError where this one
+    /// renders errno. Written and read on the main thread - start() runs there
+    /// and so does the report - so the listener thread never touches it.
+    std::string lastError() const { return lastError_; }
 
 private:
     /// Connections served at once. Small: this is a command channel, not a
@@ -639,6 +771,7 @@ private:
     CommandHandler handler_;
     std::thread thread_;
     std::string socketPath_;
+    std::string lastError_;
 
     int listenFd_ = -1;
     int wakeFd_[2] = { -1, -1 };   // self-pipe: the stopEvent_ analogue
