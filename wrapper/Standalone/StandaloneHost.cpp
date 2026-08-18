@@ -134,6 +134,32 @@ bool StandaloneHost::init()
             pendingQueueClients_.AddWaiter(param);
         };
 
+    // Instantiate the plugin's <Controller/> subtype, BEFORE the editor.
+    //
+    // Without this the standalone hosts only the Audio and Editor subtypes, so
+    // a plugin whose editor is driven by its controller comes up as an empty
+    // frame: the controller is where such a plugin builds its application
+    // object and publishes a pointer to it (via host->setParameter on a blob
+    // parameter), and the editor picks that pointer up in notifyPin. No
+    // controller means the editor never receives it and draws only its own
+    // chrome -- which reads as "the plugin is broken" rather than "the host
+    // did not create half of it". Found with TIDE, whose entire UI hangs off
+    // its controller.
+    //
+    // Order matters: the editor's initialize() may already expect the
+    // controller's published state, and getEditorSize() measures the editor
+    // immediately below.
+    //
+    // This mirrors the VST3 wrapper, which has always done it --
+    // wrapper/VST3/Controller_VST3.cpp:347. The holder below is the
+    // IControllerHost the plugin's controller talks back through.
+    if (auto controllerUnknown = factory.createInstance(info_->id.c_str(), gmpi::api::PluginSubtype::Controller); controllerUnknown)
+    {
+        pluginController_ = controllerUnknown.as<gmpi::api::IController>();
+        if (pluginController_)
+            pluginController_->initialize(static_cast<gmpi::api::IControllerHost*>(&controller_), 0);
+    }
+
     // Instantiate the editor now rather than when the window opens: the window
     // size is whatever the editor asks for, so it has to exist first.
     if (auto pluginUnknown = factory.createInstance(info_->id.c_str(), gmpi::api::PluginSubtype::Editor); pluginUnknown)

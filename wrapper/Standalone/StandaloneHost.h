@@ -176,6 +176,13 @@ private:
     gmpi::hosting::interThreadQue messageQueUiToDsp_;
     gmpi::hosting::QueuedUsers pendingQueueClients_;
 
+    // The plugin's own <Controller/> subtype, if it declares one. Held for the
+    // lifetime of the host: a plugin that has one typically builds its whole
+    // application object here and publishes a pointer to it through a
+    // parameter, so releasing it would pull the ground out from under the
+    // editor. See the note at its creation in StandaloneHost::initialize.
+    gmpi::shared_ptr<gmpi::api::IController> pluginController_;
+
     gmpi::shared_ptr<gmpi::api::IEditor> editorParameters_;
     gmpi::shared_ptr<gmpi::api::IDrawingClient> editorGraphics_;
 
