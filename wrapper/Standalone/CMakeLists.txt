@@ -48,8 +48,12 @@ set(standalone_srcs
     ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
     ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 
-    # Portable half of the app.
+    # Portable half of the app. StandaloneApp is the startup sequence itself -
+    # everything the three shells used to hold a copy of each - so it belongs
+    # here beside the views rather than in any arm below.
     AudioMidiDevices.h
+    StandaloneApp.h
+    StandaloneApp.cpp
     StandaloneHost.h
     StandaloneHost.cpp
     StandaloneSettings.h
@@ -60,6 +64,12 @@ set(standalone_srcs
     MenuBarView.cpp
     SettingsPane.h
     SettingsPane.cpp
+
+    # The one mcp/ file the portable half names. StandaloneApp.cpp includes it
+    # with no #if, and can, because with the channel off its whole body is three
+    # inline no-ops; everything behind it is in standalone_mcp_srcs below, which
+    # an OFF build never compiles.
+    mcp/CommandChannelHost.h
 
     # gmpi_ui pieces the shell draws with. Header-only apart from these.
     ${GMPI_UI_SDK}/helpers/Timer.h
@@ -88,17 +98,26 @@ set(standalone_library_dirs "")
 # CommandChannel.h, which carries the same default so a translation unit
 # compiled outside this build behaves identically.
 #
-# OFF removes the code rather than merely declining to start it: mcp/ is not
-# added to the source list below, so a vendor who does not want a local IPC
-# endpoint in a signed product has nothing left to audit.
+# OFF removes the code rather than merely declining to start it: no mcp/
+# IMPLEMENTATION is added to the source list below, so a vendor who does not
+# want a local IPC endpoint in a signed product has no transport, no dispatcher
+# and no listening thread to audit. What an OFF build still compiles is exactly
+# one mcp/ file - CommandChannelHost.h, which the portable half includes
+# unconditionally and which is three inline no-ops in that configuration.
 option(GMPI_STANDALONE_COMMAND_CHANNEL
     "Build the standalone app's command channel (IPC for tests and the MCP server)" ON)
 
 # The portable half of the channel. The transport is per-platform and is added
 # by the arms below; everything here is the same code on both.
+#
+# CommandChannelHost.cpp is in THIS list rather than in the portable one above,
+# and that is the whole reason the class exists: it is the only file that names
+# IpcServer, whose Windows transport pulls a bare <windows.h> in behind it. Its
+# header stays portable and is listed above - see there.
 set(standalone_mcp_srcs
     mcp/MainThreadQueue.h
     mcp/IpcServer.h
+    mcp/CommandChannelHost.cpp
     mcp/TextUtil.h
     mcp/PngWriter.h
     mcp/WavWriter.h

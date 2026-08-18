@@ -59,9 +59,12 @@ build/plugins/SawDemo/SawDemo_STANDALONE.app/Contents/MacOS/SawDemo_STANDALONE
 The command channel is compiled in by **default** and can be switched off with
 the CMake option `GMPI_STANDALONE_COMMAND_CHANNEL=OFF` (or
 `-DGMPI_STANDALONE_COMMAND_CHANNEL=0` straight to the compiler). Off removes
-the code rather than merely declining to start it — `mcp/` is not compiled at
-all — so a vendor who does not want a local IPC endpoint in a signed product
-has nothing left to audit. See `CommandChannel.h`.
+the code rather than merely declining to start it — no `mcp/` implementation is
+compiled at all — so a vendor who does not want a local IPC endpoint in a signed
+product has no transport, no dispatcher and no listening thread to audit. The
+one file that survives is `mcp/CommandChannelHost.h`, which the startup sequence
+includes either way and which is three inline no-ops off. See
+`CommandChannel.h`.
 
 ## Layout
 
@@ -69,6 +72,7 @@ Portable — no window-system headers, shared by every platform:
 
 | File | |
 | --- | --- |
+| `StandaloneApp.*` | the startup sequence itself, and the `PlatformShell` seam the three shells implement |
 | `StandaloneHost.*` | the plugin: factory → processor + controller + editor, the audio callback, the MIDI FIFO |
 | `AudioMidiDevices.h` | the `AudioDriver` / `MidiDriver` seam the shells implement |
 | `StandaloneSettings.*` | persisted device selection (`~/.config/<plugin>/standalone.conf` and its Windows/macOS equivalents) |
