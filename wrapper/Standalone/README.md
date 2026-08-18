@@ -135,11 +135,16 @@ Two WASAPI details that surprise people:
   frames typically yields 1056. `getBufferFrames()` reports what was granted,
   and `StandaloneHost` starts the processor against that, so the status line on
   the settings page reads e.g. `Running: 48000 Hz, 1056 frames`.
-- **A non-native sample rate goes through the engine's resampler**
-  (`AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM`) rather than reclocking the device,
-  which is what lets a plugin be auditioned at the rate its presets were made
-  at. A device that refuses those flags falls back to its own mix format, and
-  the rate actually running is again reported rather than assumed.
+- **The sample rate belongs to the endpoint, not to the settings file.** Shared
+  mode clocks the engine at the endpoint's mix format, and this shell does not
+  resample — the `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM` that used to be here is
+  gone, along with the wish-list of rates it made plausible. `sampleRates()`
+  now probes the endpoint with `IsFormatSupported`, so the settings page offers
+  what the device will really take (normally its one mix rate, changed on the
+  endpoint's Advanced page in Sound settings). Ask for anything else and the
+  stream opens at a rate the endpoint does have, with `getSampleRate()`
+  reporting which. The policy is stated once, for all three shells, on
+  `AudioDriver::sampleRates` in `AudioMidiDevices.h`.
 
 COM apartments are the other thing to keep straight: every WASAPI object is
 created **on the thread that uses it**, each device thread being an MTA of its

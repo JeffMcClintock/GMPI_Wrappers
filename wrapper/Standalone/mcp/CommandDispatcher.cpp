@@ -189,6 +189,15 @@ std::string cmdInfo(AppContext& context)
     if (!host->midiError().empty())
         obj.str("midiError", host->midiError());
 
+    // A third field rather than a third error, because this one appears NEXT TO
+    // "audioRunning": true. It is the degraded-open channel
+    // (AudioMidiDevices.h::lastWarning) - audio is playing and something the
+    // plugin has pins for is not working, which a harness checking only
+    // lastError would read as full health, exactly as the settings page used
+    // to.
+    if (!host->audioWarning().empty())
+        obj.str("audioWarning", host->audioWarning());
+
     if (auto* driver = host->audioDriver(); driver && host->isAudioRunning())
     {
         obj.num("sampleRate", driver->getSampleRate())

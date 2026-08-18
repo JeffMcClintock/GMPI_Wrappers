@@ -251,6 +251,17 @@ public:
     // Why AUDIO is not running, or empty. MIDI has its own string below.
     std::string lastError() const { return lastError_; }
 
+    // What the running audio device could NOT give the plugin, or empty - the
+    // degraded-open channel described in AudioMidiDevices.h::lastWarning. The
+    // two are never both filled: this one needs an open that succeeded and that
+    // one an open that did not.
+    //
+    // Read straight from the driver rather than copied here, because the driver
+    // is what clears it: a copy would be one more thing to keep in step with
+    // the device that is actually open. Nothing to say when audio is not
+    // running - a driver's warning describes a stream, and there is none.
+    std::string audioWarning() const;
+
     // Why the last startMidi could not connect what was asked for, or empty.
     //
     // Separate from lastError() because the two used to share one string, and

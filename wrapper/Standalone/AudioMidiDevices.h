@@ -15,6 +15,7 @@
 //
 //   * processAudio runs on the driver's realtime thread. No allocation, no
 //     locks that a non-realtime thread can hold.
+//   * every call into processAudio is wrapped in a ScopedNoDenormals (below).
 //   * onMidiIn is called from the MIDI driver's own thread, NOT the audio
 //     thread. Implementations of MidiCallback must therefore be safe to call
 //     concurrently with processAudio - StandaloneHost does this by pushing to
@@ -27,10 +28,84 @@
 #include <utility>
 #include <vector>
 
+// Which of ScopedNoDenormals' two implementations applies. The INSTRUCTION SET
+// decides this, not the operating system, which is why the guard can live in
+// the portable half of the app at all: one x86 branch and one AArch64 branch
+// between them cover all three shells.
+#if defined(_M_X64) || defined(__x86_64__) || defined(__SSE2__) \
+    || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+  #define GMPI_STANDALONE_DENORMALS_MXCSR 1
+  #include <xmmintrin.h>
+#elif (defined(__aarch64__) || defined(__arm64__)) && !defined(_MSC_VER)
+  #define GMPI_STANDALONE_DENORMALS_FPCR 1
+#endif
+
 namespace gmpi
 {
 namespace standalone
 {
+
+// Denormals off for the duration of one call into the plugin.
+//
+// A plugin with a decaying tail - a reverb, a filter with feedback - keeps
+// multiplying its own state by something under one, and once those numbers fall
+// below the smallest normal float the CPU drops into microcoded arithmetic that
+// can cost many times more for the same block. Setting flush-to-zero on the
+// audio thread is what a host normally does about that, so a plugin author does
+// not meet it in the DAW they test in; a standalone that skipped it would be the
+// one place their plugin stutters, with nothing on screen to explain why.
+//
+// Constructed by each driver around its call into AudioCallback::processAudio,
+// and RESTORING on the way out: two of the three realtime threads belong to
+// somebody else - CoreAudio's IOProc thread, PipeWire's graph thread, which
+// also runs other clients living in this process - and leaving the control word
+// changed under them would be altering arithmetic they never asked about.
+class ScopedNoDenormals
+{
+public:
+    ScopedNoDenormals(const ScopedNoDenormals&) = delete;
+    ScopedNoDenormals& operator=(const ScopedNoDenormals&) = delete;
+
+#if defined(GMPI_STANDALONE_DENORMALS_MXCSR)
+    ScopedNoDenormals()
+        : saved_(_mm_getcsr())
+    {
+        // 0x8000 flushes a denormal RESULT to zero, 0x0040 reads a denormal
+        // OPERAND as zero. Both: a feedback loop reads back what it just wrote,
+        // so either one alone leaves the other half of the loop slow.
+        _mm_setcsr(saved_ | 0x8000u | 0x0040u);
+    }
+
+    ~ScopedNoDenormals() { _mm_setcsr(saved_); }
+
+private:
+    unsigned int saved_;
+#elif defined(GMPI_STANDALONE_DENORMALS_FPCR)
+    ScopedNoDenormals()
+    {
+        __asm__ __volatile__("mrs %0, fpcr" : "=r"(saved_));
+        // FZ, bit 24. AArch64 has no separate operand control: FZ covers both
+        // the operands and the result.
+        __asm__ __volatile__("msr fpcr, %0" : : "r"(saved_ | (1ull << 24)));
+    }
+
+    ~ScopedNoDenormals() { __asm__ __volatile__("msr fpcr, %0" : : "r"(saved_)); }
+
+private:
+    unsigned long long saved_;
+#else
+    // Some other instruction set, or MSVC on ARM64, where the control register
+    // is reachable only through intrinsics this header does not want to know
+    // about. Nothing is set and nothing is restored, so a plugin with a decaying
+    // tail costs what it costs; correctness is unaffected either way.
+    //
+    // Both of these are written out rather than defaulted so that a driver's
+    // `ScopedNoDenormals guard;` is not a trivially-destructible unused local
+    // here and a warning on the one platform where the guard does nothing.
+    ScopedNoDenormals() {}
+    ~ScopedNoDenormals() {}
+#endif
+};
 
 // One entry in a device list. `id` is what gets persisted in the settings file
 // and handed back to open(); `name` exists only to be shown to the user, and
@@ -128,15 +203,46 @@ public:
 
     // Output devices, most-useful-first. The first entry is the one an
     // unconfigured app opens, so it must be the system default.
+    //
+    // The name of that first entry is "System Default" on every platform. It is
+    // the one device name the app writes rather than reads, so it is the one
+    // that can drift, and it did: two shells said that and the third said
+    // "Default output (system)" for the identical thing.
     virtual std::vector<DeviceInfo> devices() = 0;
 
-    // Sample rates this driver will accept. Empty means "whatever the graph
-    // gives you" and the settings pane then offers no choice.
-    virtual std::vector<int> sampleRates() = 0;
+    // The rates THIS DEVICE will actually run at, ascending. `deviceId` is one
+    // of devices()' ids, and an empty one means what it means to open(): the
+    // system default.
+    //
+    // THE APP DOES NOT RESAMPLE, and this list is where that shows. A
+    // standalone exists to audition a plugin, and a sample rate converter
+    // between the plugin and the soundcard costs CPU and puts a filter nobody
+    // asked for into the thing being judged. So the plugin runs at a rate the
+    // hardware is already clocked at, and the settings pane offers exactly
+    // those: a rate the user cannot actually get is not a choice, it is a way
+    // to end up somewhere else without being told.
+    //
+    // Worth saying plainly because all three drivers used to answer the same
+    // fixed { 44100, 48000, 88200, 96000, 176400, 192000 } whatever was plugged
+    // in, and two of them made that list true by switching a converter on -
+    // WASAPI's AUTOCONVERTPCM, PipeWire's adapter resampling into the graph.
+    // A wish-list and a converter are two halves of the same mistake.
+    //
+    // EMPTY is a legitimate answer: the driver cannot say what the device will
+    // take. The settings pane then offers no rate control at all and passes 0
+    // to open(), which leaves the device on whatever it is already running -
+    // the same outcome as a wish-list, without the pretence of a choice.
+    virtual std::vector<int> sampleRates(const std::string& deviceId) = 0;
 
     // requestedSampleRate and requestedBufferFrames are HINTS. What was
     // actually granted is getSampleRate()/getBufferFrames(), read once this has
     // returned; no driver announces its format through the client.
+    //
+    // requestedSampleRate is one of sampleRates() above, or 0 for "no
+    // preference". NO DRIVER CONVERTS TO REACH IT: where the device will not
+    // run at that rate the stream opens at one it will, and getSampleRate()
+    // says which. That is the whole of the policy at this end - a driver that
+    // finds itself reaching for a resampler has misread it.
     //
     // getBufferFrames() is a MAXIMUM, and holds for the life of the stream. A
     // server-side graph (PipeWire, JACK) picks its own quantum and may change
@@ -144,6 +250,23 @@ public:
     // block size it granted rather than handing over a longer one. A rate that
     // changes while running is the case nothing handles yet - see
     // AudioCallback::onAudioFormatChanged above.
+    //
+    // inChannels/outChannels are the PLUGIN's pin counts, and the device's own
+    // count is frequently something else. One rule, all three drivers:
+    //
+    //   device WIDER - a MONO plugin goes to every device channel, because
+    //     "play my synth" on a stereo card means both speakers and a synth
+    //     heard only on the left is a fault report waiting to happen. A plugin
+    //     with two or more channels goes to the first N and the rest are
+    //     silent: a surround card should not get the front pair repeated
+    //     behind the listener.
+    //   device NARROWER - the plugin's extra channels are DROPPED, not folded
+    //     down. Only a mono output reaches this, and summing a stereo plugin
+    //     would change the level of everything being auditioned.
+    //
+    // Written here because it had been written three times and one of the three
+    // did the opposite - silence on the extra channels, under a comment
+    // rejecting the mono case explicitly.
     virtual bool open(
         const std::string& deviceId,
         int requestedSampleRate,
@@ -157,8 +280,43 @@ public:
     virtual int  getSampleRate()  const = 0;
     virtual int  getBufferFrames() const = 0;
 
-    // Empty when the last open() succeeded.
+    // Empty when the last open() succeeded, and that is a rule rather than a
+    // description: StandaloneHost reads this only on a false return, and the
+    // settings pane's status line shows either this string or "Running", never
+    // both. A note left here by a successful open is therefore invisible, and
+    // an audio failure LATER in the session would be read next to it as though
+    // the two were one sentence.
+    //
+    // A DEGRADED open is still a success and does not belong here - no capture
+    // device, an input the plugin will hear silence from. lastWarning() below
+    // is where that goes; one driver used to write the sentence here and return
+    // true anyway, which is what this paragraph exists to stop.
     virtual std::string lastError() const = 0;
+
+    // What a SUCCESSFUL open could not give the plugin, or empty. The other
+    // half of the paragraph above: open() returned true, the app is making a
+    // sound, and something the plugin has pins for is not working.
+    //
+    // Every driver's case so far is audio INPUT - no capture endpoint at all,
+    // an output device with no input streams, a recording endpoint clocked
+    // where the playback endpoint is not - and all three used to say so on
+    // stderr alone. A standalone launched from a file manager has no console to
+    // say it to: the settings page reported "Running: 48000 Hz, 512 frames"
+    // while every input pin was fed silence, which is the one degraded state
+    // with no other way to reach the user. So it is reported here as well, and
+    // the pane draws it under the audio controls the way it already draws the
+    // MIDI one.
+    //
+    // ONE SHORT SENTENCE, and a SPECIFIC one - "the recording device is at
+    // 44100 Hz and playback at 48000 Hz" is something the user can act on,
+    // "input unavailable" is not. The pane has a single line for it, so a
+    // driver with advice too long to fit prints that advice on stderr after the
+    // sentence, and nowhere else.
+    //
+    // Cleared by close(), which every open() begins with - so what is read here
+    // always belongs to the stream now running, and a stopped device has
+    // nothing to say.
+    virtual std::string lastWarning() const = 0;
 };
 
 // Implemented by StandaloneHost. Called from the MIDI driver's thread.

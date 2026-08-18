@@ -293,6 +293,14 @@ void StandaloneHost::stopAudio()
     processorLive_ = false;
 }
 
+std::string StandaloneHost::audioWarning() const
+{
+    if (!audioDriver_ || !audioRunning_)
+        return {};
+
+    return audioDriver_->lastWarning();
+}
+
 bool StandaloneHost::startMidi(const MidiInputSelection& inputs)
 {
     // First, so that no reading of this outlives the attempt that produced it -

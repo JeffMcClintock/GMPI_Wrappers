@@ -210,15 +210,64 @@ std::vector<DeviceInfo> AudioDriverCoreAudio::devices()
     return result;
 }
 
-std::vector<int> AudioDriverCoreAudio::sampleRates()
+std::vector<int> AudioDriverCoreAudio::supportedRates(AudioDeviceID device)
 {
-    // What the app will ASK for, not what the hardware runs at. open() sets the
-    // device's nominal rate when it will take one, and lets AUHAL's own
-    // converter cover it when it will not - which is exactly what a standalone
-    // auditioning a plugin wants, because the alternative (offering only the
-    // device's current rate) would mean a plugin could never be heard at the
-    // rate its presets were made at. Same list as the WASAPI shell.
-    return { 44100, 48000, 88200, 96000, 176400, 192000 };
+    const auto block = getPropertyBlock(
+        device, addr(kAudioDevicePropertyAvailableNominalSampleRates));
+    if (block.empty())
+        return {};
+
+    const auto* ranges = reinterpret_cast<const AudioValueRange*>(block.data());
+    const size_t count = block.size() / sizeof(AudioValueRange);
+
+    std::vector<int> rates;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        // Nearly every device publishes its rates as degenerate ranges - one
+        // entry per rate, minimum equal to maximum - and those go straight in.
+        if (std::abs(ranges[i].mMaximum - ranges[i].mMinimum) < 1.0)
+        {
+            const int rate = static_cast<int>(ranges[i].mMinimum + 0.5);
+            if (rate > 0)
+                rates.push_back(rate);
+            continue;
+        }
+
+        // A genuine RANGE, which a few devices (and most aggregates) report.
+        // The hardware will take any rate inside it, so what to offer is a
+        // question of taste rather than of capability: the rates a plugin's
+        // presets were made at, and nothing in between.
+        static constexpr int kUsualRates[] = { 44100, 48000, 88200, 96000, 176400, 192000 };
+
+        for (const int candidate : kUsualRates)
+        {
+            if (candidate >= ranges[i].mMinimum - 1.0 && candidate <= ranges[i].mMaximum + 1.0)
+                rates.push_back(candidate);
+        }
+    }
+
+    std::sort(rates.begin(), rates.end());
+    rates.erase(std::unique(rates.begin(), rates.end()), rates.end());
+    return rates;
+}
+
+std::vector<int> AudioDriverCoreAudio::sampleRates(const std::string& deviceId)
+{
+    // What the DEVICE advertises, which on this platform has always been the
+    // question open() asks too: setDeviceSampleRate reclocks the hardware for a
+    // rate on this list and declines to touch it for anything else. So the list
+    // and the behaviour have one source, and a rate offered here is one the user
+    // will really get.
+    //
+    // This used to be the flat { 44100 ... 192000 } the other two shells also
+    // carried, with a comment saying so. It was the one part of this file that
+    // did not follow the hardware.
+    const AudioDeviceID device = resolveDevice(deviceId);
+    if (device == kAudioObjectUnknown)
+        return {};
+
+    return supportedRates(device);
 }
 
 // --- device selection ----------------------------------------------------
@@ -263,23 +312,22 @@ double AudioDriverCoreAudio::setDeviceSampleRate(AudioDeviceID device, double ra
     double current = 0.0;
     getProperty(device, rateAddress, current);
 
+    // Zero is "no preference" - the settings pane sends it when sampleRates()
+    // offered nothing to choose from - and leaving the device where it is is
+    // exactly the right answer to that.
     if (rate <= 0.0 || std::abs(current - rate) < 1.0)
         return current;
 
     // Only ask for a rate the device advertises. Setting an unsupported one
     // succeeds on some drivers and then quietly does nothing, which is worse
     // than not asking, because everything downstream believes the new number.
-    bool supported = false;
-    const auto block = getPropertyBlock(device, addr(kAudioDevicePropertyAvailableNominalSampleRates));
-    if (!block.empty())
-    {
-        const auto* ranges = reinterpret_cast<const AudioValueRange*>(block.data());
-        const size_t count = block.size() / sizeof(AudioValueRange);
-        for (size_t i = 0; i < count && !supported; ++i)
-            supported = rate >= ranges[i].mMinimum - 1.0 && rate <= ranges[i].mMaximum + 1.0;
-    }
+    //
+    // The same list sampleRates() published, so what the settings pane offered
+    // and what is honoured here cannot disagree.
+    const auto supported = supportedRates(device);
+    const int wanted = static_cast<int>(rate + 0.5);
 
-    if (!supported)
+    if (std::find(supported.begin(), supported.end(), wanted) == supported.end())
         return current;
 
     if (AudioObjectSetPropertyData(device, &rateAddress, 0, nullptr, sizeof(rate), &rate) != noErr)
@@ -371,17 +419,21 @@ bool AudioDriverCoreAudio::open(const std::string& deviceId,
         // and StandaloneHost only reads it on failure - so a note left there
         // would be both a broken contract and information nobody sees.
         //
-        // stderr instead, which is where this app already prints the command
-        // channel's address and where the other shells print an audio failure.
-        // Worth printing at all because it is the ordinary case for an effect
-        // on a modern Mac, where the speakers and the microphone are separate
-        // devices: the plugin runs, and hears silence, and the reason is not
-        // otherwise visible anywhere.
+        // warning_ is the channel for exactly this, and the settings page draws
+        // it. Worth reporting at all because it is the ordinary case for an
+        // effect on a modern Mac, where the speakers and the microphone are
+        // separate devices: the plugin runs, and hears silence, and the reason
+        // is not otherwise visible anywhere.
+        //
+        // stderr as well, for whoever is reading a log - and the remedy goes
+        // only there, being too long for the pane's one line (see
+        // AudioMidiDevices.h::lastWarning).
+        warning_ = "Audio input is silent: this output device has no audio input.";
+
         std::fprintf(stderr,
-                     "Audio: this output device has no input, so the plugin's %d input(s) will be "
-                     "silent. Choose a duplex device (one marked \"in/out\") on the Audio/MIDI "
-                     "settings page to feed it.\n",
-                     inChannels_);
+                     "%s The plugin's %d input(s) will be silent. Choose a duplex device (one "
+                     "marked \"in/out\") on the Audio/MIDI settings page to feed it.\n",
+                     warning_.c_str(), inChannels_);
     }
 
     const double sampleRate = setDeviceSampleRate(device_, static_cast<double>(requestedSampleRate));
@@ -453,9 +505,11 @@ bool AudioDriverCoreAudio::open(const std::string& deviceId,
         }
     }
 
-    // What the unit ended up running at. The rate can differ from the one asked
-    // for when the device declined to reclock, and AUHAL then converts - so
-    // this, not the request, is what the processor must be built against.
+    // What the unit ended up running at, which can differ from the rate in the
+    // settings file: setDeviceSampleRate declines to ask for anything the device
+    // does not advertise, and returns the rate the device is on instead. That is
+    // the number the stream format above was built from, so AUHAL has nothing to
+    // convert - and it is what the plugin's processor must be built against.
     {
         AudioStreamBasicDescription actual{};
         UInt32 size = sizeof(actual);
@@ -488,8 +542,9 @@ bool AudioDriverCoreAudio::open(const std::string& deviceId,
             AudioUnitSetProperty(unit_, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input,
                                  kInputBus, &disable, sizeof(disable));
 
-            std::fprintf(stderr, "Audio: the device would not open its input, so the plugin's "
-                                 "input(s) will be silent.\n");
+            warning_ = "Audio input is silent: the device would not open its input.";
+
+            std::fprintf(stderr, "%s The plugin's input(s) will be silent.\n", warning_.c_str());
         }
     }
 
@@ -595,6 +650,11 @@ bool AudioDriverCoreAudio::open(const std::string& deviceId,
 
 void AudioDriverCoreAudio::close()
 {
+    // Above the early return, because this is the one place it is cleared and
+    // AudioMidiDevices.h::lastWarning promises a closed driver has nothing to
+    // say - whether or not there was a unit to tear down.
+    warning_.clear();
+
     if (!unit_)
     {
         client_ = nullptr;
@@ -717,6 +777,11 @@ OSStatus AudioDriverCoreAudio::renderProc(void* refCon,
 
     const float* const* inputs = self->planarInPtr_.empty() ? nullptr : self->planarInPtr_.data();
 
+    // Covers both of the paths below, and is why they are not each wrapped:
+    // this is CoreAudio's own IOProc thread and the guard has to come off again
+    // before returning to it. See AudioMidiDevices.h.
+    const ScopedNoDenormals noDenormals;
+
     // The fast path, and the ordinary one: the unit took the plugin's own
     // channel count, so the plugin renders straight into CoreAudio's buffers
     // and nothing is copied at all.
@@ -747,17 +812,11 @@ OSStatus AudioDriverCoreAudio::renderProc(void* refCon,
 
 void AudioDriverCoreAudio::mapOut(AudioBufferList* data, int frames) const
 {
-    // Same policy as AudioDriverWasapi::interleaveOut, and for the same
-    // reasons:
-    //
-    //   device WIDER than the plugin - a mono plugin is spread across every
-    //     channel (which is what "play my synth" means on a stereo card), but
-    //     anything wider goes on the first N with the rest left silent: a
-    //     surround card should not get the front pair repeated behind the
-    //     listener.
-    //   device NARROWER - the plugin's extra channels are dropped rather than
-    //     folded down. Only a mono output does this, and a stereo plugin summed
-    //     to mono would change the level of everything being auditioned.
+    // The channel mapping is AudioDriver::open's - one statement, three
+    // drivers: a MONO plugin fills every channel the device has, anything wider
+    // fills the first N and the rest are silent, and a device narrower than the
+    // plugin drops the extras rather than folding them down. The loop below is
+    // that rule and nothing else.
     const size_t bytes = static_cast<size_t>(frames) * sizeof(float);
 
     for (UInt32 ch = 0; ch < data->mNumberBuffers; ++ch)

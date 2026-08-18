@@ -7,6 +7,14 @@
 // it as non-interleaved float32, which is CoreAudio's canonical format, so
 // nothing between here and the device has to interleave or convert.
 //
+// NOR IS THE RATE CONVERTED. This platform lets an application reclock the
+// hardware, so open() asks the device to run at the rate the user chose and
+// builds the unit's stream format from whatever the device ended up on - which
+// leaves AUHAL's converter with nothing to do. sampleRates() offers exactly the
+// rates the device advertises, so the two agree by construction. The other two
+// shells reach the same place by a different road; the shared statement of it
+// is AudioMidiDevices.h::sampleRates.
+//
 // DUPLEX IS ONE DEVICE, and that is the difference from the other two shells.
 // AudioDriverWasapi and AudioDriverPipeWire open a render stream and a capture
 // stream with a ring buffer between them, because on those platforms the two
@@ -58,7 +66,7 @@ public:
     const char* defaultDeviceId() const override { return "coreaudio:default"; }
 
     std::vector<DeviceInfo> devices() override;
-    std::vector<int> sampleRates() override;
+    std::vector<int> sampleRates(const std::string& deviceId) override;
 
     bool open(const std::string& deviceId,
               int requestedSampleRate,
@@ -73,6 +81,7 @@ public:
     int getBufferFrames() const override { return activeBufferFrames_; }
 
     std::string lastError() const override { return lastError_; }
+    std::string lastWarning() const override { return warning_; }
 
 private:
     // --- realtime thread -------------------------------------------------
@@ -96,9 +105,17 @@ private:
     // is the ordinary case for a saved device that has been unplugged.
     AudioDeviceID resolveDevice(const std::string& deviceId) const;
 
-    // Asks the DEVICE to run at `rate`. CoreAudio applies this asynchronously,
-    // so this polls for it to land. Returns the rate actually in effect, which
-    // is the device's existing one when it declined.
+    // Every rate the device advertises, which is what sampleRates() answers
+    // with and what setDeviceSampleRate tests a request against. Empty when the
+    // device does not publish the property, which is not an error - it means
+    // nothing can be said about it and nothing should be offered.
+    static std::vector<int> supportedRates(AudioDeviceID device);
+
+    // Asks the DEVICE to run at `rate` - the hardware really reclocks, which is
+    // why this driver never needed a converter and the other two have just
+    // stopped using theirs. CoreAudio applies it asynchronously, so this polls
+    // for it to land. Returns the rate actually in effect, which is the
+    // device's existing one when it declined or when `rate` was 0.
     double setDeviceSampleRate(AudioDeviceID device, double rate);
 
     // Clamped to kAudioDevicePropertyBufferFrameSizeRange, then read back:
@@ -153,6 +170,11 @@ private:
 
     std::atomic<bool> streamRunning_{ false };
     std::string lastError_;
+
+    // AudioMidiDevices.h::lastWarning. Written on the main thread inside open()
+    // - the only thread that decides whether the input opened - and cleared by
+    // close(), which every open() begins with.
+    std::string warning_;
 };
 
 } // namespace standalone

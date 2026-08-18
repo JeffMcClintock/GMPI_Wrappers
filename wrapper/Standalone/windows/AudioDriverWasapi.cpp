@@ -41,15 +41,6 @@ const PROPERTYKEY kPkeyDeviceFriendlyName =
 const GUID kSubtypeIeeeFloat =
     { 0x00000003, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
 
-// Older SDKs predate the shared-mode resamplers. Declaring them here rather
-// than #ifdef-ing every use keeps the retry ladder readable.
-#ifndef AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
-#define AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM 0x80000000
-#endif
-#ifndef AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY
-#define AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY 0x08000000
-#endif
-
 // Minimal owning COM pointer. <wrl/client.h> would do, but it is a large header
 // for one behaviour, and this file's whole COM surface is eight interfaces held
 // in two structs.
@@ -163,6 +154,26 @@ REFERENCE_TIME framesToRefTime(int frames, int sampleRate)
         (10000000.0 * frames) / sampleRate + 0.5);
 }
 
+// Resolves a device id to an endpoint, falling back to the system default.
+// A saved id names hardware that may since have been unplugged, and refusing
+// to make a sound because of a stale settings file is not a useful reaction.
+HRESULT openEndpoint(IMMDeviceEnumerator* enumerator,
+                     const std::string& deviceId,
+                     EDataFlow flow,
+                     IMMDevice** returnDevice)
+{
+    // The constant, not the virtual: this helper has no driver instance. Same
+    // string either way - see the note on kDefaultDeviceId.
+    if (!deviceId.empty() && deviceId != AudioDriverWasapi::kDefaultDeviceId)
+    {
+        const auto wide = gmpi::unicode::to_wide(deviceId);
+        if (SUCCEEDED(enumerator->GetDevice(wide.c_str(), returnDevice)))
+            return S_OK;
+    }
+
+    return enumerator->GetDefaultAudioEndpoint(flow, eConsole, returnDevice);
+}
+
 std::string describeHresult(const char* what, HRESULT hr)
 {
     char buffer[160];
@@ -214,9 +225,11 @@ struct AudioDriverWasapi::Wasapi
     std::promise<bool> renderReady;
     std::promise<bool> captureReady;
 
-    // Parameters open() parked for the threads to act on.
+    // Parameters open() parked for the threads to act on. The rate keeps its
+    // "0 means no preference" meaning all the way down here - see the note on
+    // requestedRate in renderThread(), which is the one thing that reads it.
     std::string deviceId;
-    int requestedSampleRate  = 48000;
+    int requestedSampleRate  = 0;
     int requestedBufferFrames = 512;
 
     ~Wasapi()
@@ -301,15 +314,84 @@ std::vector<DeviceInfo> AudioDriverWasapi::devices()
     return result;
 }
 
-std::vector<int> AudioDriverWasapi::sampleRates()
+std::vector<int> AudioDriverWasapi::sampleRates(const std::string& deviceId)
 {
-    // What the shared-mode resampler will accept, not what the hardware runs
-    // at. In shared mode the engine owns the clock: asking for 44100 on a
-    // device running at 48000 inserts a converter rather than reclocking it,
-    // which is exactly what a standalone auditioning a plugin wants - and the
-    // alternative (offering only the device's own rate) would mean a plugin
-    // could never be heard at the rate its presets were made at.
-    return { 44100, 48000, 88200, 96000, 176400, 192000 };
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    if (FAILED(::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                  __uuidof(IMMDeviceEnumerator),
+                                  reinterpret_cast<void**>(enumerator.put()))))
+    {
+        return {};
+    }
+
+    ComPtr<IMMDevice> device;
+    if (FAILED(openEndpoint(enumerator.get(), deviceId, eRender, device.put())))
+        return {};
+
+    // Activated on the CALLING thread, used on it, and released before this
+    // returns - the second of the two COM-apartment cases at the top of the
+    // header, and what lets this run on the UI thread's STA at all: unlike the
+    // render client, nothing here outlives the call that created it.
+    ComPtr<IAudioClient> client;
+    if (FAILED(device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                reinterpret_cast<void**>(client.put()))))
+    {
+        return {};
+    }
+
+    WAVEFORMATEX* mixFormat{};
+    if (FAILED(client->GetMixFormat(&mixFormat)) || !mixFormat)
+        return {};
+
+    // The mix rate is in the list unconditionally, because it is the rate the
+    // engine is clocked at and the last rung of open()'s ladder can always
+    // reach it.
+    const int mixRate = static_cast<int>(mixFormat->nSamplesPerSec);
+    std::vector<int> result{ mixRate };
+
+    // The rest are PROBED rather than assumed. IsFormatSupported in shared mode
+    // is the same question open() is about to ask the same endpoint, so an S_OK
+    // here is a rate that will really open; S_FALSE means "no, but here is what
+    // I would take instead", which for this probe is always the mix rate.
+    //
+    // In shared mode the engine converts word length and channel count but not
+    // RATE, so on ordinary hardware every probe answers S_FALSE and this list
+    // has one entry. It is written as a loop anyway because the answer belongs
+    // to the endpoint: a virtual device that presents several rates is entitled
+    // to say so, and hard-coding "the mix rate is the only rate" would make
+    // this driver the thing that decided otherwise.
+    static constexpr int kCandidates[] = { 44100, 48000, 88200, 96000, 176400, 192000 };
+
+    // The mix format with only the rate changed. Everything else about it is
+    // known to be acceptable, so a refusal can only be about the rate - which
+    // is not true of a format built from scratch, where a rejected channel mask
+    // would read as a rejected rate.
+    const size_t formatBytes = sizeof(WAVEFORMATEX) + mixFormat->cbSize;
+    std::vector<uint8_t> probeStorage(formatBytes);
+
+    for (const int rate : kCandidates)
+    {
+        if (rate == mixRate)
+            continue;
+
+        std::memcpy(probeStorage.data(), mixFormat, formatBytes);
+
+        auto* probe = reinterpret_cast<WAVEFORMATEX*>(probeStorage.data());
+        probe->nSamplesPerSec  = static_cast<DWORD>(rate);
+        probe->nAvgBytesPerSec = probe->nSamplesPerSec * probe->nBlockAlign;
+
+        WAVEFORMATEX* closest{};
+        const HRESULT hr = client->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, probe, &closest);
+        ::CoTaskMemFree(closest);
+
+        if (hr == S_OK)
+            result.push_back(rate);
+    }
+
+    ::CoTaskMemFree(mixFormat);
+
+    std::sort(result.begin(), result.end());
+    return result;
 }
 
 // --- open / close --------------------------------------------------------
@@ -337,7 +419,13 @@ bool AudioDriverWasapi::open(const std::string& deviceId,
 
     w_ = std::make_unique<Wasapi>();
     w_->deviceId              = deviceId;
-    w_->requestedSampleRate   = requestedSampleRate > 0 ? requestedSampleRate : 48000;
+    // NOT substituted with a rate of this driver's own choosing. A 0 here means
+    // the caller has no preference - a fresh install, or a device whose rates
+    // could not be enumerated - and the ladder in renderThread() answers that by
+    // opening at whatever the endpoint is already clocked at. Substituting 48000
+    // would turn "no preference" into a request that fails on every 44100 device
+    // and then falls back to the same place, one wasted Initialize later.
+    w_->requestedSampleRate   = (std::max)(0, requestedSampleRate);
     w_->requestedBufferFrames = requestedBufferFrames > 0 ? requestedBufferFrames : 512;
 
     w_->stopEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -391,6 +479,11 @@ void AudioDriverWasapi::close()
     streamRunning_  = false;
     captureRunning_ = false;
 
+    // After the joins above, so the capture thread that writes it has finished.
+    // This is the ONE place it is cleared, which is enough for the contract in
+    // AudioMidiDevices.h::lastWarning because open() begins with close().
+    warning_.clear();
+
     w_.reset();
     client_ = nullptr;
 
@@ -410,26 +503,6 @@ void AudioDriverWasapi::close()
 
 namespace
 {
-
-// Resolves a device id to an endpoint, falling back to the system default.
-// A saved id names hardware that may since have been unplugged, and refusing
-// to make a sound because of a stale settings file is not a useful reaction.
-HRESULT openEndpoint(IMMDeviceEnumerator* enumerator,
-                     const std::string& deviceId,
-                     EDataFlow flow,
-                     IMMDevice** returnDevice)
-{
-    // The constant, not the virtual: this helper has no driver instance. Same
-    // string either way - see the note on kDefaultDeviceId.
-    if (!deviceId.empty() && deviceId != AudioDriverWasapi::kDefaultDeviceId)
-    {
-        const auto wide = gmpi::unicode::to_wide(deviceId);
-        if (SUCCEEDED(enumerator->GetDevice(wide.c_str(), returnDevice)))
-            return S_OK;
-    }
-
-    return enumerator->GetDefaultAudioEndpoint(flow, eConsole, returnDevice);
-}
 
 // One Activate + Initialize attempt. The client is re-activated per attempt
 // because a failed Initialize leaves an IAudioClient unusable - MSDN is
@@ -491,26 +564,43 @@ void AudioDriverWasapi::renderThread()
         // the LAST rung is the endpoint's own mix format - which by definition
         // it accepts, so reaching the bottom means the device is unusable
         // rather than fussy.
-        const auto wanted = makeFloatFormat(outChannels_, w_->requestedSampleRate);
-        const REFERENCE_TIME duration =
-            framesToRefTime(w_->requestedBufferFrames, w_->requestedSampleRate);
+        //
+        // NOTHING HERE RESAMPLES. The flags used to carry
+        // AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | ..._SRC_DEFAULT_QUALITY, which
+        // put the shared-mode engine's converter in front of the stream so that
+        // the first rung always succeeded - the plugin then ran at whatever the
+        // settings file said while the hardware ran at something else, paying
+        // for a converter in the middle. Without them a rate the engine is not
+        // clocked at is simply refused, and the ladder walks down to a rate the
+        // endpoint really has. See AudioMidiDevices.h::sampleRates.
+        constexpr DWORD kStreamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 
-        constexpr DWORD convertingFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK
-                                        | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
-                                        | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+        // 0 means "no preference", which the settings pane sends when
+        // sampleRates() offered nothing to choose from. The engine's own rate
+        // is the answer to that, and rung 1 below is skipped rather than being
+        // asked for a nonsense format.
+        const int requestedRate = w_->requestedSampleRate;
+
+        const auto wanted = makeFloatFormat(outChannels_, requestedRate);
 
         const WAVEFORMATEX* acceptedFormat = &wanted.Format;
 
-        hr = tryInitialise(device.get(), &wanted.Format, convertingFlags, duration, w_->renderClient);
+        hr = requestedRate > 0
+           ? tryInitialise(device.get(), &wanted.Format, kStreamFlags,
+                           framesToRefTime(w_->requestedBufferFrames, requestedRate),
+                           w_->renderClient)
+           : E_FAIL;
 
+        // Declared out here because acceptedFormat may end up pointing at it,
+        // and it is read below the block that fills it.
+        WAVEFORMATEXTENSIBLE atEngineRate{};
         WAVEFORMATEX* mixFormat{};
+
         if (FAILED(hr))
         {
-            // Ask the endpoint what it runs at and take that instead. This is
-            // where a device that refuses the shared-mode converters (some
-            // pro interfaces do) ends up, and the price is that the plugin
-            // runs at the hardware's rate rather than the one in settings -
-            // which StandaloneHost is told about, because it reads
+            // Ask the endpoint what it runs at and take that instead. The
+            // plugin then runs at the hardware's rate rather than the one in
+            // settings - which StandaloneHost is told about, because it reads
             // getSampleRate() rather than assuming its request was honoured.
             ComPtr<IAudioClient> probe;
             if (SUCCEEDED(device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
@@ -521,10 +611,38 @@ void AudioDriverWasapi::renderThread()
 
             if (mixFormat)
             {
-                const HRESULT mixHr = tryInitialise(device.get(), mixFormat,
-                                                    AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                                                    duration, w_->renderClient);
-                if (SUCCEEDED(mixHr))
+                const int engineRate = static_cast<int>(mixFormat->nSamplesPerSec);
+                const REFERENCE_TIME engineDuration =
+                    framesToRefTime(w_->requestedBufferFrames, engineRate);
+
+                // The plugin's own channel count at the engine's rate, BEFORE
+                // the mix format itself - and what that is worth is narrower
+                // than it looks. Without AUTOCONVERTPCM the shared-mode engine
+                // converts WORD LENGTH but not channel count, so this rung
+                // succeeds only where outChannels_ already equals the mix
+                // format's channel count - which is exactly where rung 3 would
+                // have succeeded too. On the surround card that would make the
+                // difference, this rung fails and rung 3 hands over eight
+                // channels anyway.
+                //
+                // What it does buy, and the reason it is still here: an
+                // endpoint whose mix format is NOT float32 would pass rung 3
+                // and then fail the isFloat32 gate below, taking the whole open
+                // with it. Asking for float32 explicitly gets the engine to
+                // convert the word length, and that rescues the open whenever
+                // the channel counts already match. Rare - every ordinary
+                // endpoint's mix format is float32 - but it costs one
+                // Initialize on a path that has already failed one.
+                atEngineRate = makeFloatFormat(outChannels_, engineRate);
+
+                hr = tryInitialise(device.get(), &atEngineRate.Format, kStreamFlags,
+                                   engineDuration, w_->renderClient);
+                if (SUCCEEDED(hr))
+                {
+                    acceptedFormat = &atEngineRate.Format;
+                }
+                else if (SUCCEEDED(tryInitialise(device.get(), mixFormat, kStreamFlags,
+                                                 engineDuration, w_->renderClient)))
                 {
                     acceptedFormat = mixFormat;
                     hr = S_OK;
@@ -654,10 +772,17 @@ void AudioDriverWasapi::renderThread()
                 if (inChannels_ > 0)
                     ringRead(planarInPtr_.data(), inChannels_, frames);
 
-                client_->processAudio(
-                    static_cast<int>(frames),
-                    inChannels_ > 0 ? planarInPtr_.data() : nullptr, inChannels_,
-                    planarOutPtr_.data(), outChannels_);
+                {
+                    // Per call rather than once for the thread, so that all
+                    // three drivers apply it the same way - the other two are
+                    // handed a thread they do not own and have no other option.
+                    const ScopedNoDenormals noDenormals;
+
+                    client_->processAudio(
+                        static_cast<int>(frames),
+                        inChannels_ > 0 ? planarInPtr_.data() : nullptr, inChannels_,
+                        planarOutPtr_.data(), outChannels_);
+                }
 
                 interleaveOut(reinterpret_cast<float*>(data), static_cast<int>(frames));
 
@@ -684,19 +809,15 @@ void AudioDriverWasapi::interleaveOut(float* deviceBuffer, int frames) const
 {
     const int deviceChannels = deviceOutChannels_;
 
-    // Only reached when the retry ladder had to fall back to the endpoint's mix
-    // format; the first rung asks for the plugin's own channel count, and then
-    // this is a straight interleave. The two mismatches are handled thus:
+    // A mapping at all only when the retry ladder had to fall back to the
+    // endpoint's mix format; the two rungs above it ask for the plugin's own
+    // channel count, and then this is a straight interleave.
     //
-    //   device WIDER than the plugin - a mono plugin is spread across every
-    //     channel (which is what "play my synth" means on a stereo card), but
-    //     anything wider goes on the first N with the rest left silent: a
-    //     surround card should not get the front pair repeated behind the
-    //     listener.
-    //   device NARROWER - the loop simply runs out, so the plugin's extra
-    //     channels are dropped rather than folded down. Only a mono endpoint
-    //     does this, and a stereo plugin summed to mono would change the level
-    //     of everything the user is auditioning.
+    // The mapping is AudioDriver::open's - one statement, three drivers: a MONO
+    // plugin fills every channel the endpoint has, anything wider fills the
+    // first N and the rest are silent, and an endpoint narrower than the plugin
+    // drops the extras rather than folding them down. The loop below is that
+    // rule and nothing else.
     for (int ch = 0; ch < deviceChannels; ++ch)
     {
         const float* source = nullptr;
@@ -727,6 +848,22 @@ void AudioDriverWasapi::captureThread()
     bool ok = false;
     UINT32 captureBufferFrames = 0;
 
+    // Published below when the input did not open, because on this platform
+    // that is an ordinary thing to happen - a desktop with no microphone, or
+    // the two endpoints on different Default Formats - and the plugin then
+    // hears silence with nothing anywhere to say why.
+    //
+    // warning_ rather than lastError_, which AudioMidiDevices.h reserves for an
+    // open that FAILED, and this one has not: the plugin still plays. It also
+    // goes to stderr, but stderr alone was not enough - a standalone started
+    // from Explorer has no console, and the settings page was left saying
+    // "Running" with every input pin silent.
+    std::string whyNoInput = "Audio input is silent: no recording device is available.";
+
+    // Whatever will not fit on the settings pane's line. Empty for every case
+    // that has nothing further to add.
+    const char* advice = "";
+
     do
     {
         ComPtr<IMMDeviceEnumerator> enumerator;
@@ -734,6 +871,7 @@ void AudioDriverWasapi::captureThread()
                                       __uuidof(IMMDeviceEnumerator),
                                       reinterpret_cast<void**>(enumerator.put()))))
         {
+            whyNoInput = "Audio input is silent: the Windows Audio service could not be reached.";
             break;
         }
 
@@ -745,24 +883,30 @@ void AudioDriverWasapi::captureThread()
         if (FAILED(enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, device.put())))
             break;
 
-        // Capture follows the RENDER stream's rate, not the request: the two
-        // are read and written in the same callback, and a rate mismatch would
-        // need a resampler between them.
+        // Capture follows the RENDER stream's rate, not the request: the two are
+        // read and written in the same callback and there is nothing between
+        // them that could resample. So the input opens at activeSampleRate_ or
+        // it does not open, which is what the rate test on the fallback below is
+        // for - the converting flags that used to be here hid the mismatch by
+        // resampling, and taking the endpoint's mix format without checking its
+        // rate would replace that with input arriving at the wrong speed.
         const auto wanted = makeFloatFormat(inChannels_, activeSampleRate_);
 
-        constexpr DWORD convertingFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK
-                                        | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
-                                        | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+        constexpr DWORD kStreamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 
         const WAVEFORMATEX* acceptedFormat = &wanted.Format;
         const REFERENCE_TIME duration = framesToRefTime(w_->requestedBufferFrames, activeSampleRate_);
 
-        HRESULT hr = tryInitialise(device.get(), &wanted.Format, convertingFlags,
+        HRESULT hr = tryInitialise(device.get(), &wanted.Format, kStreamFlags,
                                    duration, w_->captureClient);
 
         WAVEFORMATEX* mixFormat{};
         if (FAILED(hr))
         {
+            // There IS a recording endpoint and it turned the format down, so
+            // the "no recording device" default above has stopped being true.
+            whyNoInput = "Audio input is silent: the recording device could not be opened.";
+
             ComPtr<IAudioClient> probe;
             if (SUCCEEDED(device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                                            reinterpret_cast<void**>(probe.put()))))
@@ -770,14 +914,41 @@ void AudioDriverWasapi::captureThread()
                 probe->GetMixFormat(&mixFormat);
             }
 
-            if (mixFormat && SUCCEEDED(tryInitialise(device.get(), mixFormat,
-                                                     AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                                                     duration, w_->captureClient)))
+            const int captureRate = mixFormat ? static_cast<int>(mixFormat->nSamplesPerSec) : 0;
+
+            if (captureRate > 0 && captureRate != activeSampleRate_)
+            {
+                // THE ordinary way for this to happen, and the reason any of
+                // this is reported to the user at all: the two endpoints are
+                // separate devices with separate Default Formats, so a 44100
+                // microphone under 48000 speakers is a normal laptop rather
+                // than a broken machine. AUTOCONVERTPCM used to absorb it by
+                // resampling; without it the endpoint answers
+                // AUDCLNT_E_UNSUPPORTED_FORMAT and the input is simply silent.
+                //
+                // Both numbers, because "the rates do not match" leaves the
+                // user to go and find out which two.
+                whyNoInput = "Audio input is silent: recording is "
+                           + std::to_string(captureRate) + " Hz, playback "
+                           + std::to_string(activeSampleRate_) + " Hz.";
+
+                // Too long for the pane's one line, so stderr only - see
+                // AudioMidiDevices.h::lastWarning.
+                advice = " Both are set on the endpoints' Advanced pages in Windows Sound settings.";
+            }
+            else if (mixFormat && SUCCEEDED(tryInitialise(device.get(), mixFormat, kStreamFlags,
+                                                          duration, w_->captureClient)))
             {
                 acceptedFormat = mixFormat;
                 hr = S_OK;
             }
         }
+
+        // A device that refused and a device that opened in a format this
+        // driver cannot read are two different things to tell the user, and
+        // only the second one has an open stream behind it.
+        if (SUCCEEDED(hr) && !isFloat32(acceptedFormat))
+            whyNoInput = "Audio input is silent: the recording device's sample format cannot be read.";
 
         if (FAILED(hr) || !isFloat32(acceptedFormat))
         {
@@ -819,6 +990,21 @@ void AudioDriverWasapi::captureThread()
         ok = true;
     }
     while (false);
+
+    if (!ok)
+    {
+        // Both destinations get the SAME sentence, so a log and the settings
+        // page describing one run cannot disagree; only the advice that would
+        // not fit a line is stderr's alone.
+        //
+        // Safe to write warning_ from here: open() is inside captureReady.wait()
+        // until this thread sets the promise below, and close() joins this
+        // thread before clearing it.
+        warning_ = whyNoInput;
+
+        std::fprintf(stderr, "%s The plugin's %d input(s) will be silent.%s\n",
+                     whyNoInput.c_str(), inChannels_, advice);
+    }
 
     // Signalled whatever happened. Capture is optional, so open() does not read
     // this result - but it does WAIT for it, and a thread that never answered

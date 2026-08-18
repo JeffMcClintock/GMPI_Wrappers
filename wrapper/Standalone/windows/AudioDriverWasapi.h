@@ -9,13 +9,30 @@
 // rather than polled because it is the only shared-mode arrangement where the
 // engine tells us when it wants audio, instead of us guessing with a sleep.
 //
+// SHARED MODE ALSO FIXES THE SAMPLE RATE, and this driver accepts that rather
+// than working around it. The engine is clocked at the endpoint's mix format -
+// the "Default Format" on the endpoint's Advanced page in Sound settings - and
+// the only way a shared-mode client reaches another rate is to ask the engine
+// to resample, which is what AudioMidiDevices.h rules out. So sampleRates()
+// reports what the endpoint will genuinely take (normally the mix rate, and
+// nothing else), and a user who wants 44100 changes it in Sound settings, where
+// it is one setting rather than a converter in every application.
+//
 // COM APARTMENTS. Every WASAPI object this class touches is created ON the
-// thread that uses it, and that thread is an MTA of its own. Activating an
-// IAudioClient on the UI thread (an STA, because the window needs OLE) and then
-// calling it from the render thread is a cross-apartment call that either
-// marshals - putting the message loop in the path of every audio buffer - or
-// misbehaves. So open() starts the thread and waits for it to report back,
-// rather than doing the work itself and handing the result over.
+// thread that uses it, and no object is ever touched from an apartment other
+// than the one it was created in. For the STREAM that means each device thread
+// activates its own client and is an MTA of its own: activating an IAudioClient
+// on the UI thread (an STA, because the window needs OLE) and then calling it
+// from the render thread is a cross-apartment call that either marshals -
+// putting the message loop in the path of every audio buffer - or misbehaves.
+// So open() starts the thread and waits for it to report back, rather than
+// doing the work itself and handing the result over.
+//
+// devices() and sampleRates() are the exceptions to the THREAD and not to the
+// rule: both are main-thread-only per AudioMidiDevices.h, so they run in the
+// app's STA, and both activate, use and release everything they touch inside
+// the one call. Nothing they create outlives the call that made it, so there is
+// no second apartment for it to be reached from.
 //
 // Duplex is two streams with a ring buffer between them, matching
 // AudioDriverPipeWire: WASAPI's render and capture clients are separate objects
@@ -57,7 +74,7 @@ public:
     const char* defaultDeviceId() const override { return kDefaultDeviceId; }
 
     std::vector<DeviceInfo> devices() override;
-    std::vector<int> sampleRates() override;
+    std::vector<int> sampleRates(const std::string& deviceId) override;
 
     bool open(const std::string& deviceId,
               int requestedSampleRate,
@@ -72,6 +89,7 @@ public:
     int getBufferFrames() const override { return activeBufferFrames_; }
 
     std::string lastError() const override { return lastError_; }
+    std::string lastWarning() const override { return warning_; }
 
 private:
     // WASAPI's headers stay out of this one. Everything COM lives in the .cpp,
@@ -128,6 +146,13 @@ private:
 
     std::atomic<bool> streamRunning_{ false };
     std::string lastError_;
+
+    // AudioMidiDevices.h::lastWarning - written by the CAPTURE thread, which is
+    // the only thing that can discover a degraded open, and read by the main
+    // thread once open() has returned. The captureReady promise between them is
+    // what orders the two: open() waits on it, so the string is complete before
+    // anything else can look at it. close() joins that thread before clearing.
+    std::string warning_;
 };
 
 } // namespace standalone

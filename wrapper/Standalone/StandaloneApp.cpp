@@ -190,7 +190,16 @@ int runStandaloneApp(PlatformShell& shell)
 
         const auto deviceId = settings.getString(
             Settings::keyAudioDevice, audio ? audio->defaultDeviceId() : "");
-        const int sampleRate   = settings.getInt(Settings::keySampleRate, 48000);
+        // 0 is "no preference" (AudioDriver::open), and it is what an app with
+        // no settings file has to ask for. A default of 48000 here was not a
+        // user's choice, it was this line's, and every driver acts on a rate:
+        // WASAPI spends a failed Initialize on it before falling back, CoreAudio
+        // reclocks the hardware to it, and PipeWire turns it into node.rate -
+        // asking the daemon to move the WHOLE graph, every other client in the
+        // session with it, on behalf of a preference nobody expressed. Only a
+        // user who has applied a rate on the settings page writes this key, and
+        // only then does anything get asked of the device.
+        const int sampleRate   = settings.getInt(Settings::keySampleRate, 0);
         const int bufferFrames = settings.getInt(Settings::keyBufferFrames, 512);
 
         if (!host.startAudio(deviceId, sampleRate, bufferFrames))

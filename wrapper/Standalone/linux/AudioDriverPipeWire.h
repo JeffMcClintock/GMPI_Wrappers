@@ -14,6 +14,15 @@
 // a ring buffer. Only the PLAYBACK callback drives the plugin. Capture opens
 // only when the plugin has audio input pins, because a machine with no capture
 // device must still be able to play a synth.
+//
+// THE GRAPH'S RATE IS THE PLUGIN'S RATE. Neither stream names a rate in the
+// format it negotiates, which is how a pw_stream says "whatever the graph is
+// running at" and the one way to be certain the adapter has put no resampler in
+// front of it. Asking for a rate is a separate thing and is done separately -
+// node.rate on the playback stream, a request to the SERVER to reclock the whole
+// graph, which it honours only for a rate the administrator allowed. So the app
+// asks, the daemon decides, and getSampleRate() reports what actually happened.
+// See AudioMidiDevices.h::sampleRates for why there is no converter here.
 
 #include <atomic>
 #include <memory>
@@ -46,7 +55,7 @@ public:
     const char* defaultDeviceId() const override { return "pipewire:default"; }
 
     std::vector<DeviceInfo> devices() override;
-    std::vector<int> sampleRates() override;
+    std::vector<int> sampleRates(const std::string& deviceId) override;
 
     bool open(const std::string& deviceId,
               int requestedSampleRate,
@@ -61,6 +70,7 @@ public:
     int getBufferFrames() const override { return activeBufferFrames_; }
 
     std::string lastError() const override { return lastError_; }
+    std::string lastWarning() const override { return warning_; }
 
 private:
     // PipeWire types stay out of this header. Pw owns the loop and streams;
@@ -75,7 +85,7 @@ private:
     void onParamChanged(uint32_t id, const ::spa_pod* param);
 
     bool ensureLoop();
-    bool openCapture(int rate, const std::string& deviceId);
+    bool openCapture(const std::string& deviceId);
     void teardownStreams();
     void teardownLoop();
 
@@ -104,14 +114,24 @@ private:
     std::vector<std::vector<float>> planarIn_;
     std::vector<float*> planarInPtr_;
 
-    int outChannels_ = 2;
+    int outChannels_ = 2;   // what the PLUGIN produces
     int inChannels_  = 0;
+    // What the SINK negotiated, which is usually the same and occasionally not
+    // - a mono plugin on a stereo sink, a stereo plugin on a mono one. Kept
+    // apart from outChannels_ because the mapping between the two is a policy
+    // (AudioDriver::open), and a single field cannot hold both ends of it.
+    int deviceOutChannels_ = 2;
 
     int activeSampleRate_  = 48000;
     int activeBufferFrames_ = 512;
 
     std::atomic<bool> streamRunning_{ false };
     std::string lastError_;
+
+    // AudioMidiDevices.h::lastWarning. Written on the main thread inside open()
+    // - openCapture is called from there, not from the graph thread - and
+    // cleared by close(), which every open() begins with.
+    std::string warning_;
 };
 
 } // namespace standalone

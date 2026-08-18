@@ -122,9 +122,22 @@ private:
     std::vector<std::string> deviceIds_;
     std::vector<int> sampleRates_;
 
+    // Which device sampleRates_ was asked about. The rate combo carries an
+    // INDEX into that list, so the two only mean anything together: move the
+    // device combo and the index suddenly points into the previous device's
+    // rates. applyAudio checks this before believing it.
+    std::string sampleRatesDeviceId_;
+
     // Status line under the audio controls: what actually opened, or why nothing
     // did.
     std::string status_;
+
+    // The line under THAT: what the device that did open could not give the
+    // plugin (AudioMidiDevices.h::lastWarning), or empty. Separate from status_
+    // because they are both true at once - "Running: 48000 Hz, 512 frames" with
+    // every input pin silent is exactly the state this exists to show, and
+    // status_ on its own reported full health for it.
+    std::string audioWarning_;
 
     // The same for MIDI, and separate because the two failures are unrelated and
     // the audio one is the one that stops the app making a sound. It sits under
