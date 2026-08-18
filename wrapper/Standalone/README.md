@@ -280,9 +280,11 @@ the only identifier available before connecting.
 | macOS | `/tmp/gmpi-standalone.<uid>/gmpi-standalone.<pid>` — there is no `XDG_RUNTIME_DIR`, so the fallback is the only candidate | as Linux |
 | Windows | `\\.\pipe\gmpi-standalone.<pid>` — the pipe namespace enumerates like any other directory | the pipe's default DACL, plus `PIPE_REJECT_REMOTE_CLIENTS` |
 
-`GMPI_STANDALONE_IPC_DIR` overrides the location on both unixes, for tests;
-Windows has one namespace and needs no equivalent. Failing to open the channel
-is never fatal — the app runs normally without one.
+`GMPI_STANDALONE_IPC_DIR` overrides the location on both unixes, for tests. A
+pipe name has no directory component to redirect, so Windows has no equivalent
+and neither the app nor the MCP client reads the variable there — a script that
+exports it for all three platforms still finds the Windows app. Failing to open
+the channel is never fatal — the app runs normally without one.
 
 The two unixes share `mcp/IpcServer.h` whole. What differs is four calls Linux
 has atomic forms of and macOS does not — `SOCK_CLOEXEC`, `accept4`, `pipe2`, and

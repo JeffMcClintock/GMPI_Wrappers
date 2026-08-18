@@ -20,7 +20,10 @@
 // SynthEdit2/EditorIpcServer.{h,cpp} (Windows named pipe) and
 // SynthEditMac/EditorIpcServerMac.h (macOS unix socket). Same newline framing,
 // same JSONL responses, same discovery-by-directory-listing, so one MCP client
-// drives any of them without knowing which it reached.
+// drives any of them without knowing which it reached - and against
+// IpcServerWin.h the framing, the dispatch and the state around them are not
+// merely alike but the same code, in CommandProtocol.h. What is left below is
+// the socket.
 //
 // THREADING. The listener thread never touches the plugin. It parses a line
 // and hands it to MainThreadQueue, which the event loop's tick drains; see
@@ -44,12 +47,10 @@
 //    repo root, <repo>/mcp/src/discover.ts - not this directory).
 
 #include <algorithm>
-#include <atomic>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <functional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -62,6 +63,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "CommandProtocol.h"
 #include "MainThreadQueue.h"
 
 // ---------------------------------------------------------------------------
@@ -350,9 +352,10 @@ inline std::string chooseSocketPath(std::string* whyNot = nullptr)
 class IpcServer
 {
 public:
-    /// Handles ONE command line and returns the response line. Invoked on the
-    /// main thread via the queue, so it may touch anything the app owns.
-    using CommandHandler = std::function<std::string(const std::string& line)>;
+    /// Both transports take the same handler, declared and described in
+    /// CommandProtocol.h. Spelled here as well because a caller reaches for it
+    /// through the server it is handing it to.
+    using CommandHandler = mcp::CommandHandler;
 
     ~IpcServer() { stop(); }
 
@@ -362,7 +365,7 @@ public:
 
     /// Drained once per event-loop tick by the app. This is what actually runs
     /// the commands.
-    MainThreadQueue& mainThreadQueue() { return queue_; }
+    MainThreadQueue& mainThreadQueue() { return core_.mainThreadQueue(); }
 
     /// Begins listening. Reports false and leaves the app running normally when
     /// the socket cannot be created - a missing command channel must never be
@@ -370,7 +373,7 @@ public:
     /// why, and every false below sets it.
     bool start(CommandHandler handler)
     {
-        if (running_)
+        if (core_.running())
             return true;
 
         // Cleared once here rather than on each success path. Setting it on a
@@ -495,10 +498,8 @@ public:
             return false;
         }
 
-        handler_  = std::move(handler);
-        stopping_ = false;
-        running_  = true;
-        thread_   = std::thread([this] { threadMain(); });
+        core_.arm(std::move(handler));
+        thread_ = std::thread([this] { threadMain(); });
         return true;
     }
 
@@ -507,17 +508,13 @@ public:
     /// guarantees no handler can still be reaching for them.
     void stop()
     {
-        if (!running_ && !thread_.joinable())
+        if (!core_.running() && !thread_.joinable())
             return;
 
-        // Order matters, as on both other platforms. Refuse further model
-        // access FIRST, so a listener already blocked in run() is released with
-        // an error rather than waiting on a main thread that will never tick
-        // again; then wake the listener; and only then join it. Signalling
-        // before joining is what stops the two threads waiting on each other.
-        queue_.shutdown();
+        // Step 1 of the shutdown order beginStop() sets out. The wake and the
+        // join below are steps 2 and 3, and swapping them is the deadlock.
+        core_.beginStop();
 
-        stopping_ = true;
         if (wakeFd_[1] >= 0)
         {
             const char b = 1;
@@ -541,11 +538,10 @@ public:
             socketPath_.clear();
         }
 
-        running_ = false;
-        handler_ = nullptr;
+        core_.endStop();
     }
 
-    bool running() const { return running_; }
+    bool running() const { return core_.running(); }
 
     /// e.g. "/run/user/1000/gmpi-standalone/gmpi-standalone.10673".
     /// Empty until start() succeeds. Named for what it IS to a caller - the
@@ -582,12 +578,12 @@ private:
     }
 
     /// True if the fd became ready; false if stop() woke us. Every blocking
-    /// wait on this thread goes through here: `stopping_` alone is not enough,
-    /// because a thread parked in poll() never re-checks a flag.
+    /// wait on this thread goes through here: core_.stopping() alone is not
+    /// enough, because a thread parked in poll() never re-checks a flag.
     bool waitReady(int fd, short events)
     {
         pollfd p[2] = { { fd, events, 0 }, { wakeFd_[0], POLLIN, 0 } };
-        while (!stopping_)
+        while (!core_.stopping())
         {
             const int n = ::poll(p, 2, -1);
             if (n < 0)
@@ -607,7 +603,11 @@ private:
     struct Client
     {
         int fd = -1;
-        std::string inbox;
+
+        // Per connection, and it has to be: this one thread interleaves every
+        // client, so a read that stops mid-line must leave the tail somewhere
+        // only that client's next read will find it.
+        LineFramer framer;
     };
 
     /// Accepts and serves every client from ONE poll loop.
@@ -628,7 +628,7 @@ private:
         std::vector<pollfd> fds;
         char buf[4096];
 
-        while (!stopping_)
+        while (!core_.stopping())
         {
             fds.clear();
             fds.push_back({ listenFd_,  POLLIN, 0 });
@@ -667,7 +667,7 @@ private:
             // Index by fd rather than by position: serving one client can
             // dispatch a command that takes a while, and `fds` describes a
             // moment that has passed by the time we reach the next entry.
-            for (size_t i = 2; i < fds.size() && !stopping_; ++i)
+            for (size_t i = 2; i < fds.size() && !core_.stopping(); ++i)
             {
                 if (!fds[i].revents)
                     continue;
@@ -702,27 +702,14 @@ private:
         if (got == 0)
             return false;                               // client gone
 
-        client.inbox.append(buf, static_cast<size_t>(got));
-
-        // Newline-framed, matching SynthEditCL's `--script -` grammar and both
-        // other transports, so one client implementation drives every one.
-        size_t nl;
-        while ((nl = client.inbox.find('\n')) != std::string::npos)
-        {
-            std::string line = client.inbox.substr(0, nl);
-            client.inbox.erase(0, nl + 1);
-            if (!line.empty() && line.back() == '\r')
-                line.pop_back();
-            if (line.empty())
-                continue;
-
-            // Blocks until the main thread's next tick runs it.
-            std::string response = queue_.run([this, line] { return handler_(line); });
-            response += '\n';
-            if (!writeAll(client.fd, response))
-                return false;
-        }
-        return true;
+        // False from the framer is a peer that stopped reading, which is the
+        // same answer this function gives for one that disconnected: drop it,
+        // and the rest of its inbox with it.
+        return client.framer.feed(buf, static_cast<size_t>(got),
+            [this, &client](const std::string& line)
+            {
+                return writeAll(client.fd, core_.respondTo(line));
+            });
     }
 
     /// Never blocks UNINTERRUPTIBLY on a client that stopped reading, which
@@ -767,17 +754,17 @@ private:
         return true;
     }
 
-    MainThreadQueue queue_;
-    CommandHandler handler_;
+    /// The queue, the handler, and the running/stopping flags - all of it
+    /// shared with the named-pipe transport (CommandProtocol.h). Everything
+    /// else in this class is the socket.
+    ChannelCore core_;
+
     std::thread thread_;
     std::string socketPath_;
     std::string lastError_;
 
     int listenFd_ = -1;
     int wakeFd_[2] = { -1, -1 };   // self-pipe: the stopEvent_ analogue
-
-    std::atomic<bool> running_{ false };
-    std::atomic<bool> stopping_{ false };
 };
 
 } // namespace mcp

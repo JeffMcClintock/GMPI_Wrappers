@@ -89,10 +89,17 @@ repeatable check rather than a recording of what you are hearing right now.
 ## How it finds the app
 
 A directory listing *is* the discovery mechanism — the app publishes nothing
-else, so there is no registry, config file or port to keep in sync. The socket
-is named `gmpi-standalone.<pid>`, mode 0700. Directories tried, in order:
+else, so there is no registry, config file or port to keep in sync. The leaf is
+named `gmpi-standalone.<pid>` on all three platforms.
 
-1. `$GMPI_STANDALONE_IPC_DIR` — overrides everything, for tests.
+On Windows there is one place to look and no choice to make: `\\.\pipe\`, which
+`readdir` enumerates like any other directory. On Linux and macOS the socket is
+mode 0700 and the directories are tried in order:
+
+1. `$GMPI_STANDALONE_IPC_DIR` — overrides the rest, for tests. Unix only: a
+   pipe name has no directory component to redirect, so the Windows app pays
+   the variable no attention and neither does discovery. A cross-platform test
+   script may therefore export it unconditionally.
 2. `$XDG_RUNTIME_DIR/gmpi-standalone`
 3. `/run/user/<uid>/gmpi-standalone` — the same path, derived rather than read.
    Not redundant: an MCP host does not hand its servers the user's whole
