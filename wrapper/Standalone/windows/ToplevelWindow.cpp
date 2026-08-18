@@ -163,6 +163,17 @@ void ToplevelWindow::close()
     }
 }
 
+void ToplevelWindow::requestClose()
+{
+    if (!hwnd_)
+        return;
+
+    // Hidden, not destroyed. Everything that actually tears down runs after the
+    // loop returns, in the order main() states; all this does is end the loop.
+    ::ShowWindow(hwnd_, SW_HIDE);
+    ::PostQuitMessage(0);
+}
+
 void ToplevelWindow::resizeFrameToClient()
 {
     if (!hwnd_)
@@ -283,14 +294,34 @@ LRESULT ToplevelWindow::onMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         // buys a grey flash on each resize and nothing else.
         return 1;
 
+    case WM_QUERYENDSESSION:
+        // Nothing is unsaved and there is nothing to ask, so never be the app
+        // that blocks a logoff.
+        return TRUE;
+
+    case WM_ENDSESSION:
+        // The session really is ending, so take the ordinary close path instead
+        // of being killed with the audio device still open. This is the Win32
+        // spelling of the SIGTERM handler MainWayland.cpp and MainMac.mm
+        // install, and it exists for the same reason.
+        if (wParam)
+            requestClose();
+        return 0;
+
     case WM_CLOSE:
-        close();
+        // Deliberately not close(): see requestClose(). Tearing the frame down
+        // here would do it while audio and MIDI are still running.
+        requestClose();
         return 0;
 
     case WM_DESTROY:
         // The app's only window, so its destruction ends the process. hwnd_ is
         // cleared here (not in close()) so that close(), the destructor and a
         // user-driven close all converge on the same path.
+        //
+        // This still posts WM_QUIT, which is right for the case where something
+        // else destroyed us. On the ordinary path the loop has already returned
+        // by the time close() runs, so that WM_QUIT is simply never read.
         hwnd_ = {};
         ::PostQuitMessage(0);
         return 0;

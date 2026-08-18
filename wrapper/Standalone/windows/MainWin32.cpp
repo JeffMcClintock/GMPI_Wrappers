@@ -208,7 +208,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int)
             std::vector<MenuBarView::Menu> menus;
 
             menus.push_back({ "File", {
-                { "Quit", [&window] { window.close(); } },
+                { "Quit", [&window] { window.requestClose(); } },
             } });
 
             menus.push_back({ "Options", {
@@ -229,7 +229,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int)
                     [&] { return layout->currentPage() == pageSettings; }
                 },
                 {},   // separator
-                { "Quit", [&window] { window.close(); } },
+                { "Quit", [&window] { window.requestClose(); } },
             } });
 
             menuBar->setMenus(std::move(menus));
@@ -374,6 +374,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int)
         host.stopAudio();
 
         frame.detachClient();
+
+        // Only now is the window destroyed. WM_CLOSE only asked for it, so that
+        // everything above ran while the frame was still whole.
+        window.close();
     }
 
     if (SUCCEEDED(comInit))
