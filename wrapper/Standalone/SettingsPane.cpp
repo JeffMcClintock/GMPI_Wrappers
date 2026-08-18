@@ -357,8 +357,14 @@ gmpi::ReturnCode SettingsPane::arrange(const gmpi::drawing::Rect* finalRect)
 gmpi::ReturnCode SettingsPane::render(gmpi::drawing::api::IDeviceContext* dc)
 {
     // A theme change repaints every colour, so it needs the same full rebuild
-    // a layout change does - and consumeThemeChanged must be called here,
-    // because Form::DoUpdates would otherwise swallow the flag first.
+    // a layout change does. The mode comparison below is what decides that.
+    //
+    // consumeThemeChanged() used to be called here as well, to beat
+    // Form::DoUpdates to the flag. It no longer has to: DoUpdates consumes
+    // against its own counter through the versioned overload, so it cannot
+    // take anything this page needed. The no-argument overload it used keeps
+    // ONE static shared by every caller in the process, which is why
+    // MenuBarView tracks its own version instead of reaching for it.
     //
     // THIS PAGE CANNOT NOTICE A THEME CHANGE ON ITS OWN. It watches for one only
     // while it is being rendered, and setThemeMode() invalidates nothing - it
@@ -371,8 +377,6 @@ gmpi::ReturnCode SettingsPane::render(gmpi::drawing::api::IDeviceContext* dc)
     // whole window - this page included. Delete that invalidate and the strip
     // will still recolour itself while everything below it stays in the old
     // theme, which looks like a bug in this file and is not one.
-    gmpi::ui::consumeThemeChanged();
-
     const auto mode = gmpi::ui::themeModeStorage();
     if (mode != lastRenderedTheme_)
         formIsDirty_ = true;
