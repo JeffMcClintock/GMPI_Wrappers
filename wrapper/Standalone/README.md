@@ -36,10 +36,14 @@ bundles. `GMPI-plugins/plugins/SawDemo` (a synth: MIDI in, stereo out) and
 | Windows | Win32 + Direct2D (gmpi_ui's `DrawingFrame`, the one the VST3 wrapper embeds) | WASAPI, shared mode | winmm | named pipe |
 | macOS | Cocoa + CoreGraphics (gmpi_ui's `createNativeView`, the one the AU and VST3 wrappers hand their host) | CoreAudio (AUHAL) | CoreMIDI | unix socket |
 
-`gmpi_plugin()` drops `STANDALONE` from the format list on a platform with no
-shell, with a `message(STATUS)` saying so, and this directory's `CMakeLists.txt`
-returns immediately. A cross-platform project can therefore list `STANDALONE`
-unconditionally.
+`gmpi_plugin()` drops `STANDALONE` from the format list rather than failing, in
+both of the cases where no wrapper gets built: a platform with no shell, and a
+Linux box missing one of the dependencies the wrapper probes for (see *Building
+on Linux*). It decides the second by running that probe itself —
+`dependencies.cmake`, the same file this directory's `CMakeLists.txt` includes —
+so the two cannot disagree. Either way a `message(STATUS)` says so and this
+directory's `CMakeLists.txt` returns immediately. A cross-platform project can
+therefore list `STANDALONE` unconditionally.
 
 **macOS builds an `.app`**, unlike the bare binary the other two produce. Not
 for tidiness: an app that opens an audio *input* needs
@@ -55,9 +59,12 @@ build/plugins/SawDemo/SawDemo_STANDALONE.app/Contents/MacOS/SawDemo_STANDALONE
 The command channel is compiled in by **default** and can be switched off with
 the CMake option `GMPI_STANDALONE_COMMAND_CHANNEL=OFF` (or
 `-DGMPI_STANDALONE_COMMAND_CHANNEL=0` straight to the compiler). Off removes
-the code rather than merely declining to start it — `mcp/` is not compiled at
-all — so a vendor who does not want a local IPC endpoint in a signed product
-has nothing left to audit. See `CommandChannel.h`.
+the code rather than merely declining to start it — no `mcp/` implementation is
+compiled at all — so a vendor who does not want a local IPC endpoint in a signed
+product has no transport, no dispatcher and no listening thread to audit. The
+one file that survives is `mcp/CommandChannelHost.h`, which the startup sequence
+includes either way and which is three inline no-ops off. See
+`CommandChannel.h`.
 
 ## Layout
 
@@ -65,6 +72,7 @@ Portable — no window-system headers, shared by every platform:
 
 | File | |
 | --- | --- |
+| `StandaloneApp.*` | the startup sequence itself, and the `PlatformShell` seam the three shells implement |
 | `StandaloneHost.*` | the plugin: factory → processor + controller + editor, the audio callback, the MIDI FIFO |
 | `AudioMidiDevices.h` | the `AudioDriver` / `MidiDriver` seam the shells implement |
 | `StandaloneSettings.*` | persisted device selection (`~/.config/<plugin>/standalone.conf` and its Windows/macOS equivalents) |
@@ -127,11 +135,16 @@ Two WASAPI details that surprise people:
   frames typically yields 1056. `getBufferFrames()` reports what was granted,
   and `StandaloneHost` starts the processor against that, so the status line on
   the settings page reads e.g. `Running: 48000 Hz, 1056 frames`.
-- **A non-native sample rate goes through the engine's resampler**
-  (`AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM`) rather than reclocking the device,
-  which is what lets a plugin be auditioned at the rate its presets were made
-  at. A device that refuses those flags falls back to its own mix format, and
-  the rate actually running is again reported rather than assumed.
+- **The sample rate belongs to the endpoint, not to the settings file.** Shared
+  mode clocks the engine at the endpoint's mix format, and this shell does not
+  resample — the `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM` that used to be here is
+  gone, along with the wish-list of rates it made plausible. `sampleRates()`
+  now probes the endpoint with `IsFormatSupported`, so the settings page offers
+  what the device will really take (normally its one mix rate, changed on the
+  endpoint's Advanced page in Sound settings). Ask for anything else and the
+  stream opens at a rate the endpoint does have, with `getSampleRate()`
+  reporting which. The policy is stated once, for all three shells, on
+  `AudioDriver::sampleRates` in `AudioMidiDevices.h`.
 
 COM apartments are the other thing to keep straight: every WASAPI object is
 created **on the thread that uses it**, each device thread being an MTA of its
@@ -210,15 +223,18 @@ SynthEdit's own Linux CI runs on. Ubuntu 22.04 is **too old**: gmpi_ui's CPU
 text engine needs HarfBuzz 4+ and its Wayland backend needs libwayland 1.22+
 and wayland-protocols 1.32+.
 
-```
-sudo apt-get install -y \
-  libwayland-dev wayland-protocols libxkbcommon-dev libdecor-0-dev \
-  libdbus-1-dev libfreetype-dev libfontconfig1-dev libharfbuzz-dev libpng-dev \
-  libpipewire-0.3-dev libasound2-dev
-```
+The package list is deliberately not repeated here. It lives in
+`CMakeLists.txt`, beside the message that reports what is missing, as one
+`sudo apt install` line naming the whole set — and configuring prints it whenever
+anything is absent, whether the wrapper is being skipped or
+`GMPI_STANDALONE_STRICT` is failing the configure. A configure message has to be
+complete at a terminal where nothing else is open, so that copy is the
+authoritative one and this paragraph is the pointer; to install before your
+first configure, read the line straight out of the file.
 
-Install `libdecor-0-plugin-1-gtk` too, or libdecor finds no plugin and the
-window has no title bar or border.
+One name in it is not a build dependency: `libdecor-0-plugin-1-gtk` is loaded at
+run time, so without it the build succeeds and the window then has no title bar
+or border.
 
 `GMPI_WAYLAND_PROTOCOLS_DIR` (a CMake cache variable) is searched ahead of the
 system `wayland-protocols` tree, for a build host whose packages are older than
@@ -229,9 +245,19 @@ the staging protocols the backend binds.
 - **Audio failing to open is not fatal.** The app comes up on the settings page
   with the error on it, rather than refusing to start — the settings page is
   the only thing that can fix a busy or missing device.
-- **An empty MIDI input list means "connect everything readable"**, so a fresh
-  install plays as soon as a keyboard is plugged in. Once the user has visited
-  the settings page, the saved list is honoured exactly, including empty.
+- **"Never configured" and "configured to nothing" are different things.** With
+  nothing saved, every readable MIDI input is connected, so a fresh install
+  plays as soon as a keyboard is plugged in. Only actually ticking or unticking
+  an input saves a list — opening the settings page and closing it again does
+  not — and from then on that list is honoured exactly, so unticking every box
+  stops MIDI input rather than connecting all of it. The driver seam only speaks
+  in id lists, where empty means "everything", so `MidiInputSelection` is what
+  carries the difference as far as `StandaloneHost::startMidi`.
+- **Upgrading unticks a saved Linux MIDI selection, once.** Persisted ALSA input
+  ids are now the client and port *names* rather than the numeric `client:port`
+  address, which the sequencer reassigns as devices come and go — so a list
+  written by an older build matches nothing and those inputs come back unticked.
+  Tick them again; ids that survive a replug are what that buys.
 - **Settings apply instantly, with no OK button**, and the apply is deferred to
   the next frame — re-opening an audio device inside a click's event dispatch
   would join the driver's threads with the compositor waiting on us.

@@ -47,8 +47,23 @@ public:
     // installed standalone play the moment a keyboard is plugged in, and the
     // settings pane distinguishes "never configured" from "configured to
     // nothing" so that turning every input off actually turns them off.
+    //
+    // Which of the possible outcomes counts as failure, and what lastError()
+    // then says, is MidiOpenTally's to decide rather than this driver's. Its
+    // rule keys on what was ASKED for rather than on what is plugged in, and
+    // the case that changes here is the empty list above: on a machine with no
+    // MIDI hardware at all that is now a SUCCESS with nothing connected, where
+    // this driver used to call it a failed open and put a sentence on the
+    // settings page in the one situation where nothing was wrong.
+    //
+    // The sources this connects are exactly the ones inputs() lists, which is
+    // not automatic - see the skip in open().
     bool open(const std::vector<std::string>& inputIds, MidiCallback* client) override;
 
+    // Closes on the way out of a failed open() too, unlike MidiDriverAlsa: a
+    // CoreMIDI input port is not published to other applications - only a
+    // virtual DESTINATION would be, and this driver creates none - so there is
+    // nothing to be gained by keeping one.
     void close() override;
 
     std::string lastError() const override { return lastError_; }

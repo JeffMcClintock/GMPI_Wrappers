@@ -54,6 +54,15 @@ public:
     // destruction cascade after the frame that would dispatch them is gone.
     void close();
 
+    // Asks for the window to go away WITHOUT tearing anything down yet: it
+    // hides, the event loop stops, and main() then stops audio and MIDI before
+    // close() destroys the frame. ToplevelWindowMac::requestClose is the peer,
+    // and both exist for the same reason - closing straight from a WM_CLOSE or
+    // a menu completion would destroy the frame while the audio thread is still
+    // calling the plugin through it. Hiding first is what keeps the close
+    // feeling instant while the device is still being handed back.
+    void requestClose();
+
     HWND hwnd() const { return hwnd_; }
 
     // The editor frame filling the client area. Everything the app does to the

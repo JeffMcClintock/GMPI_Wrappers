@@ -8,6 +8,11 @@
 #ifdef _WIN32
 #include <shlobj.h>
 #include <windows.h>
+
+// The one UTF-8 conversion, shared with windows/MidiDriverWin.cpp. Inside the
+// arm rather than at the top of the file because only Windows has anything to
+// convert: path::native() is a wide string only here.
+#include "helpers/unicode_conversion.h"
 #endif
 
 namespace gmpi
@@ -77,7 +82,7 @@ std::string sanitiseFolderName(const std::string& name)
 Settings::Settings(const std::string& pluginName)
 {
     const auto dir = configRoot() / sanitiseFolderName(pluginName);
-    path_ = (dir / "standalone.conf").string();
+    path_ = dir / "standalone.conf";
 }
 
 void Settings::load()
@@ -110,14 +115,15 @@ void Settings::load()
 void Settings::save() const
 {
     std::error_code ec;
-    std::filesystem::create_directories(std::filesystem::path(path_).parent_path(), ec);
+    std::filesystem::create_directories(path_.parent_path(), ec);
     if (ec)
         return;
 
     // Write-then-rename, so a crash or a full disk mid-write leaves the
     // previous settings intact rather than a half file that load() would
     // read as "no audio device configured".
-    const auto tmp = path_ + ".tmp";
+    std::filesystem::path tmp = path_;
+    tmp += ".tmp";
     {
         std::ofstream file(tmp, std::ios::binary | std::ios::trunc);
         if (!file)
@@ -134,6 +140,30 @@ void Settings::save() const
     std::filesystem::rename(tmp, path_, ec);
     if (ec)
         std::filesystem::remove(tmp, ec);
+}
+
+std::string Settings::filePath() const
+{
+#ifdef _WIN32
+    // Neither path::string() nor path::u8string(). MSVC's string() narrows
+    // through the system ANSI codepage, refuses a best-fit substitution, and
+    // THROWS a std::system_error when a character has no representation there -
+    // so on a machine whose locale does not cover the account name (a Cyrillic
+    // or CJK user on a western-locale install) merely asking where the settings
+    // live would be an exception. u8string() fixes that case but not the class:
+    // it throws the identical ERROR_NO_UNICODE_TRANSLATION on an unpaired
+    // surrogate, and a Windows filename is only WTF-16, so a lone surrogate is
+    // a legal name the STL refuses to encode. to_utf8 is WideCharToMultiByte
+    // WITHOUT WC_ERR_INVALID_CHARS, so the API substitutes U+FFFD there rather
+    // than failing, which is the answer this getter wants: its callers are the
+    // ones reporting some other problem, and a path shown with a replacement
+    // character in it beats no path.
+    return gmpi::unicode::to_utf8(path_.native());
+#else
+    // A POSIX path is stored as the bytes the OS gave us, which is already the
+    // UTF-8 asked for; u8string() would relabel these same bytes.
+    return path_.native();
+#endif
 }
 
 std::string Settings::getString(const std::string& key, const std::string& fallback) const

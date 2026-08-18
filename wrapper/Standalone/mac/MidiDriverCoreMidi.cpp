@@ -4,6 +4,8 @@
 #include <cstring>
 #include <memory>
 
+#include "../MidiStreamParser.h"
+
 namespace gmpi
 {
 namespace standalone
@@ -66,171 +68,25 @@ std::string endpointName(MIDIEndpointRef endpoint)
     return name;
 }
 
-/// Splits a CoreMIDI packet's bytes into individual MIDI 1.0 messages.
-///
-/// Needed because the far end takes ONE message per call: MidiConverter2 decodes
-/// a status byte from byte 0 and converts that message, so handing it a packet
-/// holding a note-off followed by a note-on would silently drop the second.
-/// CoreMIDI packs "one or more complete messages" into a packet, so this is the
-/// ordinary case rather than an edge one.
-///
-/// Sysex is the exception CoreMIDI documents: a long dump arrives split across
-/// packets, so it accumulates here until its 0xF7. One parser per connected
-/// source, because two devices' streams interleave at packet granularity and a
-/// shared parser would splice one device's sysex around the other's notes.
-class MidiStreamParser
+/// The same name with inputs()' last-resort fallback applied, for the places
+/// that put it in a sentence. An endpoint with neither property readable is
+/// rare but not impossible, and 'Could not open MIDI input ""' helps nobody.
+std::string endpointNameForMessage(MIDIEndpointRef endpoint, int index)
 {
-public:
-    MidiStreamParser()
-    {
-        // Once, here, so parse() never allocates on CoreMIDI's thread.
-        message_.reserve(kMaxSysex);
-    }
-
-    /// `emit` is called once per complete message, on CoreMIDI's thread.
-    template <typename Emit>
-    void parse(const uint8_t* data, size_t size, Emit&& emit)
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            const uint8_t byte = data[i];
-
-            // System real time (0xF8..0xFF) may appear ANYWHERE, including in
-            // the middle of another message or a sysex dump, and does not
-            // disturb it. Emitted on the spot and the partial message resumes.
-            //
-            // Not reproducible with a virtual source, if you try: MIDIPacketList
-            // sanitises an interleaved realtime byte on the way in - 90 43 f8 64
-            // sent through MIDIPacketListAdd arrives as 90 43 78 64, with the
-            // high bit stripped. Verified by dumping the raw packets. Hardware
-            // and drivers deliver realtime in packets of their own, which the
-            // branch below handles either way; this is what covers the one that
-            // does not.
-            if (byte >= 0xF8)
-            {
-                const uint8_t single = byte;
-                emit(&single, 1);
-                continue;
-            }
-
-            if (byte >= 0x80)   // a status byte: whatever was in progress ends here
-            {
-                if (byte == 0xF7)   // end of sysex
-                {
-                    if (inSysex_)
-                    {
-                        append(byte);
-                        emit(message_.data(), message_.size());
-                    }
-                    reset();
-                    continue;
-                }
-
-                // An unterminated sysex followed by a new status byte is a
-                // dropped dump, not a message to emit: the far end would decode
-                // the truncation as MIDI. Discarded rather than guessed at.
-                reset();
-
-                message_.push_back(byte);
-
-                if (byte == 0xF0)
-                {
-                    inSysex_ = true;
-                    expected_ = 0;
-                    runningStatus_ = 0;   // sysex cancels running status
-                    continue;
-                }
-
-                expected_ = messageLength(byte);
-                runningStatus_ = (byte < 0xF0) ? byte : 0;   // system messages cancel it
-
-                if (expected_ == 1)
-                {
-                    emit(message_.data(), message_.size());
-                    reset();
-                }
-                continue;
-            }
-
-            // A data byte.
-            if (inSysex_)
-            {
-                append(byte);
-                continue;
-            }
-
-            if (message_.empty())
-            {
-                // Running status: a data byte with no status in front of it
-                // repeats the last channel status. CoreMIDI is not supposed to
-                // emit these, but a driver bridging a raw stream can, and
-                // dropping the note would be the only symptom.
-                if (runningStatus_ == 0)
-                    continue;
-
-                message_.push_back(runningStatus_);
-                expected_ = messageLength(runningStatus_);
-            }
-
-            message_.push_back(byte);
-
-            if (message_.size() >= expected_)
-            {
-                emit(message_.data(), message_.size());
-                message_.clear();   // NOT reset(): running status survives
-            }
-        }
-    }
-
-private:
-    static size_t messageLength(uint8_t status)
-    {
-        if (status < 0xF0)
-        {
-            // Program change and channel pressure carry one data byte; every
-            // other channel message carries two.
-            const uint8_t kind = status & 0xF0;
-            return (kind == 0xC0 || kind == 0xD0) ? 2 : 3;
-        }
-
-        switch (status)
-        {
-        case 0xF1: return 2;   // MTC quarter frame
-        case 0xF2: return 3;   // song position pointer
-        case 0xF3: return 2;   // song select
-        default:   return 1;   // tune request, and the undefined ones
-        }
-    }
-
-    void append(uint8_t byte)
-    {
-        // A dump longer than this is truncated rather than grown without
-        // bound: MidiFifo::kMaxMessage is 256 and truncates anyway, and a
-        // device stuck mid-sysex must not be able to allocate the app to death
-        // on a thread that may not allocate at all.
-        if (message_.size() < kMaxSysex)
-            message_.push_back(byte);
-    }
-
-    void reset()
-    {
-        message_.clear();
-        inSysex_ = false;
-        expected_ = 0;
-    }
-
-    static constexpr size_t kMaxSysex = 256;
-
-    std::vector<uint8_t> message_;
-    size_t expected_ = 0;
-    uint8_t runningStatus_ = 0;
-    bool inSysex_ = false;
-};
+    std::string name = endpointName(endpoint);
+    if (name.empty())
+        name = "MIDI input " + std::to_string(static_cast<long>(index + 1));
+    return name;
+}
 
 } // namespace
 
 /// One per connected source, handed to MIDIPortConnectSource as its connRefCon
 /// and handed back to the read proc with every packet list from that source.
+///
+/// The parser is the portable one in ../MidiStreamParser.h, which winmm and ALSA
+/// also feed - the three OS APIs fragment a stream differently but all three
+/// hand the plugin the same bytes because the splitting happens in one place.
 struct MidiDriverCoreMidi::Source
 {
     MidiDriverCoreMidi* driver{};
@@ -254,6 +110,9 @@ std::vector<DeviceInfo> MidiDriverCoreMidi::inputs()
         if (!source)
             continue;
 
+        // open() makes the same skip, and says why at length. The two have to
+        // agree, or the tick boxes describe a different machine from the one the
+        // driver connected to.
         const std::string id = endpointId(source);
         if (id.empty())
             continue;   // nothing stable to persist, so nothing to offer
@@ -314,47 +173,71 @@ bool MidiDriverCoreMidi::open(const std::vector<std::string>& inputIds, MidiCall
 
     running_ = true;
 
+    // The selection test and the outcome count in one object, shared with
+    // MidiDriverWin and MidiDriverAlsa - see MidiOpenTally.
+    MidiOpenTally tally(inputIds);
+
     for (ItemCount i = 0; i < sourceCount; ++i)
     {
         const MIDIEndpointRef endpoint = MIDIGetSource(i);
         if (!endpoint)
             continue;
 
-        // An empty list means "connect everything readable", which is what
-        // makes a fresh install play the moment a keyboard is plugged in. A
-        // non-empty one is honoured exactly, including a saved id whose device
-        // is no longer present - which simply matches nothing.
-        if (!inputIds.empty())
-        {
-            const std::string id = endpointId(endpoint);
-            if (std::find(inputIds.begin(), inputIds.end(), id) == inputIds.end())
-                continue;
-        }
+        // The unique id is read for every source now, not only when there is a
+        // selection to match it against - the tally needs to be asked about each
+        // one either way.
+        //
+        // And skipped on the SAME test inputs() skips on, so that the pane and
+        // this loop are looking at one list. An endpoint whose unique id cannot
+        // be read has nothing to persist, so inputs() cannot offer it; connect
+        // it here anyway and it would be a device the user can see no tick box
+        // for, playing while unconfigured and vanishing the moment they tick
+        // anything else - and one the tally would count as present while the
+        // pane showed nothing at all. It is a defensive branch either way:
+        // CoreMIDI assigns kMIDIPropertyUniqueID to every endpoint itself.
+        const std::string id = endpointId(endpoint);
+        if (id.empty())
+            continue;
+
+        if (!tally.wants(id))
+            continue;
 
         auto source = std::make_unique<Source>();
         source->driver   = this;
         source->endpoint = endpoint;
 
         if (MIDIPortConnectSource(port_, endpoint, source.get()) != noErr)
-            continue;   // one unreachable port must not cost the others
+        {
+            // One unreachable source must not cost the user the others - so the
+            // loop goes on, and the tally decides later whether this mattered.
+            // The display name, because this driver's id is a number - through
+            // the same last-resort fallback inputs() uses, so a sentence about
+            // an endpoint that names itself to neither property is not blank.
+            tally.failed(endpointNameForMessage(endpoint, static_cast<int>(i)));
+            continue;
+        }
 
         sources_.push_back(source.release());
+        tally.opened();
     }
 
-    if (sources_.empty())
+    if (!tally.success())
     {
-        // False, matching MidiDriverWin: "connected to nothing" is reported as
-        // a failed open on every platform, so the settings page has one story
-        // to tell. It is not fatal to the app - a machine with no keyboard
-        // attached is an ordinary way to run a standalone, and the command
-        // channel can inject MIDI regardless.
-        lastError_ = inputIds.empty() ? "No MIDI input devices were found."
-                                      : "None of the selected MIDI inputs could be opened.";
+        // What counts as failure at all, and what to say about it, is
+        // MidiOpenTally's decision - one story for all three platforms. The case
+        // that changed here is an app nobody has configured on a machine with no
+        // MIDI hardware: that is now a success, so an ordinary laptop with
+        // nothing plugged in no longer puts a sentence on the settings page.
+        lastError_ = tally.failure();
 
         close();
         return false;
     }
 
+    // lastError_ is left EMPTY even if a source along the way refused: at least
+    // one input is live, the app is playable, and a stale sentence on the
+    // settings page would outlive the condition that caused it. The tally is
+    // asked for its sentence only on the arm above. MidiDriverWin does the same.
     return true;
 }
 

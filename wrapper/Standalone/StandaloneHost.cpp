@@ -21,7 +21,19 @@ void MidiFifo::push(const uint8_t* data, int size)
     if (size <= 0 || !data)
         return;
 
-    size = (std::min)(size, kMaxMessage);
+    // Dropped whole, not clipped to fit. Clipping a sysex loses its 0xF7, and
+    // the plugin has no way to tell the difference between a dump that ended and
+    // a dump that stopped - see the note on the class.
+    //
+    // The drivers cannot produce one this long (MidiStreamParser caps them at
+    // the same number) and the command channel refuses one before it gets here,
+    // so this is the backstop rather than the check anybody trips: it is what
+    // makes the FIFO safe against whoever pushes next. A drop is SILENT, which
+    // is exactly why the command channel does its own - a caller that asked for
+    // something impossible deserves to be told so rather than to read "ok" (see
+    // sendMidi in mcp/CommandDispatcher.cpp).
+    if (size > kMaxMessage)
+        return;
 
     const auto write = writePos_.load(std::memory_order_relaxed);
     const auto read  = readPos_.load(std::memory_order_acquire);
@@ -307,16 +319,46 @@ void StandaloneHost::stopAudio()
     processorLive_ = false;
 }
 
-bool StandaloneHost::startMidi(const std::vector<std::string>& inputIds)
+std::string StandaloneHost::audioWarning() const
 {
+    if (!audioDriver_ || !audioRunning_)
+        return {};
+
+    return audioDriver_->lastWarning();
+}
+
+bool StandaloneHost::startMidi(const MidiInputSelection& inputs)
+{
+    // First, so that no reading of this outlives the attempt that produced it -
+    // the settings pane re-reads it every time the page is shown, and a keyboard
+    // plugged in since would otherwise still be accused of being absent.
+    midiError_.clear();
+
     if (!midiDriver_ || !hasMidiInPin_)
         return false;
 
     stopMidi();
 
-    if (!midiDriver_->open(inputIds, this))
+    // The one place the two readings of an empty id list are told apart. The
+    // driver has no way to express "none" - it would open every readable input
+    // instead - so a selection of nothing is answered by not opening it at all,
+    // and the stopMidi() above is what makes that take effect on a driver that
+    // was already running.
+    //
+    // True: the selection was applied. Nothing is listening because nothing is
+    // what was asked for, which is not the same answer as a driver that refused
+    // to open the inputs someone did choose.
+    if (inputs.isNone())
+        return true;
+
+    // Into midiError_, NOT lastError_: that one is audio's, and this call runs
+    // after startAudio, so writing there would replace the reason the app is
+    // silent with the reason it has no keyboard.
+    if (!midiDriver_->open(inputs.driverIds(), this))
     {
-        lastError_ = midiDriver_->lastError();
+        midiError_ = midiDriver_->lastError();
+        if (midiError_.empty())
+            midiError_ = "The MIDI inputs could not be opened.";   // as startAudio does above
         return false;
     }
 

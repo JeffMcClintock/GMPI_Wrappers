@@ -101,6 +101,25 @@ std::string sendMidi(AppContext& context, std::string_view cmd, const std::vecto
     if (!context.host->wantsMidiInput())
         return errorLine(cmd, "this plugin has no MIDI input pin");
 
+    // Refused up here rather than reported as sent. Sharing the cable's route
+    // into the app means sharing its limit: MidiFifo::push DROPS a message
+    // longer than kMaxMessage, silently, because the alternative on a MIDI
+    // thread is worse (StandaloneHost.h says why it is 255 and what raising it
+    // would take). onMidiIn returns void either way, so a harness injecting a
+    // 300-byte sysex would otherwise get {"ok":true} for bytes that reached
+    // nothing - the one answer a test channel must never give.
+    //
+    // It is not the only way a push can vanish: the FIFO also drops when it is
+    // FULL, which takes audio stopped and thousands of bytes queued behind it,
+    // and cannot be tested from this side because the read position belongs to a
+    // realtime consumer. What is answerable here is answered here.
+    if (bytes.size() > static_cast<size_t>(MidiFifo::kMaxMessage))
+    {
+        return errorLine(cmd, "message is " + std::to_string(bytes.size())
+                            + " bytes; the MIDI queue carries at most "
+                            + std::to_string(MidiFifo::kMaxMessage));
+    }
+
     context.host->onMidiIn(bytes.data(), static_cast<int>(bytes.size()));
 
     std::string hex;
@@ -156,8 +175,28 @@ std::string cmdInfo(AppContext& context)
        .boolean("midiInput", host->wantsMidiInput())
        .boolean("audioRunning", host->isAudioRunning());
 
+    // Two errors, never merged into one field. "lastError" is audio's - it is
+    // the one that decides whether this app makes a sound - and "midiError" is
+    // there only when MIDI inputs were asked for and not one of them could be
+    // connected (MidiOpenTally::success is the rule). An app nobody has
+    // configured, on a machine with no MIDI hardware, is not one of those cases
+    // and emits no "midiError" at all - so a harness can read its absence as
+    // "nothing to fix" rather than as "there is no keyboard". The settings pane
+    // shows the two on separate lines for the same reason.
     if (!host->lastError().empty())
         obj.str("lastError", host->lastError());
+
+    if (!host->midiError().empty())
+        obj.str("midiError", host->midiError());
+
+    // A third field rather than a third error, because this one appears NEXT TO
+    // "audioRunning": true. It is the degraded-open channel
+    // (AudioMidiDevices.h::lastWarning) - audio is playing and something the
+    // plugin has pins for is not working, which a harness checking only
+    // lastError would read as full health, exactly as the settings page used
+    // to.
+    if (!host->audioWarning().empty())
+        obj.str("audioWarning", host->audioWarning());
 
     if (auto* driver = host->audioDriver(); driver && host->isAudioRunning())
     {

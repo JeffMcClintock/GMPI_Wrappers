@@ -63,6 +63,45 @@ namespace mcp
 /// prefix match and pid-liveness check are one implementation.
 inline constexpr std::wstring_view kPipePrefix = L"gmpi-standalone.";
 
+/// "<what>: <the system's own words> (error <n>)". The unix transport spells
+/// the same idea with strerror (IpcServer.h); the shared point is that a bare
+/// error NUMBER in a status line helps nobody. The number is kept alongside the
+/// text anyway, because it is what a search or a colleague is asked for, and
+/// because FormatMessage can decline to translate one.
+inline std::string describeLastError(const std::string& what, DWORD err)
+{
+    char* text = nullptr;
+    const DWORD chars = ::FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr,
+        err,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        reinterpret_cast<LPSTR>(&text),   // the ALLOCATE_BUFFER idiom: an out-pointer through an in-pointer parameter
+        0,
+        nullptr);
+
+    std::string detail;
+    if (text)
+    {
+        detail.assign(text, chars);
+        ::LocalFree(text);
+    }
+
+    // System messages arrive punctuated and terminated - "The system cannot
+    // find the file specified.\r\n" - and this is going inside a parenthesis on
+    // ONE status line, which a stray CRLF would break in two.
+    while (!detail.empty()
+        && (detail.back() == '\r' || detail.back() == '\n'
+         || detail.back() == '.'  || detail.back() == ' '))
+    {
+        detail.pop_back();
+    }
+
+    const std::string code = " (error " + std::to_string(err) + ")";
+    return detail.empty() ? what + code
+                          : what + ": " + detail + code;
+}
+
 class IpcServer
 {
 public:
@@ -86,8 +125,19 @@ public:
     {
         if (running_)
             return true;
+
+        // Empty after a successful start, as AudioDriver and MidiDriver promise
+        // of theirs: a stale reason left here would read to every later caller
+        // as a failure that did not happen.
+        lastError_.clear();
+
         if (!handler)
+        {
+            // The caller's own bug rather than the system's, but a bare false
+            // with nothing to say is the thing this member exists to prevent.
+            lastError_ = "no command handler was supplied";
             return false;
+        }
 
         pipeName_ = L"\\\\.\\pipe\\" + std::wstring(kPipePrefix)
                   + std::to_wstring(::GetCurrentProcessId());
@@ -98,6 +148,8 @@ public:
         HANDLE first = createInstance();
         if (first == INVALID_HANDLE_VALUE)
         {
+            lastError_ = describeLastError("CreateNamedPipeW(" + narrow(pipeName_) + ") failed",
+                                           ::GetLastError());
             pipeName_.clear();
             return false;
         }
@@ -105,6 +157,7 @@ public:
         stopEvent_ = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);   // manual reset
         if (!stopEvent_)
         {
+            lastError_ = describeLastError("could not create the stop event", ::GetLastError());
             ::CloseHandle(first);
             pipeName_.clear();
             return false;
@@ -167,6 +220,12 @@ public:
     }
 
     bool running() const { return running_; }
+
+    /// Why the last start() returned false. Empty when it succeeded, matching
+    /// the contract AudioDriver::lastError and MidiDriver::lastError state in
+    /// AudioMidiDevices.h, and matching the unix transport in IpcServer.h - one
+    /// report line is shared by both, so the two must mean the same thing.
+    std::string lastError() const { return lastError_; }
 
     /// e.g. "\\.\pipe\gmpi-standalone.10673". Empty until start() succeeds.
     const std::string& channelName() const { return channelName_; }
@@ -468,6 +527,8 @@ private:
     std::string  channelName_;
 
     HANDLE stopEvent_{};
+
+    std::string lastError_;
 
     std::atomic<bool> running_{ false };
     std::atomic<bool> stopping_{ false };

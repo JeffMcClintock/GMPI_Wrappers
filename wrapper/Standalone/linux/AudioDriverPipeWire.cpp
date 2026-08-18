@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <pipewire/pipewire.h>
@@ -14,6 +16,13 @@
 // path rather than two.
 #ifndef PW_KEY_TARGET_OBJECT
 #define PW_KEY_TARGET_OBJECT "target.object"
+#endif
+
+// Likewise for the rate request. Spelled as a fraction ("1/48000"), and it is a
+// request to reclock the GRAPH rather than a property of our stream - see the
+// note at the top of the header.
+#ifndef PW_KEY_NODE_RATE
+#define PW_KEY_NODE_RATE "node.rate"
 #endif
 
 namespace gmpi
@@ -76,9 +85,10 @@ const pw_stream_events streamEvents = []
     return e;
 }();
 
-// Capture reports no state or format changes of its own: the playback stream
-// owns the plugin's rate, and a capture that fails to negotiate simply leaves
-// the ring empty (silence) rather than stopping the app.
+// Capture reports no state or format changes of its own: the rate belongs to
+// the graph and the playback stream is what reads it back, so there is nothing
+// here a second listener could learn. A capture that fails to negotiate simply
+// leaves the ring empty (silence) rather than stopping the app.
 const pw_stream_events captureEvents = []
 {
     pw_stream_events e{};
@@ -87,22 +97,99 @@ const pw_stream_events captureEvents = []
     return e;
 }();
 
-// --- device enumeration ----------------------------------------------------
+// --- asking the daemon what it has -----------------------------------------
 // A one-shot registry walk on its own connection, run whenever the settings
-// pane opens. It is NOT kept alive between calls: holding a core connection
-// for the life of the app to answer a question asked twice a session costs a
-// thread and a socket, and a list cached across a device being plugged in is
-// worse than no list.
+// pane opens and once more per open(). It is NOT kept alive between calls:
+// holding a core connection for the life of the app to answer a question asked
+// twice a session costs a thread and a socket, and a list cached across a
+// device being plugged in is worse than no list.
 
-struct RegistryScan
+// Everything one walk brings back. The clock half comes from the CORE's own
+// properties rather than from any node: the graph has one rate and one quantum,
+// the daemon publishes both, and they are what a stream will actually be run at
+// no matter which sink it lands on.
+struct GraphInfo
 {
     std::vector<DeviceInfo> sinks;
     std::vector<DeviceInfo> sources;
+
+    int rate         = 0;   // default.clock.rate - what the graph is running at
+    std::vector<int> allowedRates;  // default.clock.allowed-rates, if configured
+
+    int quantum      = 0;   // default.clock.quantum - the graph's usual cycle
+    int maxQuantum   = 0;   // default.clock.max-quantum - the biggest it can be
+};
+
+struct RegistryScan
+{
+    GraphInfo* out{};
     pw_main_loop* loop{};
     int pending = 0;         // sync id we are waiting for
     spa_hook coreHook{};
     spa_hook registryHook{};
 };
+
+// A property the daemon writes as a decimal integer.
+int readIntProp(const spa_dict* props, const char* key)
+{
+    const char* value = props ? spa_dict_lookup(props, key) : nullptr;
+    if (!value)
+        return 0;
+
+    const long parsed = std::strtol(value, nullptr, 10);
+    return (parsed > 0 && parsed < 100000000) ? static_cast<int>(parsed) : 0;
+}
+
+// "[ 44100, 48000 ]", as the daemon writes default.clock.allowed-rates.
+//
+// Every run of digits in the string, which for a flat array of integers is the
+// whole of the grammar - brackets and commas carry nothing this needs. Scanned
+// by hand rather than handed to spa_json because this file is compiled against
+// whatever PipeWire the distribution ships, and the spa_json spelling for
+// "iterate an array of ints" is not the same across the releases the standalone
+// is expected to build on.
+std::vector<int> parseRateArray(const char* text)
+{
+    std::vector<int> rates;
+
+    for (const char* p = text; p && *p; )
+    {
+        if (*p < '0' || *p > '9')
+        {
+            ++p;
+            continue;
+        }
+
+        long long value = 0;
+        while (*p >= '0' && *p <= '9')
+        {
+            if (value < 100000000)          // no overflow on a malformed value
+                value = value * 10 + (*p - '0');
+            ++p;
+        }
+
+        if (value > 0 && value <= 768000)
+            rates.push_back(static_cast<int>(value));
+    }
+
+    std::sort(rates.begin(), rates.end());
+    rates.erase(std::unique(rates.begin(), rates.end()), rates.end());
+    return rates;
+}
+
+void onCoreInfo(void* data, const pw_core_info* info)
+{
+    auto* scan = static_cast<RegistryScan*>(data);
+    if (!info || !info->props)
+        return;
+
+    scan->out->rate       = readIntProp(info->props, "default.clock.rate");
+    scan->out->quantum    = readIntProp(info->props, "default.clock.quantum");
+    scan->out->maxQuantum = readIntProp(info->props, "default.clock.max-quantum");
+
+    if (const char* allowed = spa_dict_lookup(info->props, "default.clock.allowed-rates"))
+        scan->out->allowedRates = parseRateArray(allowed);
+}
 
 void onRegistryGlobal(void* data, uint32_t /*id*/, uint32_t /*permissions*/,
                       const char* type, uint32_t /*version*/, const spa_dict* props)
@@ -131,7 +218,7 @@ void onRegistryGlobal(void* data, uint32_t /*id*/, uint32_t /*permissions*/,
     const char* description = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
 
     DeviceInfo info{ nodeName, description ? description : nodeName };
-    (isSink ? scan->sinks : scan->sources).push_back(std::move(info));
+    (isSink ? scan->out->sinks : scan->out->sources).push_back(std::move(info));
 }
 
 const pw_registry_events registryEvents = []
@@ -156,18 +243,21 @@ const pw_core_events coreEvents = []
 {
     pw_core_events e{};
     e.version = PW_VERSION_CORE_EVENTS;
+    e.info    = onCoreInfo;
     e.done    = onCoreDone;
     return e;
 }();
 
-// Fills `sinks` and `sources`. Returns false when there is no daemon, which
-// the caller reports as "PipeWire is not running" rather than as an empty list
-// - an empty list looks like a machine with no soundcard.
-bool scanRegistry(std::vector<DeviceInfo>& sinks, std::vector<DeviceInfo>& sources)
+// Fills `graph`. False means there was no daemon to ask - told apart from "a
+// daemon with nothing in it" so that devices() can still offer the default
+// entry, sampleRates() can say it knows nothing rather than inventing a list,
+// and open() can go on to fail with the message that names the daemon.
+bool queryGraph(GraphInfo& graph)
 {
     static PwLibrary library;
 
     RegistryScan scan;
+    scan.out  = &graph;
     scan.loop = pw_main_loop_new(nullptr);
     if (!scan.loop)
         return false;
@@ -203,8 +293,6 @@ bool scanRegistry(std::vector<DeviceInfo>& sinks, std::vector<DeviceInfo>& sourc
     pw_context_destroy(context);
     pw_main_loop_destroy(scan.loop);
 
-    sinks  = std::move(scan.sinks);
-    sources = std::move(scan.sources);
     return true;
 }
 
@@ -226,24 +314,52 @@ std::vector<DeviceInfo> AudioDriverPipeWire::devices()
 
     // Always first, always present. Routing is the desktop's job and its mixer
     // can move a running stream anywhere; picking a named sink is the
-    // exception, not the default.
-    out.push_back({ defaultDeviceId(), "Default output (system)" });
+    // exception, not the default. Named "System Default" because that is what
+    // the other two shells call the same entry - it used to read "Default
+    // output (system)" here, which is the same thing said differently on the
+    // one page all three share.
+    out.push_back({ defaultDeviceId(), "System Default" });
 
-    std::vector<DeviceInfo> sinks;
-    std::vector<DeviceInfo> sources;
-    if (!scanRegistry(sinks, sources))
+    GraphInfo graph;
+    if (!queryGraph(graph))
         return out;
 
-    out.insert(out.end(), sinks.begin(), sinks.end());
+    out.insert(out.end(), graph.sinks.begin(), graph.sinks.end());
     return out;
 }
 
-std::vector<int> AudioDriverPipeWire::sampleRates()
+std::vector<int> AudioDriverPipeWire::sampleRates(const std::string& deviceId)
 {
-    // PipeWire resamples between the stream's rate and the graph's, so every
-    // one of these works whatever the daemon is clocked at. Offering them is
-    // about the plugin's own rate, not the hardware's.
-    return { 44100, 48000, 88200, 96000, 176400, 192000 };
+    // The GRAPH's rates, not the sink's, and the device id is unused for
+    // exactly that reason: every stream in a PipeWire graph runs at one rate,
+    // whichever sink it is linked to, and the daemon publishes both what that
+    // rate is and which others it will switch to.
+    //
+    //   default.clock.allowed-rates - the set the administrator permitted, and
+    //     the only rates a node.rate request can actually reach. Those are the
+    //     real choices, so those are what the settings pane offers.
+    //   default.clock.rate alone - no allowed-rates configured, which is a
+    //     graph that will not reclock. One entry: the rate you are going to get.
+    //
+    // This used to be the same six-rate wish-list the other two shells carried,
+    // made true by letting the adapter resample into the graph. Every rate on
+    // it "worked" and none of them was the hardware's.
+    (void)deviceId;
+
+    GraphInfo graph;
+    if (!queryGraph(graph))
+        return {};   // no daemon: nothing is known, and open() will say so
+
+    if (!graph.allowedRates.empty())
+        return graph.allowedRates;
+
+    if (graph.rate > 0)
+        return { graph.rate };
+
+    // A daemon that published neither. Empty is the honest answer - see
+    // AudioMidiDevices.h::sampleRates - and open() is then asked for no rate at
+    // all, which is what this driver would rather be asked for anyway.
+    return {};
 }
 
 bool AudioDriverPipeWire::ensureLoop()
@@ -320,14 +436,21 @@ void AudioDriverPipeWire::onParamChanged(uint32_t id, const spa_pod* param)
     if (id != SPA_PARAM_Format || !param)
         return;
 
-    // What was granted, not what was asked for. The adapter normally gives a
-    // stream exactly the format it requested (resampling behind the scenes),
-    // but the plugin's clock must follow reality.
+    // What was granted, which is the whole point of not naming a rate in the
+    // format we offered: the graph fills it in, and this is where the app finds
+    // out what it is. getSampleRate() reports this, StandaloneHost builds the
+    // plugin's processor against it, and nothing anywhere assumes the request
+    // was honoured.
+    //
+    // Into deviceOutChannels_, NOT outChannels_: this is what the SINK takes,
+    // and the plugin's own count is what open() was handed. Writing the sink's
+    // count over the plugin's is how a mono plugin on a stereo sink used to end
+    // up rendering two channels and being heard on the left speaker only.
     spa_audio_info_raw info{};
     if (spa_format_audio_raw_parse(param, &info) >= 0 && info.rate > 0 && info.channels > 0)
     {
-        activeSampleRate_ = static_cast<int>(info.rate);
-        outChannels_      = static_cast<int>(info.channels);
+        activeSampleRate_  = static_cast<int>(info.rate);
+        deviceOutChannels_ = static_cast<int>(info.channels);
     }
 }
 
@@ -406,7 +529,10 @@ void AudioDriverPipeWire::onProcess()
 
     auto& data = b->buffer->datas[0];
     auto* out = static_cast<float*>(data.data);
-    const uint32_t stride = sizeof(float) * static_cast<uint32_t>(outChannels_);
+
+    // The SINK's channel count: this is the wire, not the plugin.
+    const int deviceChannels = deviceOutChannels_;
+    const uint32_t stride = sizeof(float) * static_cast<uint32_t>(deviceChannels);
 
     uint32_t frames = stride ? data.maxsize / stride : 0;
 
@@ -436,29 +562,44 @@ void AudioDriverPipeWire::onProcess()
             if (inChannels_ > 0)
                 ringRead(planarInPtr_.data(), inChannels_, uint32_t(todo));
 
-            client_->processAudio(
-                todo,
-                inChannels_ > 0 ? planarInPtr_.data() : nullptr, inChannels_,
-                planarOutPtr_.data(), static_cast<int>(planarOutPtr_.size()));
-
-            // Plugin renders planar; the wire format is interleaved F32.
-            for (int ch = 0; ch < outChannels_; ++ch)
             {
-                float* dst = out + size_t(done) * outChannels_ + ch;
+                // See AudioMidiDevices.h. Around the call rather than set once
+                // for the thread, because this thread is PipeWire's and runs
+                // every stream this process has.
+                const ScopedNoDenormals noDenormals;
 
-                if (static_cast<size_t>(ch) < planarOutPtr_.size())
+                client_->processAudio(
+                    todo,
+                    inChannels_ > 0 ? planarInPtr_.data() : nullptr, inChannels_,
+                    planarOutPtr_.data(), outChannels_);
+            }
+
+            // Plugin renders planar; the wire format is interleaved F32. The
+            // channel mapping is AudioDriver::open's, the same one the WASAPI
+            // and CoreAudio drivers apply: a MONO plugin fills every channel of
+            // the sink, anything wider fills the first N and the rest are
+            // silent. This used to write silence for a mono plugin too, under a
+            // comment rejecting that spread outright - and a mono synth on an
+            // ordinary stereo desktop was then audible only on the left.
+            for (int ch = 0; ch < deviceChannels; ++ch)
+            {
+                float* dst = out + size_t(done) * deviceChannels + ch;
+
+                const float* src = nullptr;
+                if (ch < outChannels_)
+                    src = planarOutPtr_[static_cast<size_t>(ch)];
+                else if (outChannels_ == 1)
+                    src = planarOutPtr_[0];
+
+                if (src)
                 {
-                    const float* src = planarOutPtr_[ch];
                     for (int i = 0; i < todo; ++i)
-                        dst[size_t(i) * outChannels_] = src[i];
+                        dst[size_t(i) * deviceChannels] = src[i];
                 }
                 else
                 {
-                    // The device has more channels than the plugin drives (a
-                    // mono plugin on a stereo sink). Silence, not a copy of
-                    // channel 0 - the settings pane says what the plugin is.
                     for (int i = 0; i < todo; ++i)
-                        dst[size_t(i) * outChannels_] = 0.0f;
+                        dst[size_t(i) * deviceChannels] = 0.0f;
                 }
             }
 
@@ -472,7 +613,7 @@ void AudioDriverPipeWire::onProcess()
     pw_stream_queue_buffer(pw_->stream, b);
 }
 
-bool AudioDriverPipeWire::openCapture(int rate, const std::string& deviceId)
+bool AudioDriverPipeWire::openCapture(const std::string& deviceId)
 {
     pw_properties* props = pw_properties_new(
         PW_KEY_MEDIA_TYPE,     "Audio",
@@ -498,7 +639,11 @@ bool AudioDriverPipeWire::openCapture(int rate, const std::string& deviceId)
     spa_audio_info_raw info{};
     info.format   = SPA_AUDIO_FORMAT_F32;
     info.channels = uint32_t(captureChannels_);
-    info.rate     = uint32_t(rate);
+    // No rate, for the same reason as the playback stream: a rate left out of
+    // the format is the graph's, arriving unconverted. It cannot disagree with
+    // what playback got - one graph, one clock - which is what makes the ring
+    // buffer between the two a matter of timing rather than of pitch.
+    info.rate     = 0;
     const spa_pod* params[1] = { spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info) };
 
     // No INACTIVE flag and no negotiation wait: capture is optional, so it must
@@ -540,9 +685,24 @@ bool AudioDriverPipeWire::open(
     // give it a stereo sink and let it write nothing.
     outChannels_ = (std::max)(1, outChannels);
     inChannels_  = (std::max)(0, inChannels);
+    deviceOutChannels_ = outChannels_;   // until negotiation says otherwise
 
-    const int rate = requestedSampleRate > 0 ? requestedSampleRate : 48000;
-    activeSampleRate_ = rate;
+    // What the daemon is clocked at and how large a cycle it will hand over.
+    // Asked before the stream is built because both numbers shape what is asked
+    // for below. The return value is not tested: nothing here can be done about
+    // a missing daemon, and the stream connect that follows is where one is
+    // reported.
+    GraphInfo graph;
+    queryGraph(graph);
+
+    // A starting value for getSampleRate(), replaced by onParamChanged with
+    // what the graph actually granted - which is the number that matters and
+    // the only one the plugin's processor is ever built against. This one is
+    // read solely in the corner where the negotiated format could not be
+    // parsed, so it descends from the graph's own rate to the request to a bare
+    // 48000, each rung being what is still known at that point.
+    activeSampleRate_ = graph.rate > 0 ? graph.rate
+                      : (requestedSampleRate > 0 ? requestedSampleRate : 48000);
 
     pw_properties* props = pw_properties_new(
         PW_KEY_MEDIA_TYPE,     "Audio",
@@ -558,10 +718,29 @@ bool AudioDriverPipeWire::open(
     if (!deviceId.empty() && deviceId != defaultDeviceId())
         pw_properties_set(props, PW_KEY_TARGET_OBJECT, deviceId.c_str());
 
+    // ASK for the rate here, and only here. This is a request to the daemon to
+    // reclock the whole graph, which it grants for a rate in
+    // default.clock.allowed-rates and ignores otherwise - so it can move the
+    // hardware but can never produce a resampler, which is the distinction the
+    // whole policy turns on. 0 means the settings pane had nothing to offer
+    // (sampleRates() came back empty) and the graph is left exactly as it is.
+    //
+    // The negotiated FORMAT below deliberately names no rate at all. Those two
+    // facts together are what makes the plugin run at the hardware's rate: we
+    // may ask the graph to move, and then we take whatever it settled on.
+    if (requestedSampleRate > 0)
+        pw_properties_setf(props, PW_KEY_NODE_RATE, "1/%d", requestedSampleRate);
+
     // The buffer preference is a request the graph may quantise or override;
-    // frames-at-our-rate is the documented form.
+    // frames-at-our-rate is the documented form. Expressed against the rate we
+    // are asking for, or the graph's current one when we are asking for none -
+    // a latency fraction is only a duration, so the denominator has to be the
+    // rate the numerator was counted at.
     if (requestedBufferFrames > 0)
-        pw_properties_setf(props, PW_KEY_NODE_LATENCY, "%d/%d", requestedBufferFrames, rate);
+    {
+        pw_properties_setf(props, PW_KEY_NODE_LATENCY, "%d/%d", requestedBufferFrames,
+                           requestedSampleRate > 0 ? requestedSampleRate : activeSampleRate_);
+    }
 
     {
         LoopLock lock(pw_->loop);
@@ -579,7 +758,14 @@ bool AudioDriverPipeWire::open(
         spa_audio_info_raw info{};
         info.format   = SPA_AUDIO_FORMAT_F32;
         info.channels = static_cast<uint32_t>(outChannels_);
-        info.rate     = static_cast<uint32_t>(rate);
+        // NO RATE. spa_format_audio_raw_build leaves the field out of the pod
+        // entirely when it is zero, and a format with no rate in it is how a
+        // pw_stream says "whatever the graph is running at" - which is the one
+        // request the adapter can satisfy without putting a resampler in front
+        // of us. Naming a rate here is what made this driver resample; the ask
+        // now lives in node.rate above, where the answer is yes or no rather
+        // than yes-with-a-converter.
+        info.rate     = 0;
         const spa_pod* params[1] = { spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info) };
 
         // INACTIVE: negotiate now, run at the end of open(). Errors (no
@@ -625,10 +811,30 @@ bool AudioDriverPipeWire::open(
         }
     }
 
-    // The block size the plugin is started with. With no request, the graph's
-    // quantum is unknown until the first process callback, so allocate a
-    // generous default and let onProcess chunk into it.
-    activeBufferFrames_ = requestedBufferFrames > 0 ? (std::max)(16, requestedBufferFrames) : 512;
+    // The block size the plugin is started with, and the MAXIMUM it will ever
+    // be handed - onProcess chunks a longer cycle down to it, so this is a
+    // promise the driver keeps rather than one the graph makes.
+    //
+    // Bounded by the daemon's own default.clock.max-quantum, which is the
+    // largest cycle the graph can ever run: past that there is nothing to
+    // report but buffers no cycle will fill, and this number is what the
+    // settings pane prints as fact and what the plugin's maxBlockSize is built
+    // from. With no request at all it is the graph's usual quantum, which is a
+    // real number read from the server rather than the flat 512 that used to be
+    // invented here.
+    {
+        int blockFrames = requestedBufferFrames > 0
+                        ? requestedBufferFrames
+                        : (graph.quantum > 0 ? graph.quantum : 512);
+
+        if (graph.maxQuantum > 0)
+            blockFrames = (std::min)(blockFrames, graph.maxQuantum);
+
+        // A floor, because everything below is sized from it and a graph
+        // configured with a tiny max-quantum should not turn into a scratch
+        // buffer of four frames.
+        activeBufferFrames_ = (std::max)(16, blockFrames);
+    }
 
     planarOut_.assign(static_cast<size_t>(outChannels_), std::vector<float>(static_cast<size_t>(activeBufferFrames_), 0.0f));
     planarOutPtr_.clear();
@@ -653,12 +859,27 @@ bool AudioDriverPipeWire::open(
         ringReadPos_  = 0;
 
         LoopLock lock(pw_->loop);
-        if (!openCapture(activeSampleRate_, deviceId))
+        if (!openCapture(deviceId))
         {
-            // Not fatal, and deliberately not an error the caller sees: a synth
-            // with an unused audio-in pin must still play on a machine with no
-            // microphone.
-            lastError_ = "PipeWire: no audio input available (playing anyway)";
+            // A DEGRADED open, not a failed one: a synth with an unused
+            // audio-in pin must still play on a machine with no microphone.
+            //
+            // So warning_, and NOT lastError_, which used to be written here on
+            // the way to returning true. AudioMidiDevices.h reserves that string
+            // for an open that failed - StandaloneHost reads it only on a false
+            // return and the settings pane shows either it or "Running", never
+            // both - so the sentence was invisible where it was, and left behind
+            // to be read next to an unrelated audio failure later in the
+            // session. warning_ is the channel for a degraded open, and the
+            // settings page has a line of its own for it.
+            //
+            // stderr as well, for whoever is reading a log. This is the same
+            // place and the same shape as the note AudioDriverCoreAudio prints
+            // for the identical situation.
+            warning_ = "Audio input is silent: no audio input could be opened.";
+
+            std::fprintf(stderr, "%s The plugin's %d input(s) will be silent.\n",
+                         warning_.c_str(), inChannels_);
         }
     }
 
@@ -682,6 +903,10 @@ void AudioDriverPipeWire::close()
 {
     streamRunning_  = false;
     captureRunning_ = false;
+
+    // The one place it is cleared - AudioMidiDevices.h::lastWarning promises a
+    // closed driver has nothing to say, and open() begins here.
+    warning_.clear();
 
     if (pw_->stream || pw_->capture)
     {

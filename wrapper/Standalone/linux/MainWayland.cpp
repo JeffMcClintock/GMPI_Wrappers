@@ -6,50 +6,48 @@
 // and an Editor attached to a drawing host - with an audio device and a MIDI
 // port standing in for the host.
 //
+// The counterpart of windows/MainWin32.cpp and mac/MainMac.mm, and deliberately
+// the same program - now literally so. The startup sequence, the menus, the
+// tick and the teardown are ONE copy, in ../StandaloneApp.cpp; what is left in
+// this file is the answers only this platform can give, in the order that file
+// asks for them.
+//
 // Wayland-only, deliberately. A build that silently fell back to XWayland
 // would hide the problems this target exists to find, and X11 hosts are the
 // VST3 wrapper's job, not this one's.
 //
 // Two things this file owns that a plugin never does:
 //
-//   * the event loop. Neither timer framework has a native source here, so
-//     the loop's tick drives them - parameter queues, editor animation, and
-//     the deferred settings apply all hang off it.
+//   * the event loop. Neither timer framework has a native source here, and the
+//     frame has no render timer of its own, so this loop's tick drives both -
+//     parameter queues, editor animation, preGraphicsRedraw and the deferred
+//     settings apply all hang off it. Both facts are stated once, in
+//     backendServices() below, and the portable tick reads them from there.
 //   * the connection. In a plugin both belong to the host; that is why the
 //     backend takes them as constructor arguments rather than creating them.
 
-#include <atomic>
-#include <cmath>
-#include <csignal>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "AudioDriverPipeWire.h"
 #include "MidiDriverAlsa.h"
 
-#include "../AppLayout.h"
-#include "../CommandChannel.h"
-#include "../MenuBarView.h"
-#include "../SettingsPane.h"
-#include "../StandaloneHost.h"
-#include "../StandaloneSettings.h"
-
-#if GMPI_STANDALONE_COMMAND_CHANNEL
-#include "../mcp/CommandDispatcher.h"
-#include "../mcp/IpcServer.h"
-#endif
+#include "../StandaloneApp.h"
 
 #include "GmpiUiDrawing.h"
 #include "backends/DrawingFrameWayland.h"
 #include "helpers/CpuTextEngine.h"
 #include "helpers/DecodeImage.h"
 #include "helpers/FontProvider.h"
-#include "helpers/Timer.h"
 
 namespace
 {
+
+using namespace gmpi::standalone;
 
 // The CPU backend deliberately ships no font or shaping code, so the app wires
 // in the three pieces every gmpi_ui host does: fontconfig to find faces,
@@ -71,19 +69,169 @@ gmpi::drawing::TextFormat wireTextStack(gmpi::wayland::WaylandToplevel& frame,
     return facade.createTextFormat(14.0f, std::span{ &family, 1 });
 }
 
-// SIGTERM/SIGINT must run the normal shutdown, not the default instant kill.
-// The session manager sends SIGTERM at logout, and some compositors crash when
-// a client vanishes without disconnecting cleanly - the workaround roundtrip
-// lives in ~Connection, which a default-handled signal never reaches.
+// Everything ../StandaloneApp.cpp needs to know about Wayland.
 //
-// A handler may only touch lock-free atomics; the loop's tick notices the flag
-// and closes the frame from safe context.
-std::atomic<bool> terminationRequested{ false };
-
-void onTerminationSignal(int)
+// The methods are in the order PlatformShell declares them, which is the order
+// they are called in; windows/MainWin32.cpp and mac/MainMac.mm carry the same
+// list.
+class WaylandShell final : public PlatformShell
 {
-    terminationRequested = true;
-}
+public:
+    bool createWindow(const std::string& title, int clientWidthDips, int clientHeightDips) override
+    {
+        if (!connection_.open())
+        {
+            lastError_ = title + ": no Wayland display. This build is Wayland-only;\n"
+                                 "under X11 or a remote session there is nothing to connect to.";
+            return false;
+        }
+
+        // BEFORE create(), which is the opposite of the Windows shell and for
+        // the opposite reason: there the font comes out of the frame's own
+        // DirectWrite factory and cannot exist until the frame does, whereas
+        // here the frame has to be given a font it can draw its popup menus
+        // with, and those exist from the first configure onwards.
+        menuFont_ = wireTextStack(frame_, facade_);
+        if (!menuFont_)
+            reportStatus("No usable font was found; text will not draw.");
+
+        frame_.setMenuFont(gmpi::drawing::AccessPtr::get(menuFont_));
+
+        return frame_.create(title.c_str(), "com.gmpi.standalone", clientWidthDips, clientHeightDips);
+    }
+
+    std::string lastError() const override { return lastError_; }
+
+    void setMinimumClientSize(int widthDips, int heightDips) override
+    {
+        // A request, not a clamp: the client cannot refuse a configure, so only
+        // the compositor can actually stop the drag.
+        frame_.setMinimumSize(widthDips, heightDips);
+    }
+
+    gmpi::drawing::api::ITextFormat* menuFont() override
+    {
+        return gmpi::drawing::AccessPtr::get(menuFont_);
+    }
+
+    bool attachClient(gmpi::api::IDrawingClient* client, gmpi::api::IUnknown* parameterHost) override
+    {
+        // The fallback host first, always: the plugin's parameter pins take
+        // their host from a queryInterface for IEditorHost during setHost, which
+        // attachClient is what triggers.
+        frame_.setFallbackHost(parameterHost);
+        frame_.attachClient(client);
+        return true;
+    }
+
+    void showAndPaint() override
+    {
+        // Nothing to do: the surface becomes visible on its first configure, and
+        // the frame paints on the callback that follows. Only macOS has to force
+        // a paint here, and only because of the microphone prompt.
+    }
+
+    void requestClose() override
+    {
+        // Ends runEventLoop on its next turn; nothing is torn down here.
+        frame_.close();
+    }
+
+    void closeWindow() override
+    {
+        // Only the client. The surface itself goes with frame_ in
+        // ~WaylandShell, because a Wayland client's window IS its surface and
+        // tearing it down before ~Connection's cleanup roundtrip is what
+        // segfaults mutter.
+        frame_.detachClient();
+    }
+
+    std::unique_ptr<AudioDriver> createAudioDriver() override
+    {
+        return std::make_unique<AudioDriverPipeWire>();
+    }
+
+    std::unique_ptr<MidiDriver> createMidiDriver() override
+    {
+        return std::make_unique<MidiDriverAlsa>();
+    }
+
+    BackendServices backendServices() const override
+    {
+        // Neither timer framework has a native source here, and the frame has no
+        // render timer of its own - so the app's tick is the source of both.
+        return { TimerSource::appTick, RedrawClientDriver::appTick };
+    }
+
+    int runEventLoop(const std::function<void(int elapsedMs)>& onTick) override
+    {
+        // The loop already takes exactly this callback, elapsed time and all,
+        // so there is no Ticker here and nothing to adapt. It returns void:
+        // a Wayland client has no exit code of its own to report.
+        frame_.runEventLoop(Ticker::kIntervalMs, onTick);
+        return 0;
+    }
+
+    void reportStatus(const std::string& message) override
+    {
+        std::fprintf(stderr, "%s\n", message.c_str());
+    }
+
+    // No showFatalAlert override: stderr is the whole report on this platform,
+    // and PlatformShell::showFatalAlert says why.
+
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+    bool framePixels(bool forceRedraw,
+                     const uint8_t*& pixels, int& width, int& height, int& stride) override
+    {
+        // No readback and no second draw, unlike the other two shells: the app
+        // drew into an shm buffer it owns, so the bytes it handed the
+        // compositor are simply already here.
+        //
+        // A screenshot must show the effect of the command before it, so it
+        // renders rather than reading a frame that predates the change.
+        // present() early-outs before the first configure, so this is safe even
+        // if a client connects while the window is still opening.
+        if (forceRedraw)
+            frame_.present();
+
+        const auto& buffer = frame_.frameBuffer();
+        if (!buffer.pixels())
+            return false;
+
+        pixels = buffer.pixels();
+        width  = buffer.width();
+        height = buffer.height();
+        stride = buffer.stride();
+        return true;
+    }
+
+    void logicalSize(float& width, float& height) override
+    {
+        width  = static_cast<float>(frame_.logicalWidth());
+        height = static_cast<float>(frame_.logicalHeight());
+    }
+#endif
+
+private:
+    // MEMBER ORDER IS THE CONTRACT, and this is the one the compositor cares
+    // about: connection_ is declared FIRST so it is destroyed LAST, which leaves
+    // ~WaylandToplevel a live display to make its cleanup roundtrip on. These
+    // used to be locals in main(), in this same order, where the ordering was a
+    // property of the statements rather than of the declarations.
+    //
+    // Constructing frame_ before connection_.open() is safe: WaylandFrameBase's
+    // constructor only stores the reference (DrawingFrameWayland.h:651).
+    gmpi::wayland::Connection      connection_;
+    gmpi::wayland::WaylandToplevel frame_{ connection_ };
+
+    // After the frame, so both are gone before it: facade_ wraps the frame's own
+    // factory, and menuFont_ was minted by it.
+    gmpi::drawing::Factory         facade_;
+    gmpi::drawing::TextFormat      menuFont_;
+
+    std::string                    lastError_;
+};
 
 } // namespace
 
@@ -92,292 +240,9 @@ int main(int argc, char** argv)
     (void)argc;
     (void)argv;
 
-    using namespace gmpi::standalone;
-
-    StandaloneHost host;
-    if (!host.init())
-    {
-        fprintf(stderr, "This binary contains no GMPI plugin (MP_GetFactory returned nothing).\n");
-        return 1;
-    }
-
-    Settings settings(host.pluginName());
-    settings.load();
-
-    gmpi::wayland::Connection connection;
-    if (!connection.open())
-    {
-        fprintf(stderr, "%s: no Wayland display. This build is Wayland-only;\n"
-                        "under X11 or a remote session there is nothing to connect to.\n",
-                host.pluginName().c_str());
-        return 1;
-    }
-
-    gmpi::wayland::WaylandToplevel frame(connection);
-
-    gmpi::drawing::Factory facade;
-    auto font = wireTextStack(frame, facade);
-    if (!font)
-        fprintf(stderr, "No usable font was found; text will not draw.\n");
-
-    frame.setMenuFont(gmpi::drawing::AccessPtr::get(font));
-
-    // The plugin's parameter pins take their host from a queryInterface for
-    // IEditorHost during setHost. The frame answers the drawing and input
-    // interfaces itself and forwards the rest here; without this the first
-    // knob drag dereferences null.
-    frame.setFallbackHost(host.parameterHost());
-
-    // Size the window from the editor, plus the strip the menu bar occupies.
-    float editorWidth = 0.0f;
-    float editorHeight = 0.0f;
-    host.getEditorSize(editorWidth, editorHeight);
-
-    const int windowWidth  = static_cast<int>(std::ceil(editorWidth));
-    const int windowHeight = static_cast<int>(std::ceil(editorHeight + MenuBarView::kHeight));
-
-    if (!frame.create(host.pluginName().c_str(), "com.gmpi.standalone", windowWidth, windowHeight))
-    {
-        fprintf(stderr, "Could not create a window.\n");
-        return 1;
-    }
-
-    // A window narrower than the menu bar's titles is not useful, and the
-    // client cannot refuse a configure - only the compositor can stop the drag.
-    frame.setMinimumSize(320, static_cast<int>(MenuBarView::kHeight) + 80);
-
-    host.setAudioDriver(std::make_unique<AudioDriverPipeWire>());
-    if (host.wantsMidiInput())
-        host.setMidiDriver(std::make_unique<MidiDriverAlsa>());
-
-    // --- the window's contents ---------------------------------------------
-    // Refcounted objects, so each is owned by a shared_ptr rather than by the
-    // stack: the frame and the layout keep BORROWED pointers (attachClient
-    // does not addRef), and the layout's children outlive nothing.
-
-    gmpi::shared_ptr<AppLayout> layout(new AppLayout());
-    gmpi::shared_ptr<MenuBarView> menuBar(new MenuBarView());
-    gmpi::shared_ptr<SettingsPane> settingsPane(new SettingsPane(host, settings));
-
-    menuBar->setFont(gmpi::drawing::AccessPtr::get(font));
-
-    layout->setMenuBarHeight(MenuBarView::kHeight);
-    layout->setMenuBar(static_cast<gmpi::api::IDrawingClient*>(menuBar.get()));
-
-    const int pageEditor   = layout->addPage(host.editorDrawingClient());
-    const int pageSettings = layout->addPage(static_cast<gmpi::api::IDrawingClient*>(settingsPane.get()));
-
-    // The way OUT of the settings page. A menu opens it; its own Close button
-    // dismisses it, the way a settings screen anywhere else does. Only offered
-    // when there is a plugin editor to go back to.
-    if (host.editorDrawingClient())
-        settingsPane->setOnClose([&] { layout->showPage(pageEditor); });
-
-    // --- menus --------------------------------------------------------------
-    // Modelled on JUCE's standalone shell, which is what anyone reaching for
-    // this has used before: a File menu that quits and an Options menu that
-    // reaches the device settings.
-    {
-        std::vector<MenuBarView::Menu> menus;
-
-        menus.push_back({ "File", {
-            { "Quit", [&frame] { frame.close(); } },
-        } });
-
-        menus.push_back({ "Options", {
-            {
-                // No "Plugin Editor" item beside it. Two items that switch
-                // between two pages is a radio pair, and nobody looks in a menu
-                // for the way out of a settings screen - they look for a button
-                // on the screen itself, which is where it now is.
-                "Audio/MIDI Settings...",
-                [&]
-                {
-                    // Re-read the device lists on the way in: keyboards and
-                    // sinks come and go while the app runs.
-                    settingsPane->reload();
-                    layout->showPage(pageSettings);
-                },
-                {},
-                [&] { return layout->currentPage() == pageSettings; }
-            },
-            {},   // separator
-            { "Quit", [&frame] { frame.close(); } },
-        } });
-
-        menuBar->setMenus(std::move(menus));
-    }
-
-    frame.attachClient(static_cast<gmpi::api::IDrawingClient*>(layout.get()));
-
-    // AFTER attachClient: the plugin's editor is initialised against a host it
-    // now has, and initUi pushes every current parameter value into it.
-    host.onEditorAttached();
-
-    // --- devices ------------------------------------------------------------
-    {
-        const auto deviceId = settings.getString(
-            Settings::keyAudioDevice, AudioDriverPipeWire::defaultDeviceId());
-        const int sampleRate  = settings.getInt(Settings::keySampleRate, 48000);
-        const int bufferFrames = settings.getInt(Settings::keyBufferFrames, 512);
-
-        if (!host.startAudio(deviceId, sampleRate, bufferFrames))
-        {
-            // Not fatal. A standalone that refuses to open its window because
-            // the soundcard is busy has removed the only UI that could pick a
-            // different one.
-            fprintf(stderr, "Audio: %s\n", host.lastError().c_str());
-
-            // Open ON the settings page instead of the plugin's editor, the
-            // way JUCE's standalone shell does. Showing a synth GUI that
-            // cannot make a sound, with no indication of why, is the worst of
-            // the available options; the page names the failure and offers the
-            // device list that fixes it.
-            settingsPane->reload();
-            layout->showPage(pageSettings);
-        }
-
-        if (host.wantsMidiInput())
-        {
-            // An empty list means "connect everything readable", which is what
-            // makes a fresh install play the moment a keyboard is plugged in.
-            // Only a user who has actually visited the settings page gets the
-            // narrower list.
-            const auto midiInputs = settings.getBool(Settings::keyMidiInputsSet, false)
-                                  ? settings.getStringList(Settings::keyMidiInputs)
-                                  : std::vector<std::string>{};
-
-            host.startMidi(midiInputs);
-        }
-    }
-
-#if GMPI_STANDALONE_COMMAND_CHANNEL
-    // --- command channel ----------------------------------------------------
-    // A unix socket naming this process, so a test harness or an MCP server can
-    // drive the very plugin instance the user is looking at. Failing to open it
-    // is not fatal: someone launched this app to make a sound with, and a
-    // missing debug channel must never be the reason it will not start.
-    gmpi::standalone::mcp::IpcServer ipcServer;
-    gmpi::standalone::mcp::AppContext ipcContext;
-    {
-        ipcContext.host = &host;
-
-        // Pointer coordinates are window-relative, matching the screenshot, so
-        // "find the knob in the PNG, then click it" needs no arithmetic. This
-        // is what a caller adds to convert a plugin-relative coordinate.
-        ipcContext.editorOriginY = MenuBarView::kHeight;
-
-        ipcContext.framePixels = [&frame](bool forceRedraw,
-                                          const uint8_t*& pixels, int& w, int& h, int& stride)
-        {
-            // A screenshot must show the effect of the command before it, so it
-            // renders rather than reading a frame that predates the change.
-            // present() early-outs before the first configure, so this is safe
-            // even if a client connects while the window is still opening.
-            if (forceRedraw)
-                frame.present();
-
-            const auto& buffer = frame.frameBuffer();
-            if (!buffer.pixels())
-                return false;
-
-            pixels = buffer.pixels();
-            w      = buffer.width();
-            h      = buffer.height();
-            stride = buffer.stride();
-            return true;
-        };
-
-        ipcContext.logicalSize = [&frame](float& w, float& h)
-        {
-            w = static_cast<float>(frame.logicalWidth());
-            h = static_cast<float>(frame.logicalHeight());
-        };
-
-        // Input enters at the layout, which is what the frame has attached and
-        // therefore exactly where the seat delivers a real mouse - so the menu
-        // bar, the page switch and the plugin's own widgets all see synthetic
-        // events on the same path, with the same capture bookkeeping.
-        ipcContext.inputClient = [&layout]() -> gmpi::api::IInputClient*
-        {
-            gmpi::api::IInputClient* client{};
-            layout->queryInterface(&gmpi::api::IInputClient::guid,
-                                   reinterpret_cast<void**>(&client));
-
-            // queryInterface addRefs. The layout outlives every command, so the
-            // reference is dropped here rather than making each caller own one.
-            if (client)
-                client->release();
-
-            return client;
-        };
-
-        const bool started = ipcServer.start(
-            [&ipcContext](const std::string& line)
-            {
-                return gmpi::standalone::mcp::dispatchCommand(ipcContext, line);
-            });
-
-        // Printed rather than silent: it is how you find the socket to point
-        // socat at, and its absence is the first thing to check when a client
-        // reports no running apps.
-        if (started)
-            fprintf(stderr, "command channel: %s\n", ipcServer.channelName().c_str());
-        else
-            fprintf(stderr, "command channel: unavailable (no writable runtime directory).\n");
-    }
-#endif
-
-    std::signal(SIGTERM, onTerminationSignal);
-    std::signal(SIGINT,  onTerminationSignal);
-
-    frame.runEventLoop(16, [&](int elapsedMs)
-    {
-        if (terminationRequested)
-        {
-            frame.close();
-            return;
-        }
-
-#if GMPI_STANDALONE_COMMAND_CHANNEL
-        // Commands from the socket. This is the ONLY point at which they run:
-        // the listener thread never touches the plugin, it just parks here
-        // until we get to it (mcp/MainThreadQueue.h explains why the tick has
-        // to be the marshaller on Wayland).
-        //
-        // BEFORE the timer pump, not after: a --set-param queues the value for
-        // the processor, and the pump is what delivers it. Draining first means
-        // a parameter set now is audible this tick rather than the next one.
-        ipcServer.mainThreadQueue().drain();
-#endif
-
-        // gmpi_ui's timers have no native source on Linux, so the loop is the
-        // source. This is what drives the host's parameter queues and the
-        // form widgets' animation.
-        gmpi::TimerManager::instance()->pump(elapsedMs);
-
-        // Lets the visible page service its DSP->GUI queue once per frame,
-        // rather than polling it from the audio thread's side.
-        layout->preGraphicsRedraw();
-
-        // Device changes the user asked for while we were inside input
-        // dispatch. Re-opening an audio device there would mean joining the
-        // driver's threads with a click still on the stack.
-        settingsPane->pumpDeferred();
-    });
-
-#if GMPI_STANDALONE_COMMAND_CHANNEL
-    // FIRST, and on this thread: stop() refuses further model access before it
-    // joins the listener, so no command can still be reaching for the host,
-    // the editor or the drivers that the next three lines tear down.
-    ipcServer.stop();
-#endif
-
-    // Stop the audio and MIDI threads before anything they touch goes away.
-    host.stopMidi();
-    host.stopAudio();
-
-    frame.detachClient();
-
-    return 0;
+    // Constructed here rather than inside runStandaloneApp so that the display
+    // connection and the surface outlive it - the app is torn down first, and
+    // only then, as this frame unwinds, the connection it ran on.
+    WaylandShell shell;
+    return gmpi::standalone::runStandaloneApp(shell);
 }

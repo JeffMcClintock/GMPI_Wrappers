@@ -13,17 +13,9 @@ if (MSVC)
 endif()
 
 set(srcs
-${GMPI_SDK}/Hosting/parse_enum.h
-${GMPI_SDK}/Hosting/xml_spec_reader.h
-${GMPI_SDK}/Hosting/xml_spec_reader.cpp
-${GMPI_SDK}/Hosting/controller_holder.h
-${GMPI_SDK}/Hosting/controller_holder.cpp
-${GMPI_SDK}/Hosting/processor_holder.h
-${GMPI_SDK}/Hosting/processor_holder.cpp
-${GMPI_SDK}/Hosting/message_queues.h
-${GMPI_SDK}/Hosting/message_queues.cpp
-${GMPI_SDK}/Hosting/gmpi_factory.h
-${GMPI_SDK}/Hosting/gmpi_factory.cpp
+# Host-side scaffolding, shared with the VST3/AU/standalone wrappers - one list,
+# in wrapper/CMakeLists.txt.
+${GMPI_HOSTING_SRCS}
 
 Factory_CLAP.h
 Factory_CLAP.cpp
@@ -33,9 +25,6 @@ Controller_CLAP.h
 Controller_CLAP.cpp
 Editor_CLAP.h
 Editor_CLAP.cpp
-
-${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
-${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 
 ${GMPI_UI_SDK}/backends/DrawingFrameCommon.h
 ${GMPI_UI_SDK}/backends/DrawingFrameCommon.cpp
@@ -80,22 +69,17 @@ ${ADAPTORS_COMMON_FOLDER}
 source_group(se_sdk FILES ${sdk_srcs})
 
 if(APPLE)
-FIND_LIBRARY(COREFOUNDATION_LIBRARY CoreFoundation )
-MARK_AS_ADVANCED (COREFOUNDATION_LIBRARY)
-FIND_LIBRARY(QUARTZCORE_LIBRARY QuartzCore )
-MARK_AS_ADVANCED (QUARTZCORE_LIBRARY)
-FIND_LIBRARY(COCOA_LIBRARY Cocoa )
-MARK_AS_ADVANCED (COCOA_LIBRARY)
-FIND_LIBRARY(CORETEXT_LIBRARY CoreText )
-MARK_AS_ADVANCED (CORETEXT_LIBRARY)
-FIND_LIBRARY(OPENGL_LIBRARY OpenGL )
-MARK_AS_ADVANCED (OPENGL_LIBRARY)
-FIND_LIBRARY(IMAGEIO_LIBRARY ImageIO )
-MARK_AS_ADVANCED (IMAGEIO_LIBRARY)
-FIND_LIBRARY(COREGRAPHICS_LIBRARY CoreGraphics )
-MARK_AS_ADVANCED (COREGRAPHICS_LIBRARY)
-FIND_LIBRARY(ACCELERATE_LIBRARY Accelerate )
-MARK_AS_ADVANCED (ACCELERATE_LIBRARY)
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/GmpiFrameworks.cmake")
+gmpi_find_frameworks(clap_frameworks
+    CoreFoundation
+    QuartzCore
+    Cocoa
+    CoreText
+    OpenGL
+    ImageIO
+    CoreGraphics
+    Accelerate
+)
 endif()
 
 include (GenerateExportHeader)
@@ -107,14 +91,11 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
   $<$<CONFIG:Release>:NDEBUG>
 )
 
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREFOUNDATION_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COCOA_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${CORETEXT_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${OPENGL_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${IMAGEIO_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREGRAPHICS_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${ACCELERATE_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${QUARTZCORE_LIBRARY} )
+if(APPLE)
+# Plain signature, like the Windows link below - CMake refuses to mix the plain
+# and keyword forms on one target.
+target_link_libraries(${PROJECT_NAME} ${clap_frameworks})
+endif()
 
 if(CMAKE_HOST_WIN32)
 target_link_libraries(${PROJECT_NAME} Dwmapi dxguid d3d11 d2d1 dwrite windowscodecs)
