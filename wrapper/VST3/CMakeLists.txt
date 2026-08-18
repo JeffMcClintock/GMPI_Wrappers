@@ -13,17 +13,9 @@ if (MSVC)
 endif()
 
 set(srcs
-${GMPI_SDK}/Hosting/parse_enum.h
-${GMPI_SDK}/Hosting/xml_spec_reader.h
-${GMPI_SDK}/Hosting/xml_spec_reader.cpp
-${GMPI_SDK}/Hosting/controller_holder.h
-${GMPI_SDK}/Hosting/controller_holder.cpp
-${GMPI_SDK}/Hosting/processor_holder.h
-${GMPI_SDK}/Hosting/processor_holder.cpp
-${GMPI_SDK}/Hosting/message_queues.h
-${GMPI_SDK}/Hosting/message_queues.cpp
-${GMPI_SDK}/Hosting/gmpi_factory.h
-${GMPI_SDK}/Hosting/gmpi_factory.cpp
+# Host-side scaffolding, shared with the CLAP/AU/standalone wrappers - one list,
+# in wrapper/CMakeLists.txt.
+${GMPI_HOSTING_SRCS}
 
 MyVstPluginFactory.h
 MyVstPluginFactory.cpp
@@ -33,8 +25,6 @@ Controller_VST3.h
 Controller_VST3.cpp
 VST3EditorBase.h
 VST3EditorBase.cpp
-${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
-${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 
 ${GMPI_UI_SDK}/backends/DrawingFrameCommon.h
 ${GMPI_UI_SDK}/backends/DrawingFrameCommon.cpp
@@ -95,7 +85,6 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GMPI_WL      wayland-client)
 pkg_check_modules(GMPI_XKB     xkbcommon)
 pkg_check_modules(GMPI_DECOR   libdecor-0)
-find_program(WAYLAND_SCANNER wayland-scanner)
 
 # The SDK half of that promise. iwaylandframe.h arrived in 3.8.0 and is the one
 # header SEVSTGUIEditorWayland cannot do without, so its presence is the test -
@@ -107,54 +96,54 @@ if(EXISTS "${VST3_SDK}/pluginterfaces/gui/iwaylandframe.h")
     set(GMPI_VST3_SDK_HAS_WAYLAND TRUE)
 endif()
 
-if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND WAYLAND_SCANNER
-   AND GMPI_VST3_SDK_HAS_WAYLAND)
-    set(GMPI_VST3_WAYLAND TRUE)
-    # The tests directory is a sibling added by wrapper/CMakeLists.txt, so it
-    # only sees what we push up.
-    set(GMPI_VST3_WAYLAND TRUE PARENT_SCOPE)
-
+set(GMPI_VST3_WAYLAND FALSE)
+if(GMPI_WL_FOUND AND GMPI_XKB_FOUND AND GMPI_DECOR_FOUND AND GMPI_VST3_SDK_HAS_WAYLAND)
     # Protocol bindings are generated, not shipped: wayland-scanner emits a
-    # header plus a C file of message signatures per protocol.
-    pkg_get_variable(WL_PROTOCOLS_DIR wayland-protocols pkgdatadir)
-    set(WL_GEN ${CMAKE_CURRENT_BINARY_DIR}/wl-gen)
-    file(MAKE_DIRECTORY ${WL_GEN})
+    # header plus a C file of message signatures per protocol. The set, the
+    # search for the XML files and the generation are shared with the standalone
+    # app's shell, which embeds the same gmpi_ui Wayland backend and therefore
+    # needs bindings for exactly the same protocols.
+    #
+    # This call resolves everything before it generates anything, which is the
+    # whole point of sharing it. The copy of the loop that used to live here
+    # treated the libraries above as proof the XML files existed: on a
+    # distribution older than wayland-protocols 1.32 - Ubuntu 22.04 ships 1.25 -
+    # the gate switched Wayland on and the build then died at a custom command
+    # whose DEPENDS named a file that was not there, with no way to point it
+    # anywhere else.
+    include("${CMAKE_CURRENT_LIST_DIR}/../cmake/GmpiWayland.cmake")
+    gmpi_wayland_protocols(WL_PROTOCOL_SOURCES WL_GEN WL_PROTOCOLS_MISSING)
 
-    set(WL_PROTOCOL_PATHS
-        stable/xdg-shell/xdg-shell
-        stable/viewporter/viewporter
-        staging/fractional-scale/fractional-scale-v1
-        staging/cursor-shape/cursor-shape-v1
-        unstable/tablet/tablet-unstable-v2          # cursor-shape-v1 references it
-        unstable/xdg-foreign/xdg-foreign-unstable-v2
-    )
+    if(WL_PROTOCOLS_MISSING)
+        # Named individually, because "install wayland-protocols" is the wrong
+        # advice when the package is present but predates the staging protocols
+        # the backend binds. Falling back to X11 rather than failing: this
+        # wrapper has a second Linux editor and it works.
+        list(JOIN WL_PROTOCOLS_MISSING ", " _wl_missing_pretty)
+        message(STATUS "VST3 wrapper: Wayland support off -- missing "
+                       "${_wl_missing_pretty}. Point GMPI_WAYLAND_PROTOCOLS_DIR "
+                       "at a newer wayland-protocols tree to build it anyway; "
+                       "X11 editor only.")
+    else()
+        set(GMPI_VST3_WAYLAND TRUE)
 
-    set(WL_PROTOCOL_SOURCES "")
-    foreach(proto ${WL_PROTOCOL_PATHS})
-        get_filename_component(name ${proto} NAME)
-        set(xml ${WL_PROTOCOLS_DIR}/${proto}.xml)
-        add_custom_command(
-            OUTPUT ${WL_GEN}/${name}-client-protocol.h ${WL_GEN}/${name}-protocol.c
-            COMMAND ${WAYLAND_SCANNER} client-header ${xml} ${WL_GEN}/${name}-client-protocol.h
-            COMMAND ${WAYLAND_SCANNER} private-code  ${xml} ${WL_GEN}/${name}-protocol.c
-            DEPENDS ${xml}
-            COMMENT "wayland-scanner ${name}"
-            VERBATIM
+        set(srcs ${srcs}
+            SEVSTGUIEditorWayland.h
+            SEVSTGUIEditorWayland.cpp
+            ${GMPI_UI_SDK}/backends/DrawingFrameWayland.h
+            ${WL_PROTOCOL_SOURCES}
         )
-        list(APPEND WL_PROTOCOL_SOURCES ${WL_GEN}/${name}-protocol.c)
-    endforeach()
-
-    set(srcs ${srcs}
-        SEVSTGUIEditorWayland.h
-        SEVSTGUIEditorWayland.cpp
-        ${GMPI_UI_SDK}/backends/DrawingFrameWayland.h
-        ${WL_PROTOCOL_SOURCES}
-    )
+    endif()
 else()
     message(STATUS "VST3 wrapper: Wayland support off (need wayland-client, "
-                   "xkbcommon, libdecor-0, wayland-scanner and a VST3 SDK of "
-                   "3.8.0 or later); X11 editor only.")
+                   "xkbcommon, libdecor-0 and a VST3 SDK of 3.8.0 or later); "
+                   "X11 editor only.")
 endif()
+
+# The tests directory is a sibling added by wrapper/CMakeLists.txt, so it only
+# sees what we push up. Pushed in both cases: OFF has to overwrite whatever is
+# in that scope, not merely decline to set anything.
+set(GMPI_VST3_WAYLAND ${GMPI_VST3_WAYLAND} PARENT_SCOPE)
 endif()
 
 set(vst_gui_minimal_srcs
@@ -216,22 +205,17 @@ ${ADAPTORS_COMMON_FOLDER}
 source_group(se_sdk FILES ${sdk_srcs})
 
 if(APPLE)
-FIND_LIBRARY(COREFOUNDATION_LIBRARY CoreFoundation )
-MARK_AS_ADVANCED (COREFOUNDATION_LIBRARY)
-FIND_LIBRARY(QUARTZCORE_LIBRARY QuartzCore )
-MARK_AS_ADVANCED (QUARTZCORE_LIBRARY)
-FIND_LIBRARY(COCOA_LIBRARY Cocoa )
-MARK_AS_ADVANCED (COCOA_LIBRARY)
-FIND_LIBRARY(CORETEXT_LIBRARY CoreText )
-MARK_AS_ADVANCED (CORETEXT_LIBRARY)
-FIND_LIBRARY(OPENGL_LIBRARY OpenGL )
-MARK_AS_ADVANCED (OPENGL_LIBRARY)
-FIND_LIBRARY(IMAGEIO_LIBRARY ImageIO )
-MARK_AS_ADVANCED (IMAGEIO_LIBRARY)
-FIND_LIBRARY(COREGRAPHICS_LIBRARY CoreGraphics )
-MARK_AS_ADVANCED (COREGRAPHICS_LIBRARY)
-FIND_LIBRARY(ACCELERATE_LIBRARY Accelerate )
-MARK_AS_ADVANCED (ACCELERATE_LIBRARY)
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/GmpiFrameworks.cmake")
+gmpi_find_frameworks(vst3_frameworks
+    CoreFoundation
+    QuartzCore
+    Cocoa
+    CoreText
+    OpenGL
+    ImageIO
+    CoreGraphics
+    Accelerate
+)
 endif()
 
 include (GenerateExportHeader)
@@ -246,14 +230,11 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
   $<$<CONFIG:Release>:NDEBUG>
 )
 
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREFOUNDATION_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COCOA_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${CORETEXT_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${OPENGL_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${IMAGEIO_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREGRAPHICS_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${ACCELERATE_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${QUARTZCORE_LIBRARY} )
+if(APPLE)
+# Plain signature, like every other target_link_libraries on this target - CMake
+# refuses to mix the plain and keyword forms on one.
+target_link_libraries(${PROJECT_NAME} ${vst3_frameworks})
+endif()
 
 if(CMAKE_HOST_WIN32)
 target_link_libraries(${PROJECT_NAME} Dwmapi dxguid d3d11 d2d1 dwrite windowscodecs)
@@ -299,8 +280,9 @@ if(UNIX AND NOT APPLE)
         )
         target_compile_definitions(${PROJECT_NAME} PUBLIC GMPI_VST3_WAYLAND=1)
     endif()
-    # Plain signature deliberately: the macOS framework links above use it, and
-    # CMake refuses to mix plain and keyword forms on one target.
+    # Plain signature deliberately: every target_link_libraries on this target
+    # uses it, the Windows and macOS ones included, and CMake refuses to mix
+    # plain and keyword forms on one target.
     target_link_libraries(${PROJECT_NAME}
         ${GMPI_X11_LIBRARIES}
         ${GMPI_FONTCONFIG_LIBRARIES}

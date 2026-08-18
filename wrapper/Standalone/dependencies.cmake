@@ -25,11 +25,10 @@
 #       otherwise what is absent -- pkg-config itself, the pkg-config modules,
 #       the tools and the protocol files -- in a form fit to print.
 #
-#   the pkg-config results (WL_*, XKB_*, ...), WAYLAND_SCANNER and
-#       _wl_protocol_xml, which CMakeLists.txt goes on to build the target with
-#       -- but only when the list above came back empty. A probe that gave up
-#       early leaves them unset, which is safe precisely because that same list
-#       is what stops anything reading them.
+#   the pkg-config results (WL_*, XKB_*, ...), which CMakeLists.txt goes on to
+#       build the target with -- but only when the list above came back empty.
+#       A probe that gave up early leaves them unset, which is safe precisely
+#       because that same list is what stops anything reading them.
 #
 # Only Linux has anything to probe: on Windows and macOS every dependency ships
 # with the OS, so the list is empty by construction.
@@ -81,56 +80,24 @@ endforeach()
 
 # Wayland protocol bindings are generated, not shipped: wayland-scanner emits a
 # header plus a C file of message signatures for each protocol the backend
-# binds. The set is dictated by backends/DrawingFrameWayland.h.
-pkg_get_variable(WL_PROTOCOLS_DIR wayland-protocols pkgdatadir)
-find_program(WAYLAND_SCANNER wayland-scanner)
-if(NOT WAYLAND_SCANNER)
-    list(APPEND GMPI_STANDALONE_MISSING_DEPENDENCIES "wayland-scanner")
-endif()
+# binds. The set, the search for the XML files and the generator itself all live
+# in the shared module, because the VST3 wrapper embeds the same Wayland backend
+# and so needs the same bindings.
+#
+# RESOLVED here and never generated. This file is also included by the SDK's
+# gmpi_plugin.cmake, once per plugin, purely to ask whether the wrapper can be
+# built; a build rule emitted from there would land in the plugin's directory,
+# and would become a duplicate OUTPUT -- a hard configure error -- the moment a
+# project defines two plugins in one CMakeLists. CMakeLists.txt beside this file
+# does the generating, once, in the wrapper's own directory.
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/GmpiWayland.cmake")
 
-# fractional-scale-v1 and cursor-shape-v1 are staging protocols that landed in
-# wayland-protocols 1.31 and 1.32; a distro older than that (Ubuntu 22.04 ships
-# 1.25) has the scanner and the client library but not these XML files. Point
-# this at a directory laid out like wayland-protocols' own and it is searched
-# first, so an old build host can be topped up without replacing its packages.
-set(GMPI_WAYLAND_PROTOCOLS_DIR "" CACHE PATH
-    "Extra wayland-protocols tree searched before the system one")
-
-set(WL_PROTOCOL_PATHS
-    stable/xdg-shell/xdg-shell
-    stable/viewporter/viewporter
-    staging/fractional-scale/fractional-scale-v1
-    staging/cursor-shape/cursor-shape-v1
-    unstable/tablet/tablet-unstable-v2          # cursor-shape-v1 references it
-    unstable/xdg-foreign/xdg-foreign-unstable-v2
-)
-
-# Resolve every protocol XML BEFORE generating anything, so a missing one joins
-# the same missing-dependency list as the pkg-config modules and is reported in
-# one message. Resolving and generating in a single loop would emit custom
-# commands for the protocols found so far and only then discover the gap.
-set(_wl_protocol_xml "")
-foreach(proto ${WL_PROTOCOL_PATHS})
-    set(xml "")
-    foreach(dir ${GMPI_WAYLAND_PROTOCOLS_DIR} ${WL_PROTOCOLS_DIR})
-        if(EXISTS "${dir}/${proto}.xml")
-            set(xml "${dir}/${proto}.xml")
-            break()
-        endif()
-    endforeach()
-
-    # Named individually rather than as "wayland-protocols", because the usual
-    # cause is a distro too old for the staging protocols rather than the
-    # package being absent -- Ubuntu 22.04 ships 1.25 and has neither
-    # fractional-scale-v1 nor cursor-shape-v1. Naming the file is what tells
-    # those two cases apart, and GMPI_WAYLAND_PROTOCOLS_DIR is the fix for the
-    # first without touching system packages.
-    if(NOT xml)
-        list(APPEND GMPI_STANDALONE_MISSING_DEPENDENCIES "${proto}.xml (wayland-protocols >= 1.32)")
-    else()
-        list(APPEND _wl_protocol_xml ${xml})
-    endif()
-endforeach()
+# The resolved paths are deliberately dropped: the generating call in
+# CMakeLists.txt resolves again rather than being handed a list it would have to
+# trust was complete, and the two cannot disagree - same function, same
+# filesystem, no state in between.
+gmpi_wayland_resolve_protocols(_wl_protocol_xml_ignored _wl_protocol_missing)
+list(APPEND GMPI_STANDALONE_MISSING_DEPENDENCIES ${_wl_protocol_missing})
 
 endif() # PKG_CONFIG_FOUND
 

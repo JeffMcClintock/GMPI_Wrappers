@@ -32,21 +32,9 @@ endif()
 # ---------------------------------------------------------------------------
 
 set(standalone_srcs
-    # Host-side scaffolding, shared with the VST3/CLAP/AU wrappers.
-    ${GMPI_SDK}/Hosting/parse_enum.h
-    ${GMPI_SDK}/Hosting/xml_spec_reader.h
-    ${GMPI_SDK}/Hosting/xml_spec_reader.cpp
-    ${GMPI_SDK}/Hosting/controller_holder.h
-    ${GMPI_SDK}/Hosting/controller_holder.cpp
-    ${GMPI_SDK}/Hosting/processor_holder.h
-    ${GMPI_SDK}/Hosting/processor_holder.cpp
-    ${GMPI_SDK}/Hosting/message_queues.h
-    ${GMPI_SDK}/Hosting/message_queues.cpp
-    ${GMPI_SDK}/Hosting/gmpi_factory.h
-    ${GMPI_SDK}/Hosting/gmpi_factory.cpp
-
-    ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
-    ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
+    # Host-side scaffolding, shared with the VST3/CLAP/AU wrappers - one list,
+    # in wrapper/CMakeLists.txt.
+    ${GMPI_HOSTING_SRCS}
 
     # Portable half of the app. StandaloneApp is the startup sequence itself -
     # everything the three shells used to hold a copy of each - so it belongs
@@ -221,23 +209,30 @@ if(APPLE)
         )
     endif()
 
-    foreach(framework
+    # The same helper the VST3, CLAP and AU wrappers use. It also fills in the
+    # ${COCOA_LIBRARY}-style cache entries that gmpi_target() links by name,
+    # which the FRAMEWORK_<name> spelling this replaced did not - so a project
+    # that builds ONLY a standalone now supplies them too, instead of relying on
+    # a sibling wrapper having been configured first.
+    include("${CMAKE_CURRENT_LIST_DIR}/../cmake/GmpiFrameworks.cmake")
+
+    gmpi_find_frameworks(standalone_frameworks
         Cocoa               # the window, the menu bar, the run loop
         CoreFoundation
         CoreGraphics        # the drawing backend
         CoreText            # and its text
         ImageIO             # PNG encode, for --screenshot
         QuartzCore
+        OpenGL              # not used here, but gmpi_target() links ${OPENGL_LIBRARY}
+                            # by name, and a standalone-only project has no wrapper
+                            # in its link interface to supply it
         Accelerate          # gmpi_ui's image paths
         CoreAudio           # device enumeration
         AudioToolbox        # AUHAL
         AudioUnit
         CoreMIDI            # MIDI input
     )
-        find_library(FRAMEWORK_${framework} ${framework})
-        mark_as_advanced(FRAMEWORK_${framework})
-        list(APPEND standalone_libs ${FRAMEWORK_${framework}})
-    endforeach()
+    list(APPEND standalone_libs ${standalone_frameworks})
 
     # WEAK, and the header that needs it says why: gmpi_ui's MacFileDialog
     # prefers UTType / allowedContentTypes and falls back to allowedFileTypes
@@ -332,27 +327,28 @@ if(GMPI_STANDALONE_MISSING_DEPENDENCIES)
     return()
 endif()
 
-set(WL_GEN ${CMAKE_CURRENT_BINARY_DIR}/wl-gen)
-file(MAKE_DIRECTORY ${WL_GEN})
+# The protocol bindings, generated in THIS directory so that the custom commands
+# belong to the target below. dependencies.cmake did the resolving half, up at
+# the gate; the VST3 wrapper embeds the same gmpi_ui Wayland backend and makes
+# the same call for itself.
+#
+# Included again rather than leaning on dependencies.cmake having done it: a
+# file that calls these functions should name where they come from, and the
+# module's include_guard makes the second include cost nothing.
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/GmpiWayland.cmake")
 
-set(WL_PROTOCOL_SOURCES "")
-foreach(xml ${_wl_protocol_xml})
-    # NAME then strip .xml, rather than NAME_WE: NAME_WE removes the *longest*
-    # extension, so a protocol whose filename contained another dot would come
-    # out truncated. None does today; this does not depend on that staying true.
-    get_filename_component(name ${xml} NAME)
-    string(REGEX REPLACE "\\.xml$" "" name ${name})
+gmpi_wayland_protocols(WL_PROTOCOL_SOURCES WL_GEN _wl_protocol_missing)
 
-    add_custom_command(
-        OUTPUT ${WL_GEN}/${name}-client-protocol.h ${WL_GEN}/${name}-protocol.c
-        COMMAND ${WAYLAND_SCANNER} client-header ${xml} ${WL_GEN}/${name}-client-protocol.h
-        COMMAND ${WAYLAND_SCANNER} private-code  ${xml} ${WL_GEN}/${name}-protocol.c
-        DEPENDS ${xml}
-        COMMENT "wayland-scanner ${name}"
-        VERBATIM
-    )
-    list(APPEND WL_PROTOCOL_SOURCES ${WL_GEN}/${name}-protocol.c)
-endforeach()
+# Cannot fire: the gate above already returned unless the same resolve came back
+# clean. Checked anyway because they are two separate calls, and the symptom of
+# them disagreeing would be an empty source list - which surfaces much later, as
+# a missing xdg-shell-client-protocol.h while the Wayland backend compiles,
+# rather than as the missing dependency it is.
+if(_wl_protocol_missing)
+    message(FATAL_ERROR
+        "Standalone_Wrapper: the dependency probe found every Wayland protocol "
+        "but code generation did not:\n    ${_wl_protocol_missing}")
+endif()
 
 list(APPEND standalone_srcs
     # Linux shell (the entry point itself is added to the executable).

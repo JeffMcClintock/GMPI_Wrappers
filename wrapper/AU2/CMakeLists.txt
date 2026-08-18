@@ -15,20 +15,9 @@ AU2_Wrapper.h
 
 AudioUnitView.mm
 
-${GMPI_SDK}/Hosting/parse_enum.h
-${GMPI_SDK}/Hosting/xml_spec_reader.h
-${GMPI_SDK}/Hosting/xml_spec_reader.cpp
-${GMPI_SDK}/Hosting/controller_holder.h
-${GMPI_SDK}/Hosting/controller_holder.cpp
-${GMPI_SDK}/Hosting/processor_holder.h
-${GMPI_SDK}/Hosting/processor_holder.cpp
-${GMPI_SDK}/Hosting/message_queues.h
-${GMPI_SDK}/Hosting/message_queues.cpp
-${GMPI_SDK}/Hosting/gmpi_factory.h
-${GMPI_SDK}/Hosting/gmpi_factory.cpp
-
-${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.h
-${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
+# Host-side scaffolding, shared with the VST3/CLAP/standalone wrappers - one
+# list, in wrapper/CMakeLists.txt.
+${GMPI_HOSTING_SRCS}
 
 ${GMPI_UI_SDK}/backends/DrawingFrameCommon.h
 ${GMPI_UI_SDK}/backends/DrawingFrameCommon.cpp
@@ -80,26 +69,19 @@ ${AU_S}MusicDeviceBase.cpp
 source_group(se_sdk FILES ${sdk_srcs})
 
 if(APPLE)
-FIND_LIBRARY(COREFOUNDATION_LIBRARY CoreFoundation )
-MARK_AS_ADVANCED (COREFOUNDATION_LIBRARY)
-FIND_LIBRARY(QUARTZCORE_LIBRARY QuartzCore )
-MARK_AS_ADVANCED (QUARTZCORE_LIBRARY)
-FIND_LIBRARY(COCOA_LIBRARY Cocoa )
-MARK_AS_ADVANCED (COCOA_LIBRARY)
-FIND_LIBRARY(CORETEXT_LIBRARY CoreText )
-MARK_AS_ADVANCED (CORETEXT_LIBRARY)
-FIND_LIBRARY(OPENGL_LIBRARY OpenGL )
-MARK_AS_ADVANCED (OPENGL_LIBRARY)
-FIND_LIBRARY(IMAGEIO_LIBRARY ImageIO )
-MARK_AS_ADVANCED (IMAGEIO_LIBRARY)
-FIND_LIBRARY(COREGRAPHICS_LIBRARY CoreGraphics )
-MARK_AS_ADVANCED (COREGRAPHICS_LIBRARY)
-FIND_LIBRARY(ACCELERATE_LIBRARY Accelerate )
-MARK_AS_ADVANCED (ACCELERATE_LIBRARY)
-FIND_LIBRARY(AUDIOUNIT_LIBRARY AudioUnit )
-MARK_AS_ADVANCED (AUDIOUNIT_LIBRARY)
-FIND_LIBRARY(AUDIOTOOLBOX_LIBRARY AudioToolbox )
-MARK_AS_ADVANCED (AUDIOTOOLBOX_LIBRARY)
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/GmpiFrameworks.cmake")
+gmpi_find_frameworks(au_frameworks
+    CoreFoundation
+    QuartzCore
+    Cocoa
+    CoreText
+    OpenGL
+    ImageIO
+    CoreGraphics
+    Accelerate
+    AudioUnit           # the component this wrapper implements
+    AudioToolbox
+)
 endif()
 
 include (GenerateExportHeader)
@@ -116,16 +98,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${ADAPTORS_COMMON_FOLDER}
 )
 
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREFOUNDATION_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COCOA_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${CORETEXT_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${OPENGL_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${IMAGEIO_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${COREGRAPHICS_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${ACCELERATE_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${QUARTZCORE_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${AUDIOUNIT_LIBRARY} )
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${AUDIOTOOLBOX_LIBRARY} )
+if(APPLE)
+# Plain signature, as the ten calls this replaces used: it puts the frameworks
+# in this static library's link INTERFACE as well, which is how they reach the
+# .component module that links AU_Wrapper.
+target_link_libraries(${PROJECT_NAME} ${au_frameworks})
+endif()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE 
   $<$<CONFIG:Debug>:_DEBUG>
