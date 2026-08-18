@@ -19,6 +19,7 @@
 // be driven headless by a test.
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -190,6 +191,88 @@ public:
     // a call INTO the plugin anyway - it is entitled to cache a layout.
     void getEditorSize(float& width, float& height);
 
+    // --- the plugin's patch ----------------------------------------------
+    // The same state a DAW serialises through getState/setState, in the same
+    // <Preset> format the VST3, CLAP and AU wrappers hand their hosts.
+    // SessionState is the only caller; nothing here knows a file exists.
+
+    // Whether this plugin has anything worth saving. False for a plugin with no
+    // parameters at all, and equally for one whose every parameter is
+    // non-stateful - both are patchless, and the difference does not matter to
+    // a caller deciding whether to write a file.
+    //
+    // Filters exactly as gmpi::hosting::writePresetXml filters, so "true" and
+    // "captureState() contains a <Param>" cannot disagree.
+    bool hasStatefulParameters() const;
+
+    // The current patch. MAIN THREAD ONLY.
+    //
+    // Read from the CONTROLLER's store, never the processor's, and that is a
+    // correctness requirement rather than a preference: processAudio calls
+    // messageQueUiToDsp_.pollMessage(&processor_), so the audio thread writes
+    // processor_.patchManager while the stream runs. The controller's store has
+    // no audio-thread writer at all - the DSP reaches it only by queueing to
+    // message_que_dsp_to_ui, which onTimer drains on this thread.
+    std::string captureState() const;
+
+    // Load a patch into every copy of it: the controller's store, the plugin's
+    // own <Controller/>, and the processor's store.
+    //
+    // MUST be called BEFORE startAudio(). The processor's store is written
+    // directly here rather than through the UI->DSP queue, which is only safe
+    // while no audio callback can run; and start_processor primes each input pin
+    // from that store, so a patch in place before the stream opens reaches the
+    // DSP with no queue traffic at all.
+    //
+    // False means the text held no <Preset> element and NOTHING was changed -
+    // the plugin is still at its defaults, which is the honest outcome for a
+    // file that turned out not to be a patch.
+    //
+    // The document must have been CHECKED first - see acceptsParameterText and
+    // SessionState::restore. The SDK's readers assert on a <Param> they cannot
+    // use rather than returning, so a bad one gets past this return value.
+    bool restoreState(const std::string& xml);
+
+    // Would the SDK's preset readers store this `val` text for this parameter
+    // id, or assert on it?
+    //
+    // The gate a caller reading a FILE has to put in front of restoreState.
+    // GmpiParameter::setFromXml treats text of the wrong kind as a defect in
+    // whoever WROTE the preset - it asserts, which in a debug build is a
+    // process that stops dead with a modal dialog and no window, and in a
+    // release build is a silent 0.0. Neither is an answer to a file somebody
+    // hand-edited, so the reader is left exactly as the DAW wrappers have it
+    // and the standalone asks this question instead.
+    //
+    // TRUE for an id this plugin does not have: both readers skip an id they do
+    // not recognise, so nothing will look at its value. Asked of the controller's
+    // store, which is the same set of ids as the processor's - both are built
+    // from every entry of the same pluginInfo::parameters.
+    bool acceptsParameterText(int id, const char* text) const;
+
+    // Put every stateful parameter back to the default the plugin's own spec
+    // declares - what File > Revert to Plugin Defaults does.
+    //
+    // Safe WHILE AUDIO RUNS, unlike restoreState, and that is the whole reason
+    // it is a separate call rather than restoreState("<Preset/>"): the DSP is
+    // reached through the UI->DSP queue here, exactly as a knob move reaches it,
+    // instead of by writing the processor's store from under the audio thread.
+    //
+    // Everything the plugin owns that is NOT a stateful parameter is untouched,
+    // including whatever its <Controller/> published for this run.
+    //
+    // Must be called from the app's tick, not from a menu callback: a menu
+    // action runs from a popup's completion with the editor's own event
+    // handling on the stack, which is no place to push a parameter into it.
+    void revertToDefaults();
+
+    // Called whenever a parameter is edited - by the editor, by the plugin's own
+    // controller, or by the command channel. Main thread, inside the edit.
+    //
+    // A notification rather than a save: the callee decides when a file is
+    // worth writing, and this class stays unaware that one exists.
+    void setOnParameterEdited(std::function<void()> onEdited);
+
     // --- audio / MIDI ----------------------------------------------------
     // Drivers are owned here but constructed by the platform layer, which is
     // the only thing that knows whether "audio" means PipeWire or WASAPI.
@@ -305,6 +388,12 @@ public:
     bool onTimer() override;
 
 private:
+    // One place every UI-side parameter edit passes through, whatever kind it
+    // is: the editor moving a knob (notifyDaw), the plugin's controller writing
+    // a blob (sendNonNativeParameterToProcessor), or the command channel doing
+    // either. Queues the change for the processor and then tells whoever asked.
+    void onParameterChanged(gmpi::hosting::GmpiParameter* param);
+
     // Rebuilds the plugin's Processor instance for a new rate/block size, and
     // primes it with the current parameter values.
     //
@@ -339,6 +428,11 @@ private:
 
     gmpi::shared_ptr<gmpi::api::IEditor> editorParameters_;
     gmpi::shared_ptr<gmpi::api::IDrawingClient> editorGraphics_;
+
+    // What onParameterChanged tells, or an empty function when nobody is
+    // listening. Cleared by the app before this object is destroyed, because
+    // whatever it captures is a shorter-lived thing than the host.
+    std::function<void()> onParameterEdited_;
 
     std::unique_ptr<AudioDriver> audioDriver_;
     std::unique_ptr<MidiDriver>  midiDriver_;

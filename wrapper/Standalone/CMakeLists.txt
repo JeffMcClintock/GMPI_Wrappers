@@ -52,6 +52,8 @@ set(standalone_srcs
     StandaloneHost.cpp
     StandaloneSettings.h
     StandaloneSettings.cpp
+    SessionState.h
+    SessionState.cpp
     AppLayout.h
     AppLayout.cpp
     MenuBarView.h

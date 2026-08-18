@@ -480,36 +480,11 @@ tresult PLUGIN_API Controller_VST3::setComponentState (IBStream* state)
 		// state IS a parameter had no way to learn its state had been restored,
 		// and started blank however good the preset was.
 		//
-		// Encoding is the parameter's own datatype, not a pin's: the plug-in
-		// controller has no pins. Blobs and strings arrive as their raw bytes,
-		// scalars as a double. Non-stateful parameters are skipped for the same
-		// reason the preset writer skips them - they hold things like a raw
-		// pointer to a live object, valid only for the run that published them.
-		if (sePluginController)
-		{
-			constexpr int32_t voice{};
-
-			for (auto& [handle, param] : gmpiController.patchManager.parameters)
-			{
-				if (!param.info || !param.info->is_stateful)
-					continue;
-
-				if (const auto* bytes = std::get_if<std::vector<uint8_t>>(&param.value_); bytes)
-				{
-					sePluginController->setParameter(
-						param.info->id, gmpi::Field::Value, voice,
-						static_cast<int32_t>(bytes->size()), bytes->data());
-				}
-				else
-				{
-					const double value = param.valueReal();
-					sePluginController->setParameter(
-						param.info->id, gmpi::Field::Value, voice,
-						static_cast<int32_t>(sizeof(value)),
-						reinterpret_cast<const uint8_t*>(&value));
-				}
-			}
-		}
+		// The loop that does it moved into the holder, because restoring state
+		// without telling the plug-in's controller is a mistake every wrapper
+		// can make and the standalone was about to make next. Null is fine: a
+		// plug-in that declares no <Controller/> leaves this empty.
+		gmpiController.notifyControllerOfPreset(sePluginController.get());
 	}
 	catch (...)
 	{

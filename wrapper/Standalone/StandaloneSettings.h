@@ -55,6 +55,19 @@ public:
     // reporting a failure when they reach for it.
     std::string filePath() const;
 
+    // A file BESIDE standalone.conf, in the same per-plugin folder.
+    //
+    // Here rather than at the caller because configRoot() is the one #ifdef in
+    // the portable half, and the folder it picks is the app's whole answer to
+    // "where does this plugin keep its things". Anything else that needs a file
+    // there - the session patch is the first - names a filename and inherits
+    // that answer, instead of a second copy of the platform arms growing beside
+    // this one.
+    //
+    // Nothing is created, opened or checked; this is arithmetic on a path. The
+    // caller creates the directory when it writes, exactly as save() does.
+    std::filesystem::path siblingFile(const char* fileName) const;
+
     // --- typed accessors -------------------------------------------------
     // Every getter takes the fallback used when the key is absent or garbage,
     // so a truncated or hand-edited file degrades to defaults rather than to

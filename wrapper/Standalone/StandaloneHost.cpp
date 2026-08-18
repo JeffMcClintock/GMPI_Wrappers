@@ -143,7 +143,25 @@ bool StandaloneHost::init()
     // onTimer feeds the list into the UI->DSP queue.
     controller_.notifyDaw = [this](gmpi::hosting::GmpiParameter* param)
         {
-            pendingQueueClients_.AddWaiter(param);
+            onParameterChanged(param);
+        };
+
+    // The same route, for the parameter types notifyDaw cannot carry in a DAW.
+    //
+    // A wrapper installs this because its notifyDaw path speaks normalised
+    // doubles (VST3's performEdit) and a blob will not fit down it. THIS host's
+    // notifyDaw is not that - it is a waiting list, and GmpiParameter frames
+    // whichever alternative it holds ("ppc2" for a double, "ppc3" for bytes) -
+    // so here the two hooks genuinely are the same journey and both end up in
+    // the same queue.
+    //
+    // Installed all the same, because it was the DEFAULT NO-OP until now: a
+    // blob written by the plugin's own controller (gmpi_controller_holder::
+    // setParameter's Blob arm calls only this hook) reached the editor and
+    // never reached the DSP at all.
+    controller_.sendNonNativeParameterToProcessor = [this](gmpi::hosting::GmpiParameter* param)
+        {
+            onParameterChanged(param);
         };
 
     // Instantiate the plugin's <Controller/> subtype, BEFORE the editor.
@@ -241,6 +259,118 @@ void StandaloneHost::getEditorSize(float& width, float& height)
 
     width  = std::clamp(naturalSize.width,  1.0f, (std::min)(maximumSize.width,  sanityMax));
     height = std::clamp(naturalSize.height, 1.0f, (std::min)(maximumSize.height, sanityMax));
+}
+
+void StandaloneHost::onParameterChanged(gmpi::hosting::GmpiParameter* param)
+{
+    pendingQueueClients_.AddWaiter(param);
+
+    if (onParameterEdited_)
+        onParameterEdited_();
+}
+
+void StandaloneHost::setOnParameterEdited(std::function<void()> onEdited)
+{
+    onParameterEdited_ = std::move(onEdited);
+}
+
+bool StandaloneHost::hasStatefulParameters() const
+{
+    for (const auto& [handle, param] : controller_.patchManager.parameters)
+    {
+        if (param.info && param.info->is_stateful)
+            return true;
+    }
+
+    return false;
+}
+
+std::string StandaloneHost::captureState() const
+{
+    return controller_.getPresetXml();
+}
+
+bool StandaloneHost::restoreState(const std::string& xml)
+{
+    // Writing processor_.patchManager from this thread is only safe while no
+    // audio callback can run, and the same call is what start_processor reads
+    // to prime the plugin's input pins. Both are the caller's contract; this is
+    // where it is checked.
+    assert(!processorLive_);
+
+    if (!controller_.setPresetXmlFromDaw(xml))
+        return false;
+
+    // The plugin's own <Controller/>, which is not one of the editors and would
+    // otherwise never hear that its state had been restored. For a plugin whose
+    // state IS a parameter - TIDE builds its whole application object in its
+    // controller - this is the entire restore.
+    controller_.notifyControllerOfPreset(pluginController_.get());
+
+    // And the DSP's copy. Directly rather than through the UI->DSP queue: the
+    // queue is drained by processAudio, which will not run until startAudio(),
+    // so a queued patch would arrive after the first blocks had already been
+    // rendered at the defaults.
+    //
+    // setPresetUnsafe takes a non-const reference and does not modify it, hence
+    // the copy rather than a const_cast.
+    std::string forProcessor = xml;
+    processor_.setPresetUnsafe(forProcessor);
+
+    return true;
+}
+
+bool StandaloneHost::acceptsParameterText(int id, const char* text) const
+{
+    const auto it = controller_.patchManager.parameters.find(id);
+    if (it == controller_.patchManager.parameters.end())
+        return true; // an unrecognised id is skipped by both readers, unread
+
+    // The predicate lives beside setFromXml's asserts, in the SDK header, and
+    // those asserts are written in terms of it - so this cannot drift away from
+    // the thing it is standing in front of.
+    return it->second.acceptsXmlText(text);
+}
+
+void StandaloneHost::revertToDefaults()
+{
+    // The SDK reader's own reset pass does the work. A <Preset> with no <Param>
+    // inside it says "every parameter is missing from this preset", and the
+    // reader's answer to a missing parameter is the default from the plugin's
+    // spec - so this is a revert written in the format, rather than a second
+    // implementation of what "default" means that could disagree with the one
+    // a DAW gets.
+    //
+    // Non-stateful parameters are skipped there, which is what leaves a
+    // plugin's live objects alone: reverting the sound must not revoke the
+    // pointer its editor is drawing through.
+    const std::string emptyPreset{ "<Preset/>" };
+    controller_.setPresetXmlFromDaw(emptyPreset);
+
+    // Now tell everyone, each by the same route an edit would have used - which
+    // is what makes a revert indistinguishable from the user having moved every
+    // knob back by hand. onParameterChanged is both halves of that: it queues
+    // the value for the DSP and marks the session dirty.
+    for (auto& [handle, param] : controller_.patchManager.parameters)
+    {
+        // The same two tests the reader's own reset pass applies
+        // (controller_holder.cpp), so that what is announced here is exactly
+        // what was reset there. A host control - BPM, song position - is not
+        // part of a patch and was not touched, and a non-stateful parameter
+        // holds something live that a revert has no business resending.
+        if (!param.info || !param.info->is_stateful)
+            continue;
+
+        if (gmpi::hosting::HostControls::None != param.info->hostConnect)
+            continue;
+
+        controller_.notifyGui(&param);
+        onParameterChanged(&param);
+    }
+
+    // And the plugin's own <Controller/>, which is not one of the editors and
+    // hears about a patch change only when it is told.
+    controller_.notifyControllerOfPreset(pluginController_.get());
 }
 
 void StandaloneHost::setAudioDriver(std::unique_ptr<AudioDriver> driver)

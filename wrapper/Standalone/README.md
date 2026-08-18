@@ -76,6 +76,7 @@ Portable — no window-system headers, shared by every platform:
 | `StandaloneHost.*` | the plugin: factory → processor + controller + editor, the audio callback, the MIDI FIFO |
 | `AudioMidiDevices.h` | the `AudioDriver` / `MidiDriver` seam the shells implement |
 | `StandaloneSettings.*` | persisted device selection (`~/.config/<plugin>/standalone.conf` and its Windows/macOS equivalents) |
+| `SessionState.*` | the plugin's patch, kept across runs (`session.xml`, beside `standalone.conf`) |
 | `AppLayout.*` | the window's root: menu bar strip + one of several content pages |
 | `MenuBarView.*` | the menu bar, drawn (gmpi_ui, no toolkit) |
 | `SettingsPane.*` | the Audio/MIDI page, a `gmpi::ui::Form` |
@@ -261,6 +262,32 @@ the staging protocols the backend binds.
 - **Settings apply instantly, with no OK button**, and the apply is deferred to
   the next frame — re-opening an audio device inside a click's event dispatch
   would join the driver's threads with the compositor waiting on us.
+- **The plugin comes back the way you left it.** The patch is saved to
+  `session.xml`, beside `standalone.conf`, in the same `<Preset>` format the
+  VST3/CLAP/AU wrappers hand a DAW through `getState`. There is no Save button:
+  it is written a couple of seconds after the edits stop, and again at quit, so
+  a crash or a `kill -9` costs you the last edit rather than the last hour. A
+  run that changed nothing does not rewrite the file, and a plugin with no
+  stateful parameters never creates one.
+- **A patch that will not load never stops the app.** Whatever is wrong with it
+  — corrupt, too large, written by another plugin, holding a value of a kind
+  the plugin cannot read, or a load that took the previous run down with it
+  (which a `session.loading` breadcrumb is what detects) — the file is moved to
+  `session.previous.xml`, a line is logged, and the app starts at the plugin's
+  defaults. Nothing is ever deleted, and a file that could not even be moved is
+  not written over either.
+- **The saved plugin version is recorded and reported, never enforced.** The
+  `standalonePluginVersion` attribute is author-declared and optional, so a
+  match would prove nothing about the parameters and a mismatch is usually a
+  routine release.
+- **File > Revert to Plugin Defaults** puts every stateful parameter back to
+  what the plugin's own spec declares, and keeps the outgoing patch as
+  `session.previous.xml` first. It is the only way back out of a session that is
+  always restored.
+- **Named presets are deliberately absent.** The shared `<Preset>` format cannot
+  yet carry a preset's name or category (both writers have those lines behind
+  `#if 0`), so a Save Preset built today would produce files no browser could
+  label. That belongs with the DAW-side preset story, not here.
 
 ## The command channel
 

@@ -8,6 +8,7 @@
 
 #include "AppLayout.h"
 #include "MenuBarView.h"
+#include "SessionState.h"
 #include "SettingsPane.h"
 #include "StandaloneHost.h"
 #include "StandaloneSettings.h"
@@ -72,6 +73,27 @@ int runStandaloneApp(PlatformShell& shell)
     Settings settings(host.pluginName());
     settings.load();
 
+    // --- the plugin's patch --------------------------------------------------
+    // What the DAW does for the VST3 and CLAP builds of this same plugin. It
+    // costs the shells nothing: no PlatformShell method was added for it, and
+    // nothing below this line needs to know a file exists. All three platforms
+    // therefore get it by running the same sequence they already ran.
+    //
+    // HERE, before the window is sized. An editor's preferred size can depend
+    // on its patch, so measuring on the defaults and restoring afterwards would
+    // fit the window to a patch the user never had. Before startAudio() too,
+    // which is a harder requirement - see SessionState::restore.
+    //
+    // And before onEditorAttached(), which is what makes it invisible to the
+    // editor: initUi pushes the CURRENT value of every parameter into the
+    // plugin's GUI, and by then those are the restored ones. Nothing has to
+    // notify the editor of a restore, because from where it sits nothing was
+    // ever restored.
+    SessionState session(host, settings);
+    session.restore(shell);
+
+    host.setOnParameterEdited([&session] { session.markDirty(); });
+
     // Size the window from the editor, plus the strip the menu bar occupies.
     float editorWidth = 0.0f;
     float editorHeight = 0.0f;
@@ -130,6 +152,12 @@ int runStandaloneApp(PlatformShell& shell)
     if (host.editorDrawingClient())
         settingsPane->setOnClose([&] { layout->showPage(pageEditor); });
 
+    // What File > Revert to Plugin Defaults has asked for, applied by the tick.
+    // Declared before the menus so the item can capture it, and beside them
+    // rather than inside SessionState because it is a request the USER made, not
+    // a fact about the file.
+    bool revertPending = false;
+
     // --- menus ---------------------------------------------------------------
     // Modelled on JUCE's standalone shell, which is what anyone reaching for
     // this has used before: a File menu that quits and an Options menu that
@@ -138,6 +166,23 @@ int runStandaloneApp(PlatformShell& shell)
         std::vector<MenuBarView::Menu> menus;
 
         menus.push_back({ "File", {
+            {
+                // The counterweight to a session that is always restored. With
+                // no way back, a patch you dislike is one you are stuck with -
+                // and unlike a DAW there is no project to close without saving.
+                //
+                // DEFERRED to the tick, like every device change on the settings
+                // page and for the same reason: this runs from a popup menu's
+                // own completion, with the editor's event handling underneath
+                // it, and pushing a parameter into the editor from there means
+                // reentering a view that is still handling a click.
+                "Revert to Plugin Defaults",
+                [&] { revertPending = true; },
+                // Greyed out for a plugin with no patch, rather than offered and
+                // silently doing nothing.
+                [&] { return host.hasStatefulParameters(); }
+            },
+            {},   // separator
             { "Quit", [&shell] { shell.requestClose(); } },
         } });
 
@@ -298,6 +343,30 @@ int runStandaloneApp(PlatformShell& shell)
         // threads with a click still on the stack.
         settingsPane->pumpDeferred();
 
+        // A revert the user asked for while we were inside a menu's completion.
+        // BEFORE the save below, so the patch it throws away is kept aside first
+        // and the debounce it starts is the one that writes the defaults.
+        if (revertPending)
+        {
+            revertPending = false;
+
+            session.keepCurrentAside(shell);
+            host.revertToDefaults();
+        }
+
+        // The patch, once the edits have stopped for a moment.
+        //
+        // Debounced rather than saved at quit alone, because a standalone gets
+        // killed - a crash, a `kill -9`, a machine that reboots for an update -
+        // and an hour of tweaking lost to that is the same complaint as an hour
+        // lost to quitting.
+        //
+        // The debounce is what keeps the write out here in the tick, which is
+        // the other half of why it is a debounce: an edit is delivered from
+        // inside input dispatch, and a knob being dragged would otherwise put a
+        // disk write on the stack under the editor, once per frame.
+        session.pump(elapsedMs, shell);
+
         // A stream that stopped without being asked to: the interface unplugged,
         // the audio service restarted, the server dropping the client. The
         // driver discovered it on a thread that could do nothing about it and
@@ -344,6 +413,47 @@ int runStandaloneApp(PlatformShell& shell)
     // editor or the drivers the next lines tear down.
     commandChannel.stop();
 
+    // Then the patch, while everything it reads is still standing.
+    //
+    // AFTER stop(), so that it is inside the fence the line above just put up
+    // rather than one statement in front of it. Nothing races either way - the
+    // dispatcher only ever runs from drain(), on this thread, and the loop it
+    // was called from has already returned - but "no command can still be
+    // reaching for the model" is a sentence that should be true of every line
+    // below it, including this one.
+    //
+    // BEFORE shell.closeWindow(), which is the only line below that this one
+    // actually has to come before. closeWindow detaches the frame's client,
+    // which hands setHost(nullptr) down through AppLayout to the plugin's own
+    // editor, and ~StandaloneHost then unRegisterGui's it and does the same
+    // again. Those are the teardown's calls INTO the plugin, and the very next
+    // comment is about a plugin that writes a pin from inside one. A patch
+    // captured after them is a patch captured across the plugin being taken
+    // apart.
+    //
+    // The two driver stops in between demand nothing of their own, and this
+    // comment used to say they did - that stopping them was the last chance at
+    // "the values only the DSP authored". It is not. captureState reads the
+    // CONTROLLER's store, deliberately and never the processor's (StandaloneHost
+    // says why), and closing an audio device does not touch it. Nor can a DSP
+    // value still be on its way: the only drain of message_que_dsp_to_ui is
+    // StandaloneHost::onTimer, which the tick called and this teardown does not,
+    // so whatever the last tick brought across is already all there is.
+    //
+    // What catches those values is that this save happens at ALL. They reach the
+    // controller's store without ever marking the session dirty - a meter would
+    // otherwise keep it permanently so - which is why the debounce never wrote
+    // them and why this call is unconditional.
+    session.saveNow(shell);
+
+    // `session` is destroyed BEFORE `host`, being declared after it, and the
+    // callback installed on the host captures `&session`. ~StandaloneHost calls
+    // into the plugin (unRegisterGui, then setHost(nullptr) on the editor), and
+    // a plugin that writes a pin from there would reach that callback with the
+    // object already gone. Cut it here rather than reason about what a plugin
+    // does in its destructor.
+    host.setOnParameterEdited({});
+
     // Then the audio and MIDI threads, before anything they touch goes away.
     // close() on either driver returns only once no callback can still be
     // running.
@@ -357,8 +467,9 @@ int runStandaloneApp(PlatformShell& shell)
     shell.closeWindow();
 
     // settingsPane, menuBar and layout are released as this frame unwinds, then
-    // settings, then host - which keeps SettingsPane's references to the last
-    // two valid for the whole of its life.
+    // session, then settings, then host - which keeps SettingsPane's references
+    // to the last two, and SessionState's to the host, valid for the whole of
+    // their lives.
     return exitCode;
 }
 

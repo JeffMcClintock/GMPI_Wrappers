@@ -166,6 +166,11 @@ std::string Settings::filePath() const
 #endif
 }
 
+std::filesystem::path Settings::siblingFile(const char* fileName) const
+{
+    return path_.parent_path() / fileName;
+}
+
 std::string Settings::getString(const std::string& key, const std::string& fallback) const
 {
     const auto it = values_.find(key);
