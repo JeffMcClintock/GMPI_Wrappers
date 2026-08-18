@@ -359,6 +359,18 @@ gmpi::ReturnCode SettingsPane::render(gmpi::drawing::api::IDeviceContext* dc)
     // A theme change repaints every colour, so it needs the same full rebuild
     // a layout change does - and consumeThemeChanged must be called here,
     // because Form::DoUpdates would otherwise swallow the flag first.
+    //
+    // THIS PAGE CANNOT NOTICE A THEME CHANGE ON ITS OWN. It watches for one only
+    // while it is being rendered, and setThemeMode() invalidates nothing - it
+    // bumps a counter - so on an idle window nothing here ever runs again and
+    // the page keeps the palette it was last drawn with.
+    //
+    // What saves it is MenuBarView::preGraphicsRedraw: the bar IS ticked every
+    // frame, and when it sees the counter move it calls invalidate() with a null
+    // rect, which ChildHost passes straight through to the frame and so marks the
+    // whole window - this page included. Delete that invalidate and the strip
+    // will still recolour itself while everything below it stays in the old
+    // theme, which looks like a bug in this file and is not one.
     gmpi::ui::consumeThemeChanged();
 
     const auto mode = gmpi::ui::themeModeStorage();

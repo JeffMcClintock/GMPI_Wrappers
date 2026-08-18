@@ -77,9 +77,28 @@ gmpi::ReturnCode MenuBarView::render(gmpi::drawing::api::IDeviceContext* dc)
         return b;
     };
 
-    auto* back   = brush({ 0.18f, 0.19f, 0.21f, 1.f });
-    auto* ink    = brush({ 0.88f, 0.89f, 0.92f, 1.f });
-    auto* hilite = brush({ 0.28f, 0.42f, 0.66f, 1.f });
+    // Read every frame rather than cached, which is what makes a theme change
+    // free: the brushes are built here anyway, so the only thing a change needs
+    // is a repaint (preGraphicsRedraw, below).
+    //
+    // panelBackground is the CHROME colour - what gmpi_ui paints a panel with,
+    // as against controlBackground, which is a control's body. A menu bar is
+    // chrome, so the strip takes the former.
+    //
+    // The highlight is `accent`, WITH its own ink. controlBackground was tried
+    // first and is not a highlight: it sits about a dozen sRGB levels from
+    // panelBackground in both modes, which is right for a combo box on a panel
+    // and reads as a smudge on a menu title (1.2:1, against 2.7:1 for accent in
+    // the dark theme and 4.9:1 in the light one). accent/accentText were added
+    // to ColorTheme for this rather than picked here, because "the colour that
+    // marks the current thing" is a question every widget set has and hard-
+    // coding one is what this change exists to stop.
+    const auto& theme = gmpi::ui::currentTheme();
+
+    auto* back      = brush(theme.panelBackground);
+    auto* ink       = brush(theme.controlText);
+    auto* hilite    = brush(theme.accent);
+    auto* hiliteInk = brush(theme.accentText);
 
     if (back)
         dc->fillRectangle(&bounds_, back);
@@ -90,22 +109,50 @@ gmpi::ReturnCode MenuBarView::render(gmpi::drawing::api::IDeviceContext* dc)
 
         // The open menu stays highlighted while its drop-down is up, so it is
         // obvious which one you are looking at.
-        if (hilite && (int(i) == open_ || int(i) == hovered_))
+        const bool lit = (int(i) == open_ || int(i) == hovered_);
+
+        if (hilite && lit)
             dc->fillRectangle(&m.rect, hilite);
 
-        if (font_ && ink)
+        // The title switches ink with its background. accent is a mid-tone in
+        // both modes, so the light theme's near-black controlText on it would be
+        // the legibility problem the highlight is meant to solve.
+        auto* titleInk = (lit && hiliteInk) ? hiliteInk : ink;
+
+        if (font_ && titleInk)
         {
             const gmpi::drawing::Rect textRect{ m.rect.left + kPadding, m.rect.top + kTextInset,
                                                 m.rect.right, m.rect.bottom };
-            dc->drawTextU(m.title.c_str(), uint32_t(m.title.size()), font_, &textRect, ink, 0);
+            dc->drawTextU(m.title.c_str(), uint32_t(m.title.size()), font_, &textRect, titleInk, 0);
         }
     }
 
-    if (back)   back->release();
-    if (ink)    ink->release();
-    if (hilite) hilite->release();
+    if (back)      back->release();
+    if (ink)       ink->release();
+    if (hilite)    hilite->release();
+    if (hiliteInk) hiliteInk->release();
 
     return gmpi::ReturnCode::Ok;
+}
+
+void MenuBarView::preGraphicsRedraw()
+{
+    // setThemeMode invalidates nothing - it bumps a counter and leaves the
+    // repainting to whoever notices - so this is the noticing. render() picks
+    // the new palette up by itself; the only thing missing is a render, and a
+    // window nobody is touching does not draw one. Measured: 52 idle ticks
+    // produced no repaint at all, and the tick after the mode changed produced
+    // one.
+    //
+    // invalidate() marks the WHOLE window rather than the strip, because
+    // ChildHost passes a null rect straight through to the frame. THAT IS LOAD
+    // BEARING FOR THE PAGE BELOW, not just convenient: SettingsPane watches the
+    // theme counter only from inside its own render(), so with nothing asking
+    // for a render it never looks. Narrow this to bounds_ and the strip alone
+    // will follow a theme change while the page under it stays in the old
+    // palette (SettingsPane::render says the same from the other end).
+    if (gmpi::ui::consumeThemeChanged(lastSeenThemeVersion_))
+        invalidate();
 }
 
 gmpi::ReturnCode MenuBarView::setHover(bool over)

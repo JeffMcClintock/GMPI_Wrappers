@@ -16,7 +16,21 @@
 // It sits in AppLayout's strip, which means the ChildHost there maps the
 // popup's anchor rect into window coordinates. Without that the drop-downs
 // would open at the top-left corner regardless of which title was clicked.
+//
+// Its colours come from gmpi::ui::currentTheme(), the same palette SettingsPane
+// clears itself with. They used to be constants picked to look right in the
+// dark, which cost exactly what drawing our own menu bar is meant to buy: with
+// a light theme selected the window wore a permanently dark strip across the
+// top of a light page, identically on all three platforms.
+//
+// NOTHING IN THE STANDALONE SELECTS A THEME YET. No shell asks the OS which
+// mode it is in, and gmpi::ui's default is ThemeMode::Dark, so that is the
+// palette this reads until a shell (or the hosted plugin) calls setThemeMode.
+// Following the OS is shell work and belongs with the other per-platform
+// questions in PlatformShell; what is fixed here is that the strip no longer
+// has an opinion of its own about which mode it is in.
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -24,6 +38,7 @@
 #include "GmpiUiDrawing.h"
 #include "GmpiApiCommon.h"
 #include "GmpiSdkCommon.h"
+#include "experimental/theme.h"
 #include "helpers/NativeUi.h"
 
 namespace gmpi
@@ -34,6 +49,7 @@ namespace standalone
 class MenuBarView :
       public gmpi::api::IDrawingClient
     , public gmpi::api::IInputClient
+    , public gmpi::api::IGraphicsRedrawClient
 {
 public:
     // What a menu item does when chosen. A plain callback rather than a command
@@ -61,6 +77,15 @@ public:
 
     void setMenus(std::vector<Menu> menus) { menus_ = std::move(menus); }
     void setFont(gmpi::drawing::api::ITextFormat* f) { font_ = f; }
+
+    // --- IGraphicsRedrawClient ---
+    // Only to notice a theme change. The bar has no animation and no DSP->GUI
+    // queue to service; what it cannot do without a per-frame call is find out
+    // that the palette moved while the window sat idle, because setThemeMode
+    // invalidates nothing and on a still window nothing else repaints us.
+    // AppLayout::preGraphicsRedraw forwards it to the strip and to the visible
+    // page.
+    void preGraphicsRedraw() override;
 
     // --- IDrawingClient ---
     gmpi::ReturnCode setHost(gmpi::api::IUnknown* host) override;
@@ -97,6 +122,7 @@ public:
         *returnInterface = {};
         GMPI_QUERYINTERFACE(gmpi::api::IDrawingClient);
         GMPI_QUERYINTERFACE(gmpi::api::IInputClient);
+        GMPI_QUERYINTERFACE(gmpi::api::IGraphicsRedrawClient);
         return gmpi::ReturnCode::NoSupport;
     }
     GMPI_REFCOUNT;
@@ -113,6 +139,15 @@ private:
     gmpi::api::IUnknown* host_{};
     int hovered_ = -1;
     int open_    = -1;   // which drop-down is showing, or -1
+
+    // OUR OWN copy of the theme counter, which is why preGraphicsRedraw calls
+    // the overload that takes one. The argument-less
+    // gmpi::ui::consumeThemeChanged() keeps a single static shared by every
+    // caller in the process, so of two views watching through it the first to
+    // ask takes the change and the second is told nothing happened. Seeded from
+    // the counter's current value so the first tick after construction reports
+    // a change only if there really was one.
+    uint32_t lastSeenThemeVersion_ = gmpi::ui::themeVersion();
 };
 
 } // namespace standalone
