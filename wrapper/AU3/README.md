@@ -17,23 +17,34 @@ No AudioUnitSDK checkout is needed — `AUAudioUnit` is AudioToolbox API.
 
 ## Consuming: `FORMATS_LIST ... AU3`
 
-On macOS, `gmpi_plugin.cmake`'s AU3 arm does the whole dance from one word in
-the format list: a `<Plugin>_AU3.appex` (plugin sources + `wrapperAu3.mm`,
-linked against `AU3_Wrapper`, `-e _NSExtensionMain`), a `<Plugin>_AU3App`
-containing app (`mac/HostAppMain.mm`), the appex `Info.plist` written by
-`plist_util --au3` from the built GMPI module — the same identity derivation
-the AU2 `.component` gets, so v2 and v3 share their fourCCs — and an
-always-run assemble target that nests the appex in the app's `PlugIns/` and
-ad-hoc signs inside-out with `appex.entitlements` (extensions must be
-sandboxed; an unsandboxed one silently fails to load). Under `SE_LOCAL_BUILD`
-the app is copied to `~/Applications` and the appex registered with
-`pluginkit -a`. Validate with `auval -v <type> <subtype> <manu>`.
+`gmpi_plugin.cmake`'s AU3 arm does the whole dance from one word in the
+format list, on macOS and iOS both: a `<Plugin>_AU3.appex` (plugin sources +
+`wrapperAu3.mm`, linked against `AU3_Wrapper`, `-e _NSExtensionMain`), a
+`<Plugin>_AU3App` containing app (`mac/HostAppMain.mm` / `ios/HostAppMain.mm`),
+the appex `Info.plist` written by `plist_util --au3`, and an always-run
+assemble target that nests the appex in the app's `PlugIns/` and ad-hoc signs
+inside-out (with `appex.entitlements` on macOS — extensions must be sandboxed
+there, and an unsandboxed one silently fails to load; iOS is sandboxed by
+definition and takes no such key).
 
-Assembling by hand (an iOS app, an Xcode project): the anatomy is
-`YourApp.app/Contents/PlugIns/YourPlugin.appex` (`PlugIns/` on iOS too), and
-`appex-Info.plist.in` documents every field a hand-written appex plist needs.
-On iOS, install the containing app; hosts (GarageBand, AUM, Logic for iPad)
-list the extension.
+The plist derivation is the same one the AU2 `.component` gets, so v2 and v3
+share their fourCCs — with one twist per platform: macOS scans the **built
+module** (load it, ask its factory); an iOS-built module cannot be loaded by
+the Mac doing the building, so there a **host-compiled** `plist_util` reads
+the identical metadata from the plugin's own declaration (`--xml`, which
+accepts a `.xml` or the source file holding a `Register<>::withXml` raw
+string). The two modes emit byte-identical plists.
+
+macOS: under `SE_LOCAL_BUILD` the app is copied to `~/Applications` and the
+appex registered with `pluginkit -a`; validate with
+`auval -v <type> <subtype> <manu>`.
+
+iOS: configure with `-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator`
+(or `iphoneos`); every other format drops out of the list there, the way AU
+does on Windows. Then `xcrun simctl install booted <Plugin>_AU3App.app` and
+launch it once — the extension registers and AUv3 hosts list it. Device
+installs need a real signing identity in place of the assemble step's ad-hoc
+signature; that re-sign is the consumer's, outside this build.
 
 ## Design notes
 
@@ -63,6 +74,6 @@ list the extension.
 * Stereo-pair bus splitting for Logic-style multi-out instruments (one bus
   per side carries all channels today; AU2 splits pairs).
 * Factory presets (`factoryPresets` returns nothing; `fullState` works).
-* An iOS containing-app target (the library and view host compile for device
-  and simulator; assembly and signing remain the consumer's, typically via an
-  Xcode project).
+* iOS device signing (simulator builds are verified end-to-end; a device
+  build needs the consumer's identity and provisioning in place of the
+  ad-hoc signature).

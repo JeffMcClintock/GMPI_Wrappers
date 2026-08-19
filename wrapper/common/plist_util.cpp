@@ -217,49 +217,17 @@ struct PlistOptions
     std::string bundleId; // CFBundleIdentifier (au3 only)
 };
 
-int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, const PlistOptions& options, std::ostream& out)
+// Parse one plugin's metadata XML and emit the requested plist. The text is
+// the same document whichever door it came through: the factory of a LOADED
+// module (scanDll below, the original path), or the plugin's source read
+// straight off disk (--xml, for cross-compiles - an iOS-built module cannot
+// be loaded by this macOS tool, but its XML never needed loading).
+int processPluginXml(const char* xmlText, const PlistOptions& options, std::ostream& out)
 {
     const std::string exeName = options.exeName;
-    MP_DllEntry dll_entry_point{};
-    const char* gmpi_dll_entrypoint_name = "MP_GetFactory";
-#ifdef _WIN32
-    auto r = wrapper::gmpi_dynamic_linking::MP_DllSymbol(dllHandle, gmpi_dll_entrypoint_name, (void**)&dll_entry_point);
-#else
-    dll_entry_point = (MP_DllEntry) CFBundleGetFunctionPointerForName((CFBundleRef)dllHandle, CFSTR("MP_GetFactory"));
-    int r = 0;
-#endif
-    
-    if (!dll_entry_point || r != 0)
     {
-        std::cerr << "ERROR: Can't locate entry point\n";
-        return 2;
-    }
-
-    { // restrict scope of 'vst_factory' and 'gmpi_factory' so smart pointers RIAA before dll is unloaded
-
-        // Instansiate factory and query sub-plugins.
-        gmpi::shared_ptr<gmpi::api::IPluginFactory> gmpi_factory;
-        {
-            gmpi::shared_ptr<gmpi::api::IUnknown> com_object;
-            r = dll_entry_point(com_object.put_void());
-
-            gmpi_factory = com_object.as<gmpi::api::IPluginFactory>();
-        }
-
-        if (!gmpi_factory)
-        {
-            std::cerr << "ERROR: Can't locate factory object\n";
-            return 2;
-        }
-
-        int index = 0;
-        gmpi::ReturnString s;
-
-        if (gmpi::ReturnCode::Ok != gmpi_factory->getPluginInformation(index++, &s)) // FULL XML
-            return 2;
-
         tinyxml2::XMLDocument doc;
-        doc.Parse(s.c_str());
+        doc.Parse(xmlText);
 
         if (doc.Error())
         {
@@ -509,30 +477,130 @@ out << R"XML(	<key>CFBundlePackageType</key>
     return 0;
 }
 
-int main(int argc, char** argv)
+// The original path: load the built module, ask its factory for the XML, and
+// hand that to processPluginXml. Only possible when the module was built for
+// the machine running this tool.
+int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, const PlistOptions& options, std::ostream& out)
 {
-    if (argc < 3)
+    MP_DllEntry dll_entry_point{};
+    const char* gmpi_dll_entrypoint_name = "MP_GetFactory";
+#ifdef _WIN32
+    auto r = wrapper::gmpi_dynamic_linking::MP_DllSymbol(dllHandle, gmpi_dll_entrypoint_name, (void**)&dll_entry_point);
+#else
+    dll_entry_point = (MP_DllEntry) CFBundleGetFunctionPointerForName((CFBundleRef)dllHandle, CFSTR("MP_GetFactory"));
+    int r = 0;
+#endif
+
+    if (!dll_entry_point || r != 0)
     {
-        std::cerr << "Usage: plist_util <plugin_path> <output path> [--au3 <executable_name> <bundle_identifier>]\n";
+        std::cerr << "ERROR: Can't locate entry point\n";
         return 2;
     }
 
-    const std::filesystem::path pluginPath(argv[1]);
-    const std::filesystem::path outputPath(argv[2]);
+    // restrict scope of 'gmpi_factory' so smart pointers RIAA before dll is unloaded
+    {
+        // Instansiate factory and query sub-plugins.
+        gmpi::shared_ptr<gmpi::api::IPluginFactory> gmpi_factory;
+        {
+            gmpi::shared_ptr<gmpi::api::IUnknown> com_object;
+            r = dll_entry_point(com_object.put_void());
+
+            gmpi_factory = com_object.as<gmpi::api::IPluginFactory>();
+        }
+
+        if (!gmpi_factory)
+        {
+            std::cerr << "ERROR: Can't locate factory object\n";
+            return 2;
+        }
+
+        int index = 0;
+        gmpi::ReturnString s;
+
+        if (gmpi::ReturnCode::Ok != gmpi_factory->getPluginInformation(index++, &s)) // FULL XML
+            return 2;
+
+        return processPluginXml(s.c_str(), options, out);
+    }
+}
+
+// The --xml path: read the metadata straight from the file that declares it -
+// a .xml sidecar, or the C++ source holding a Register<>::withXml raw string.
+// Extracting the <PluginList>...</PluginList> span textually is what lets one
+// rule serve both; it is the same compromise gmpi_plugin.cmake's
+// gmpi_find_plugin_element makes, for the same reason, and the file it finds
+// is the file a build passes here.
+int scanXmlFile(const std::filesystem::path& xmlPath, const PlistOptions& options, std::ostream& out)
+{
+    std::ifstream ifs(xmlPath);
+    if (!ifs)
+    {
+        std::cerr << "ERROR: Can't read " << xmlPath << "\n";
+        return 2;
+    }
+
+    std::string text((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+
+    const auto start = text.find("<PluginList");
+    constexpr char endTag[] = "</PluginList>";
+    const auto end = text.find(endTag, start == std::string::npos ? 0 : start);
+
+    if (start == std::string::npos || end == std::string::npos)
+    {
+        std::cerr << "ERROR: No <PluginList> element in " << xmlPath << "\n";
+        return 2;
+    }
+
+    const auto span = text.substr(start, end + sizeof(endTag) - 1 - start);
+
+    return processPluginXml(span.c_str(), options, out);
+}
+
+static int usage()
+{
+    std::cerr <<
+        "Usage: plist_util [--xml] <input> <output> [--au3 <executable_name> <bundle_identifier>]\n"
+        "  <input> is a built plugin bundle to load and scan - or, with --xml, a file\n"
+        "  holding the plugin's metadata XML (a .xml, or the source with its raw string),\n"
+        "  for builds whose module the running machine cannot load (iOS).\n";
+    return 2;
+}
+
+int main(int argc, char** argv)
+{
+    int arg = 1;
+
+    bool xmlMode = false;
+    if (arg < argc && std::string(argv[arg]) == "--xml")
+    {
+        xmlMode = true;
+        ++arg;
+    }
+
+    if (argc - arg < 2)
+        return usage();
+
+    const std::filesystem::path pluginPath(argv[arg++]);
+    const std::filesystem::path outputPath(argv[arg++]);
 
     PlistOptions options;
     options.exeName = pluginPath.stem().string() + "_AU";
 
-    if (argc >= 6 && std::string(argv[3]) == "--au3")
+    if (argc - arg == 3 && std::string(argv[arg]) == "--au3")
     {
         options.au3 = true;
-        options.exeName = argv[4];
-        options.bundleId = argv[5];
+        options.exeName = argv[arg + 1];
+        options.bundleId = argv[arg + 2];
     }
-    else if (argc > 3)
+    else if (argc - arg != 0)
     {
-        std::cerr << "Usage: plist_util <plugin_path> <output path> [--au3 <executable_name> <bundle_identifier>]\n";
-        return 2;
+        return usage();
+    }
+
+    if (xmlMode)
+    {
+        std::ofstream ofs(outputPath);
+        return scanXmlFile(pluginPath, options, ofs);
     }
 
     wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle{};
