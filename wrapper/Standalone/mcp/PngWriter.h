@@ -51,6 +51,53 @@ namespace standalone
 namespace mcp
 {
 
+/// Shared preamble for every writePng arm below: an empty capture is refused
+/// with the same message on all three platforms.
+inline bool havePixelsToWrite(const uint8_t* pixels, int width, int height,
+                              std::string& errorOut)
+{
+    if (!pixels || width <= 0 || height <= 0)
+    {
+        errorOut = "no pixels to write (the window may not have been drawn yet)";
+        return false;
+    }
+    return true;
+}
+
+/// Narrows one row of source pixels to packed 24bpp, dropping the padding
+/// byte. The source is BGRX8888 on every platform - XRGB8888 is a 32-bit
+/// little-endian word, so in memory the bytes run B,G,R,X - because that is
+/// the Wayland shm layout, and the Windows and mac frame grabbers both
+/// convert into exactly it (see each arm's note).
+///
+/// Two spellings rather than one function taking the order as an argument:
+/// each encoder's channel order is fixed at compile time, so it belongs in
+/// the call site's spelling and nowhere in the loop - the pixel loop inside
+/// runs ~8M times for a 4K capture, and even a well-predicted per-pixel test
+/// is pure overhead. Each arm keeps its own row loop, stride arithmetic and buffer
+/// ownership; only the per-pixel index expressions - where a channel swap
+/// would drift silently between platforms - live here, once.
+inline void packRowRGB(uint8_t* dst, const uint8_t* src, int width)
+{
+    for (int x = 0; x < width; ++x)
+    {
+        dst[x * 3 + 0] = src[x * 4 + 2];   // R
+        dst[x * 3 + 1] = src[x * 4 + 1];   // G
+        dst[x * 3 + 2] = src[x * 4 + 0];   // B
+    }
+}
+
+/// The same narrowing kept in the source's own B,G,R order - no swap.
+inline void packRowBGR(uint8_t* dst, const uint8_t* src, int width)
+{
+    for (int x = 0; x < width; ++x)
+    {
+        dst[x * 3 + 0] = src[x * 4 + 0];   // B
+        dst[x * 3 + 1] = src[x * 4 + 1];   // G
+        dst[x * 3 + 2] = src[x * 4 + 2];   // R
+    }
+}
+
 /// Writes a BGRX/XRGB8888 buffer (the Wayland shm format) as an RGB8 PNG.
 ///
 /// `stride` is in bytes and may exceed width*4, so rows are copied one at a
@@ -80,27 +127,21 @@ inline bool writePng(const std::string& path,
                      int stride,
                      std::string& errorOut)
 {
-    if (!pixels || width <= 0 || height <= 0)
-    {
-        errorOut = "no pixels to write (the window may not have been drawn yet)";
+    if (!havePixelsToWrite(pixels, width, height, errorOut))
         return false;
-    }
 
     // Packed tightly, because CGDataProvider wants one contiguous block and the
     // source stride may be wider than the row.
     const size_t outStride = static_cast<size_t>(width) * 3;
     std::vector<uint8_t> rgb(outStride * static_cast<size_t>(height));
 
+    // RGB order, because the CGImage below is declared 24bpp with
+    // kCGImageAlphaNone and default byte order - i.e. R,G,B in memory.
     for (int y = 0; y < height; ++y)
     {
-        const uint8_t* src = pixels + static_cast<size_t>(y) * static_cast<size_t>(stride);
-        uint8_t* dst = rgb.data() + static_cast<size_t>(y) * outStride;
-        for (int x = 0; x < width; ++x)
-        {
-            dst[x * 3 + 0] = src[x * 4 + 2];   // R
-            dst[x * 3 + 1] = src[x * 4 + 1];   // G
-            dst[x * 3 + 2] = src[x * 4 + 0];   // B
-        }
+        packRowRGB(rgb.data() + static_cast<size_t>(y) * outStride,
+                   pixels + static_cast<size_t>(y) * static_cast<size_t>(stride),
+                   width);
     }
 
     // No-copy provider over `rgb`, which outlives every use of the image below.
@@ -177,11 +218,8 @@ inline bool writePng(const std::string& path,
                      int stride,
                      std::string& errorOut)
 {
-    if (!pixels || width <= 0 || height <= 0)
-    {
-        errorOut = "no pixels to write (the window may not have been drawn yet)";
+    if (!havePixelsToWrite(pixels, width, height, errorOut))
         return false;
-    }
 
     FILE* f = fopen(path.c_str(), "wb");
     if (!f)
@@ -224,19 +262,16 @@ inline bool writePng(const std::string& path,
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
     png_write_info(png, info);
 
+    // One reused row buffer, not a whole packed image: rows stream straight
+    // into png_write_row, so this arm never holds more than width*3 bytes.
+    // RGB order to match the PNG_COLOR_TYPE_RGB declared above.
     std::vector<uint8_t> row(static_cast<size_t>(width) * 3);
 
     for (int y = 0; y < height; ++y)
     {
-        const uint8_t* src = pixels + static_cast<size_t>(y) * static_cast<size_t>(stride);
-        for (int x = 0; x < width; ++x)
-        {
-            // XRGB8888 is a 32-bit little-endian word, so in memory the bytes
-            // run B,G,R,X.
-            row[x * 3 + 0] = src[x * 4 + 2];   // R
-            row[x * 3 + 1] = src[x * 4 + 1];   // G
-            row[x * 3 + 2] = src[x * 4 + 0];   // B
-        }
+        packRowRGB(row.data(),
+                   pixels + static_cast<size_t>(y) * static_cast<size_t>(stride),
+                   width);
         png_write_row(png, row.data());
     }
 
@@ -271,11 +306,8 @@ inline bool writePng(const std::string& path,
                      int stride,
                      std::string& errorOut)
 {
-    if (!pixels || width <= 0 || height <= 0)
-    {
-        errorOut = "no pixels to write (the window may not have been drawn yet)";
+    if (!havePixelsToWrite(pixels, width, height, errorOut))
         return false;
-    }
 
     // COM is already initialised on the thread that runs commands (the app's UI
     // thread, an STA). CoCreateInstance would fail cleanly if it were not, and
@@ -292,19 +324,13 @@ inline bool writePng(const std::string& path,
     const int outStride = width * 3;
     std::vector<uint8_t> rows(static_cast<size_t>(outStride) * height);
 
+    // BGR, not RGB like the other two arms: 24bppBGR wants B,G,R in memory
+    // order, which is what the source already holds minus its padding byte.
     for (int y = 0; y < height; ++y)
     {
-        const uint8_t* src = pixels + static_cast<size_t>(y) * static_cast<size_t>(stride);
-        uint8_t* dst = rows.data() + static_cast<size_t>(y) * outStride;
-
-        for (int x = 0; x < width; ++x)
-        {
-            // 24bppBGR wants B,G,R in memory order, which is what the source
-            // already holds minus its padding byte.
-            dst[x * 3 + 0] = src[x * 4 + 0];
-            dst[x * 3 + 1] = src[x * 4 + 1];
-            dst[x * 3 + 2] = src[x * 4 + 2];
-        }
+        packRowBGR(rows.data() + static_cast<size_t>(y) * outStride,
+                   pixels + static_cast<size_t>(y) * static_cast<size_t>(stride),
+                   width);
     }
 
     IWICStream* stream{};
