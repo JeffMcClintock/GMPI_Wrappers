@@ -49,16 +49,32 @@ set(GMPI_HOSTING_SRCS
     ${ADAPTORS_COMMON_FOLDER}/tinyXml2/tinyxml2.cpp
 )
 
+# iOS ships exactly one plugin format - the AUv3 app extension - so every
+# other wrapper is gated out rather than taught to cross-compile.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(GMPI_WRAPPERS_IOS TRUE)
+endif()
+
+if(NOT GMPI_WRAPPERS_IOS)
 add_subdirectory(VST3)
 add_subdirectory(CLAP)
+endif()
+
+if(APPLE AND NOT GMPI_WRAPPERS_IOS)
+# AUv2 components don't exist on iOS.
+add_subdirectory(AU2)
+endif()
 
 if(APPLE)
-add_subdirectory(AU2)
+# AUv3 builds for both macOS and iOS.
+add_subdirectory(AU3)
 endif()
 
 # The bare app that wraps one plugin. Returns immediately on platforms whose
 # shell is not written yet, so this is safe to add unconditionally.
+if(NOT GMPI_WRAPPERS_IOS)
 add_subdirectory(Standalone)
+endif()
 
 # Off by default - consumers of this directory should not grow a test binary
 # unless they ask for it.

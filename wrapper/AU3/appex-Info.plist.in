@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template Info.plist for a GMPI AUv3 app extension (.appex), macOS and iOS.
+
+  The consuming project substitutes (configure_file @ONLY):
+    @AU3_EXECUTABLE_NAME@     the appex target's executable name
+    @AU3_BUNDLE_NAME@         e.g. "SawDemo"
+    @AU3_BUNDLE_IDENTIFIER@   e.g. "com.acme.SawDemoApp.AUv3" (must be prefixed
+                              by the CONTAINING app's bundle identifier)
+    @AU3_BUNDLE_VERSION@      e.g. "1.0.0"
+    @AU3_AU_NAME@             "Vendor: Plugin" - the name auval shows
+    @AU3_AU_DESCRIPTION@      one-line description
+    @AU3_AU_TYPE@             "aumu" (instrument), "aufx" (effect), "aumf" (music effect)
+    @AU3_AU_SUBTYPE@          4-char code, e.g. "sdem"
+    @AU3_AU_MANUFACTURER@     4-char code, e.g. "SynE"
+    @AU3_AU_VERSION_INT@      integer version, e.g. 65536 for 1.0.0
+
+  These are the same identity fields plist_util derives from the plugin XML for
+  the AU2 .component; an AU3-aware consumer can reuse that scan.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>@AU3_BUNDLE_NAME@</string>
+	<key>CFBundleExecutable</key>
+	<string>@AU3_EXECUTABLE_NAME@</string>
+	<key>CFBundleIdentifier</key>
+	<string>@AU3_BUNDLE_IDENTIFIER@</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>@AU3_BUNDLE_NAME@</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@AU3_BUNDLE_VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@AU3_BUNDLE_VERSION@</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>AudioComponents</key>
+			<array>
+				<dict>
+					<key>description</key>
+					<string>@AU3_AU_DESCRIPTION@</string>
+					<key>factoryFunction</key>
+					<string>GmpiAUViewController</string>
+					<key>manufacturer</key>
+					<string>@AU3_AU_MANUFACTURER@</string>
+					<key>name</key>
+					<string>@AU3_AU_NAME@</string>
+					<key>sandboxSafe</key>
+					<true/>
+					<key>subtype</key>
+					<string>@AU3_AU_SUBTYPE@</string>
+					<key>tags</key>
+					<array>
+						<string>Synthesizer</string>
+					</array>
+					<key>type</key>
+					<string>@AU3_AU_TYPE@</string>
+					<key>version</key>
+					<integer>@AU3_AU_VERSION_INT@</integer>
+				</dict>
+			</array>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.AudioUnit-UI</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>GmpiAUViewController</string>
+	</dict>
+</dict>
+</plist>
