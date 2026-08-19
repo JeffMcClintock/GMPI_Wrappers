@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    The one entitlement an AUv3 extension cannot ship without: app extensions
+    must be sandboxed, and macOS declines to LOAD an unsandboxed one - silently,
+    as a plugin that registers but never appears in hosts. Signed onto the
+    .appex by gmpi_plugin.cmake's assemble step (ad-hoc for local builds; a
+    distribution build re-signs with a real identity and, typically, this same
+    file).
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+</dict>
+</plist>

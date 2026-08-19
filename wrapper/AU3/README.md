@@ -15,29 +15,25 @@ out-of-process beside the AU2 `.component` this repo also builds.
 
 No AudioUnitSDK checkout is needed — `AUAudioUnit` is AudioToolbox API.
 
-## Consuming: anatomy of the .appex
+## Consuming: `FORMATS_LIST ... AU3`
 
-An AUv3 ships inside a **containing app**; the extension is
-`YourApp.app/Contents/PlugIns/YourPlugin.appex` (`PlugIns/` on iOS too).
+On macOS, `gmpi_plugin.cmake`'s AU3 arm does the whole dance from one word in
+the format list: a `<Plugin>_AU3.appex` (plugin sources + `wrapperAu3.mm`,
+linked against `AU3_Wrapper`, `-e _NSExtensionMain`), a `<Plugin>_AU3App`
+containing app (`mac/HostAppMain.mm`), the appex `Info.plist` written by
+`plist_util --au3` from the built GMPI module — the same identity derivation
+the AU2 `.component` gets, so v2 and v3 share their fourCCs — and an
+always-run assemble target that nests the appex in the app's `PlugIns/` and
+ad-hoc signs inside-out with `appex.entitlements` (extensions must be
+sandboxed; an unsandboxed one silently fails to load). Under `SE_LOCAL_BUILD`
+the app is copied to `~/Applications` and the appex registered with
+`pluginkit -a`. Validate with `auval -v <type> <subtype> <manu>`.
 
-1. **appex target**: an executable bundle with `BUNDLE_EXTENSION "appex"`
-   compiling the plugin's own sources (the same list every other format
-   target compiles, so `MP_GetFactory` resolves) plus `wrapperAu3.mm`,
-   linking `AU3_Wrapper`. Link flags: `-e _NSExtensionMain`.
-2. **Info.plist** from `appex-Info.plist.in`. The identity fields (`type`,
-   `subtype`, `manufacturer`, version integer) must match what plist_util
-   derives for the AU2 component from the plugin's XML — same fourCCs, so the
-   v2 and v3 releases of one plugin describe the same product.
-3. **Sign** the appex **with the app-sandbox entitlement** (extensions must be
-   sandboxed; an unsandboxed one silently fails to load), then sign the app.
-4. macOS: registration happens when the app first runs (or `pluginkit -a
-   path/to/.appex` during development); validate with
-   `auval -v <type> <subtype> <manu>`. iOS: install the containing app; hosts
-   (GarageBand, AUM, Logic for iPad) list the extension.
-
-A complete working reference — appex + containing app + ad-hoc signing +
-`auval` — was built as a scratch rig; its CMakeLists is small and worth
-copying when adding an AU3 format to `gmpi_plugin.cmake`.
+Assembling by hand (an iOS app, an Xcode project): the anatomy is
+`YourApp.app/Contents/PlugIns/YourPlugin.appex` (`PlugIns/` on iOS too), and
+`appex-Info.plist.in` documents every field a hand-written appex plist needs.
+On iOS, install the containing app; hosts (GarageBand, AUM, Logic for iPad)
+list the extension.
 
 ## Design notes
 
@@ -67,7 +63,6 @@ copying when adding an AU3 format to `gmpi_plugin.cmake`.
 * Stereo-pair bus splitting for Logic-style multi-out instruments (one bus
   per side carries all channels today; AU2 splits pairs).
 * Factory presets (`factoryPresets` returns nothing; `fullState` works).
-* An `AU3` format arm in `gmpi_plugin.cmake` to generate the appex +
-  containing-app targets from the plugin XML the way the other formats do.
-* iOS runtime testing (the library and view host compile for device and
-  simulator; a containing iOS app has not been assembled here).
+* An iOS containing-app target (the library and view host compile for device
+  and simulator; assembly and signing remain the consumer's, typically via an
+  Xcode project).

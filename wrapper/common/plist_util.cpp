@@ -112,8 +112,114 @@ uint32_t auVersionInteger(const std::string& version)
     return packed == 0 ? auVersionDefault : packed;
 }
 
-int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, std::string exeName, std::ostream& out)
+// Everything the emitters below need to describe one plugin as an
+// AudioComponent, derived once from the built module's own XML so the AU2
+// .component and the AU3 .appex cannot disagree about identity.
+struct AuIdentity
 {
+    std::string name;
+    std::string vendor_name;
+    std::string vendor_code;   // 4-char manufacturer
+    std::string plugin_code;   // 4-char subtype
+    std::string version;       // author's text, e.g. "2.1.0-beta"
+    const char* effect_code{}; // "aufx" / "aumf" / "aumu"
+    bool isSynth{};
+};
+
+// The <dict> describing one AudioComponent - identical fields in the AU2
+// bundle plist and the AU3 appex's NSExtensionAttributes, differing only in
+// factoryFunction and indentation.
+static void emitAudioComponentDict(const AuIdentity& id, const char* factoryFunction, const std::string& indent, std::ostream& out)
+{
+    out << indent << "<dict>\n";
+    out << indent << "\t<key>description</key>\n";
+    out << indent << "\t<string>" << id.name << "</string>\n";
+    out << indent << "\t<key>factoryFunction</key>\n";
+    out << indent << "\t<string>" << factoryFunction << "</string>\n";
+    out << indent << "\t<key>manufacturer</key>\n";
+    out << indent << "\t<string>" << id.vendor_code << "</string>\n";
+    out << indent << "\t<key>name</key>\n";
+    out << indent << "\t<string>" << id.vendor_name << ":" << id.name << "</string>\n";
+    out << indent << "\t<key>sandboxSafe</key>\n";
+    out << indent << "\t<true/>\n";
+    out << indent << "\t<key>subtype</key>\n";
+    out << indent << "\t<string>" << id.plugin_code << "</string>\n";
+
+    if (id.isSynth)
+    {
+        out << indent << "\t<key>tags</key>\n";
+        out << indent << "\t<array>\n";
+        out << indent << "\t\t<string>Synthesizer</string>\n";
+        out << indent << "\t</array>\n";
+    }
+
+    out << indent << "\t<key>type</key>\n";
+    out << indent << "\t<string>" << id.effect_code << "</string>\n";
+    out << indent << "\t<key>version</key>\n";
+    out << indent << "\t<integer>" << auVersionInteger(id.version) << "</integer>\n";
+    out << indent << "</dict>\n";
+}
+
+// The AUv3 app extension's Info.plist. The layout auval accepts is the one
+// wrapper/AU3/appex-Info.plist.in documents; this emitter exists so a build
+// can fill it from the plugin's own XML instead of hand-substituting.
+// GmpiAUViewController is both the factory and the principal class - see
+// AU3_ViewController.h.
+static void emitAu3Plist(const AuIdentity& id, const std::string& exeName, const std::string& bundleId, std::ostream& out)
+{
+    out << R"XML(<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+)XML";
+    out << "\t<key>CFBundleDisplayName</key>\n";
+    out << "\t<string>" << id.name << "</string>\n";
+    out << "\t<key>CFBundleExecutable</key>\n";
+    out << "\t<string>" << exeName << "</string>\n";
+    out << "\t<key>CFBundleIdentifier</key>\n";
+    out << "\t<string>" << bundleId << "</string>\n";
+    out << "\t<key>CFBundleInfoDictionaryVersion</key>\n";
+    out << "\t<string>6.0</string>\n";
+    out << "\t<key>CFBundleName</key>\n";
+    out << "\t<string>" << id.name << "</string>\n";
+    out << "\t<key>CFBundlePackageType</key>\n";
+    out << "\t<string>XPC!</string>\n";
+    out << "\t<key>CFBundleShortVersionString</key>\n";
+    out << "\t<string>" << id.version << "</string>\n";
+    out << "\t<key>CFBundleVersion</key>\n";
+    out << "\t<string>" << id.version << "</string>\n";
+    out << "\t<key>NSExtension</key>\n";
+    out << "\t<dict>\n";
+    out << "\t\t<key>NSExtensionAttributes</key>\n";
+    out << "\t\t<dict>\n";
+    out << "\t\t\t<key>AudioComponents</key>\n";
+    out << "\t\t\t<array>\n";
+
+    emitAudioComponentDict(id, "GmpiAUViewController", "\t\t\t\t", out);
+
+    out << "\t\t\t</array>\n";
+    out << "\t\t</dict>\n";
+    out << "\t\t<key>NSExtensionPointIdentifier</key>\n";
+    out << "\t\t<string>com.apple.AudioUnit-UI</string>\n";
+    out << "\t\t<key>NSExtensionPrincipalClass</key>\n";
+    out << "\t\t<string>GmpiAUViewController</string>\n";
+    out << "\t</dict>\n";
+    out << "</dict>\n";
+    out << "</plist>\n";
+}
+
+struct PlistOptions
+{
+    bool au3{};
+    std::string exeName;  // CFBundleExecutable
+    std::string bundleId; // CFBundleIdentifier (au3 only)
+};
+
+int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, const PlistOptions& options, std::ostream& out)
+{
+    const std::string exeName = options.exeName;
     MP_DllEntry dll_entry_point{};
     const char* gmpi_dll_entrypoint_name = "MP_GetFactory";
 #ifdef _WIN32
@@ -274,6 +380,13 @@ int scanDll(wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle, std::string exe
             }
         }
 
+        if (options.au3)
+        {
+            const AuIdentity identity{ name, vendor_name, vendor_code, plugin_code, version, effect_code, isSynth };
+            emitAu3Plist(identity, options.exeName, options.bundleId, out);
+            return 0;
+        }
+
         // emit the Info.plist file
 
 out << R"XML(<?xml version="1.0" encoding="UTF-8"?>
@@ -400,12 +513,27 @@ int main(int argc, char** argv)
 {
     if (argc < 3)
     {
-        std::cerr << "Usage: plist_util <plugin_path> <output path>\n";
+        std::cerr << "Usage: plist_util <plugin_path> <output path> [--au3 <executable_name> <bundle_identifier>]\n";
         return 2;
     }
 
     const std::filesystem::path pluginPath(argv[1]);
     const std::filesystem::path outputPath(argv[2]);
+
+    PlistOptions options;
+    options.exeName = pluginPath.stem().string() + "_AU";
+
+    if (argc >= 6 && std::string(argv[3]) == "--au3")
+    {
+        options.au3 = true;
+        options.exeName = argv[4];
+        options.bundleId = argv[5];
+    }
+    else if (argc > 3)
+    {
+        std::cerr << "Usage: plist_util <plugin_path> <output path> [--au3 <executable_name> <bundle_identifier>]\n";
+        return 2;
+    }
 
     wrapper::gmpi_dynamic_linking::DLL_HANDLE dllHandle{};
     
@@ -446,7 +574,7 @@ int main(int argc, char** argv)
 	// open a filestream for the output file.
 	std::ofstream ofs(outputPath);
 
-    r = scanDll(dllHandle, pluginPath.stem().string() + "_AU", ofs);
+    r = scanDll(dllHandle, options, ofs);
 
     wrapper::gmpi_dynamic_linking::MP_DllUnload(dllHandle);
 
