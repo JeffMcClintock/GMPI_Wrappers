@@ -929,12 +929,23 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
     // Counted and reported: "the render ignored my parameter" and "the
     // parameter does not affect the sound" look identical from outside, and
     // they call for very different responses from whoever is looking.
+    // BACKLOG E6: the skipped parameters are counted too. TIDE's entire patch
+    // is one blob parameter, so this loop primes NOTHING for it and the render
+    // is built from an empty graph -- "peak": 0 regardless of the rack, which
+    // reads as "your patch is silent" when the truth is "your state was
+    // ignored". "parametersUnprimed" in the result is the tell; a blob-capable
+    // prime needs a non-scalar setter in GMPI's processor_holder and stays
+    // filed on that row.
     int primed = 0;
+    int unprimed = 0;
     for (auto& entry : context.host->controller().patchManager.parameters)
     {
         auto& param = entry.second;
         if (!gmpi::hosting::is_scalar(param.info->datatype))
+        {
+            ++unprimed;
             continue;
+        }
 
         const size_t before = processor.events.size();
         processor.setParameterNormalizedFromDaw(*info, 0, entry.first, param.normalisedValue());
@@ -1008,6 +1019,7 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
         .num("rms", stats.rms)
         .num("clippedSamples", static_cast<double>(stats.clippedSamples))
         .num("parametersPrimed", primed)
+        .num("parametersUnprimed", unprimed)
         .str("input", inputSignal == InputSignal::Tone  ? "tone"
                     : inputSignal == InputSignal::Noise ? "noise"
                                                         : "silence")
