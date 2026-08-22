@@ -412,12 +412,21 @@ out << R"XML(
 )XML";
 out << "\t<string>" << exeName << "</string>";
 
-#if 0         // build warning about bundle ID not matching
+// CFBundleIdentifier is emitted ONLY when the caller supplies one.
+//
+// The derived form was #if 0'd out because it produced a "bundle ID not
+// matching" build warning -- but the consequence was no identifier at ALL, so
+// codesign invents one from the executable name plus a hash (observed:
+// "TIDE-Rack-a330dda6..."), and that is what notarization and Gatekeeper key
+// on. Defaulting to "omit" keeps every existing caller's output byte-for-byte;
+// a caller that knows its identifier can now say so.
+if (!options.bundleId.empty())
+{
 out << R"XML(
 	<key>CFBundleIdentifier</key>
 )XML";
-out << "\t<string>com." << vendor_code << "." << plugin_id << "</string>";
-#endif
+out << "\t<string>" << options.bundleId << "</string>";
+}
         
 out << R"XML(
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -560,6 +569,12 @@ static int usage()
 {
     std::cerr <<
         "Usage: plist_util [--xml] <input> <output> [--au3 <executable_name> <bundle_identifier>]\n"
+        "                  [--exe-name <name>] [--bundle-id <id>]\n"
+        "  --exe-name overrides CFBundleExecutable, which is otherwise DERIVED as\n"
+        "  <input-stem>_AU. That is correct only while the plugin leaves OUTPUT_NAME\n"
+        "  unset; when it is set, the plist names an executable that is not there and\n"
+        "  macOS silently refuses to register the component.\n"
+        "  --bundle-id emits CFBundleIdentifier, which is otherwise omitted entirely.\n"
         "  <input> is a built plugin bundle to load and scan - or, with --xml, a file\n"
         "  holding the plugin's metadata XML (a .xml, or the source with its raw string),\n"
         "  for builds whose module the running machine cannot load (iOS).\n";
@@ -584,17 +599,46 @@ int main(int argc, char** argv)
     const std::filesystem::path outputPath(argv[arg++]);
 
     PlistOptions options;
+
+    // The DERIVED default, kept so every existing caller behaves as before.
+    //
+    // It assumes the AU binary is named "<gmpi-bundle-stem>_AU", which holds
+    // only while the plugin leaves OUTPUT_NAME unset. TIDE Rack sets it, so its
+    // binary is "TIDE-Rack" while this produced "TIDE-Rack_AU" -- and macOS
+    // then refuses the component with "Cannot get Component's Name strings" /
+    // "didn't find the component", never saying that the plist and the binary
+    // disagree. --exe-name lets the build pass the real name, which it knows as
+    // $<TARGET_FILE_BASE_NAME:...>, instead of this guessing at it.
     options.exeName = pluginPath.stem().string() + "_AU";
 
-    if (argc - arg == 3 && std::string(argv[arg]) == "--au3")
+    if (argc - arg >= 3 && std::string(argv[arg]) == "--au3")
     {
         options.au3 = true;
         options.exeName = argv[arg + 1];
         options.bundleId = argv[arg + 2];
+        arg += 3;
     }
-    else if (argc - arg != 0)
+
+    // Optional overrides. Accepted for both AU2 and AU3, in any order, after
+    // the positional arguments.
+    while (arg < argc)
     {
-        return usage();
+        const std::string flag(argv[arg]);
+
+        if (flag == "--exe-name" && arg + 1 < argc)
+        {
+            options.exeName = argv[arg + 1];
+            arg += 2;
+        }
+        else if (flag == "--bundle-id" && arg + 1 < argc)
+        {
+            options.bundleId = argv[arg + 1];
+            arg += 2;
+        }
+        else
+        {
+            return usage();
+        }
     }
 
     if (xmlMode)

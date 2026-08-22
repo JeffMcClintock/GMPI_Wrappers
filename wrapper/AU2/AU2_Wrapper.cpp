@@ -15,7 +15,15 @@ using namespace ausdk;
 
 // provide extensibility to add extra modules on a per-project basis.
 // SE2JUCE Controller must implement this function
-extern void initialise_synthedit_extra_modules(bool passFalse)
+//
+// WEAK, because this is a FALLBACK and not the answer. Its own comment says
+// "here to satisfy linker" -- but a host application that links a real
+// implementation (SynthEdit's EditorLib provides one) then has two definitions
+// and the AU fails to link with "duplicate symbol". Weak makes the intent
+// explicit to the linker: use this only if nobody else supplied one. Measured
+// against TIDE Rack 2026-08-22, which could not link an AU at all until this
+// and CreatePluginBundleRef below were marked.
+extern __attribute__((weak)) void initialise_synthedit_extra_modules(bool passFalse)
 {
 	// here to satisfy linker
 }
@@ -1206,7 +1214,10 @@ OSStatus	AU2_Wrapper::GetPropertyInfo(AudioUnitPropertyID		inID,
 
 int heyLinkerDontDiscardAudioUnitView_mm();
 
-CFBundleRef CreatePluginBundleRef()
+// WEAK for the same reason as initialise_synthedit_extra_modules above:
+// SynthEditLib's BundleInfo.cpp defines this too, and a plugin built on that
+// library cannot link an AU while both are strong.
+__attribute__((weak)) CFBundleRef CreatePluginBundleRef()
 {
     CFBundleRef rBundleRef = 0;
     
