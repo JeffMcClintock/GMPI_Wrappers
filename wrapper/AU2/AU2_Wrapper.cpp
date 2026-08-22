@@ -5,6 +5,7 @@
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/gmpi_factory.h"
 #include "GmpiSdkCommon.h"
+#include "backends/GmpiObjCNames.h"
 
 using namespace ausdk;
 
@@ -1327,7 +1328,7 @@ OSStatus AU2_Wrapper::GetProperty(
             CFURLRef url = CFBundleCopyBundleURL(bundle);
             CFRetain(url);
 
-            CFStringRef className = CFStringCreateWithCString(NULL, "GMPI_VIEW_MAKER_VERSION_02", kCFStringEncodingUTF8);
+            CFStringRef className = CFStringCreateWithCString(NULL, GMPI_OBJC_NAME_STR(GMPI_VIEW_MAKER_VERSION_02), kCFStringEncodingUTF8);
             info = { url, {className} };
 
             CFRelease(bundle);

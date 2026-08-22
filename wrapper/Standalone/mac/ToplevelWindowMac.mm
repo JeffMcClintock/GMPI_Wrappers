@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include "backends/GmpiObjCNames.h"
 
 // The three entry points gmpi_ui's Cocoa frame exposes to C++. Declared here
 // rather than reached through a header, matching how every other consumer of
@@ -22,7 +23,7 @@ void  gmpi_onCloseNativeView(void* view);
 // A standalone is one binary in one process and cannot collide with anything,
 // but the convention is cheap and this class would collide loudly if the app
 // ever grew a second window implementation.
-#define GMPI_STANDALONE_WINDOW_DELEGATE GMPI_STANDALONE_WINDOW_DELEGATE_01
+#define GMPI_STANDALONE_WINDOW_DELEGATE GMPI_OBJC_NAME(GMPI_STANDALONE_WINDOW_DELEGATE_01)
 
 @interface GMPI_STANDALONE_WINDOW_DELEGATE : NSObject <NSWindowDelegate>
 {
