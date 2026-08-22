@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <dlfcn.h>
 #include "AU2_Wrapper.h"
@@ -464,6 +465,53 @@ OSStatus AU2_Wrapper::Initialize()
 
 		This is work still to be done - see AUEffectBase for the kind of logic that needs to be applied here
 	*/
+
+	// BACKLOG S39 -- the validation the TODO above describes, done CONSERVATIVELY.
+	//
+	// The TODO is exactly right about the mechanism: AUBase's ValidFormat stops
+	// enforcing channel counts as soon as an AU implements SupportedNumChannels,
+	// on the assumption the AU will validate at Initialize instead. Nothing did.
+	// auval says so out loud on any plugin with an explicit list:
+	//
+	//     Reported Channel Capabilities (explicit): [0, 2]
+	//     WARNING: Can Initialize Unit to un-supported num channels:
+	//              InputChan:0, OutputChan:1
+	//
+	// It is a warning rather than a failure, so it passes validation and reaches
+	// hosts, where a host that believes it may instantiate the plugin in a
+	// configuration the plugin never advertised will do so.
+	//
+	// ONLY EXPLICIT LISTS ARE ENFORCED. A negative entry in AUChannelInfo is a
+	// wildcard -- [-1, 2] means "any number of inputs with 2 outputs", [0, -18]
+	// means "up to 18 outputs" -- and the exact semantics differ per position and
+	// per convention. Rejecting against a list this code does not fully model
+	// would break plugins that are behaving correctly today, so a list containing
+	// ANY negative entry is left alone entirely. That covers the effect path
+	// (which pushes [-1,2] and [1,1]) and enforces the synth path (which pushes
+	// one concrete [in, out] per bus).
+	if (!supportedChannels.empty())
+	{
+		const bool anyWildcard = std::any_of(
+			supportedChannels.begin(), supportedChannels.end(),
+			[](const AUChannelInfo& c) { return c.inChannels < 0 || c.outChannels < 0; });
+
+		if (!anyWildcard)
+		{
+			const SInt16 wantIn  = static_cast<SInt16>(
+				Inputs().GetNumberOfElements()  ? Input(0).GetStreamFormat().mChannelsPerFrame  : 0);
+			const SInt16 wantOut = static_cast<SInt16>(
+				Outputs().GetNumberOfElements() ? Output(0).GetStreamFormat().mChannelsPerFrame : 0);
+
+			const bool supported = std::any_of(
+				supportedChannels.begin(), supportedChannels.end(),
+				[wantIn, wantOut](const AUChannelInfo& c)
+				{ return c.inChannels == wantIn && c.outChannels == wantOut; });
+
+			if (!supported)
+				return kAudioUnitErr_FormatNotSupported;
+		}
+	}
+
     sampleRate = Output(0).GetStreamFormat().mSampleRate;
 #if 0
 	//    GetSampleRate();
