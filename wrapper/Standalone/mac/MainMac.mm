@@ -50,6 +50,7 @@
 #include "ToplevelWindowMac.h"
 
 #include "../StandaloneApp.h"
+#include "backends/GmpiObjCNames.h"
 
 #if GMPI_STANDALONE_COMMAND_CHANNEL
 #include "FrameCapture.h"
@@ -62,7 +63,7 @@
 // -terminate:, which calls exit() and would skip every line after the run loop -
 // the command channel's stop(), the audio and MIDI threads, the frame detach.
 // This delegate redirects all three onto the window's own orderly close.
-#define GMPI_STANDALONE_APP_DELEGATE GMPI_STANDALONE_APP_DELEGATE_01
+#define GMPI_STANDALONE_APP_DELEGATE GMPI_OBJC_NAME(GMPI_STANDALONE_APP_DELEGATE_01)
 
 @interface GMPI_STANDALONE_APP_DELEGATE : NSObject <NSApplicationDelegate>
 {
