@@ -15,6 +15,7 @@
 #include <clap/helpers/plugin.hxx>
 #include <clap/helpers/host-proxy.hh>
 #include <clap/helpers/host-proxy.hxx>
+#include "Hosting/gmpi_factory.h"   // factory::getInstance (S43(ii))
 #include <iomanip>
 #include <locale>
 
@@ -68,6 +69,34 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
 #endif
 
     controller.gmpiController.init(pinfo);
+
+    // CREATE AND INITIALISE THE PLUG-IN'S OWN CONTROLLER. TIDE BACKLOG S43(ii),
+    // and it is M4's defect on a third wrapper -- this wrapper never created one
+    // at all (`PluginSubtype::Controller` appeared nowhere in wrapper/CLAP).
+    //
+    // The chain, quoting AU3_Wrapper.mm which fixed the same thing: with no
+    // initialize() the plug-in controller never publishes its "seApp" pointer
+    // through parameter 0, so the editor's notifyPin(0) arrives with a ZERO byte
+    // payload instead of 8, so the editor's guard on that size fails, so its
+    // whole GUI is never constructed.
+    //
+    // Measured here before the fix: the X11 editor embedded correctly at
+    // 1100x600, the frame called client->render, and the client wrote a
+    // SURFACE OF ENTIRELY ZERO PIXELS -- nonzero-samples=0 over the whole
+    // 1100x600. Windowing was never the problem.
+    if (auto* pi = gmpi::hosting::factory::getInstance().getPluginInfo(); pi)
+    {
+        auto controllerUnknown = gmpi::hosting::factory::getInstance().createInstance(
+            pi->id.c_str(), gmpi::api::PluginSubtype::Controller);
+
+        if (controllerUnknown)
+        {
+            pluginController = controllerUnknown.as<gmpi::api::IController>();
+            if (pluginController)
+                pluginController->initialize(
+                    static_cast<gmpi::api::IControllerHost*>(&controller.gmpiController), 0);
+        }
+    }
 
     plugin.init(info);
 }

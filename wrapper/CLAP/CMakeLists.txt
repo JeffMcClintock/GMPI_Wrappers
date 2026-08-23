@@ -44,6 +44,33 @@ set(srcs ${srcs}
 )
 ENDIF()
 
+# Linux: the X11 editor. BACKLOG S43(ii), ruled in by Jeff -- "if CLAP wrapper
+# lacks GUI support, we need to add it".
+#
+# This mirrors wrapper/VST3's X11 arm deliberately, source list and all: that
+# wrapper has shipped a working Linux editor for longer, and copying it verbatim
+# is worth more than improving it in passing. The CPU renderer is the same stack
+# -- gmpi_ui's X11 backend brings no font, shaping or image-decode code of its
+# own, so a consumer must supply CpuTextEngine, FontProvider and DecodeImage or
+# geometry draws and text silently does not.
+#
+# X11 rather than Wayland, on Jeff's reading that DAWs support only X11 -- which
+# the VST3 wrapper's own CMake independently records, calling X11 "the only
+# Linux embedding" before VST3 3.8.0 and falling back to it whenever Wayland is
+# unavailable. CLAP defines CLAP_WINDOW_API_WAYLAND too; nothing here uses it
+# yet, and that is a separate decision rather than an oversight.
+if(UNIX AND NOT APPLE)
+set(srcs ${srcs}
+${GMPI_UI_SDK}/backends/DrawingFrameX11.h
+${GMPI_UI_SDK}/backends/DrawingFrameX11.cpp
+${GMPI_UI_SDK}/backends/CpuGfx.h
+${GMPI_UI_SDK}/backends/CpuEncode.h
+${GMPI_UI_SDK}/helpers/CpuTextEngine.h
+${GMPI_UI_SDK}/helpers/FontProvider.h
+${GMPI_UI_SDK}/helpers/DecodeImage.h
+)
+ENDIF()
+
 if(APPLE)
 set(srcs ${srcs}
 #SEVSTGUIEditorMac.h
@@ -101,6 +128,46 @@ if(APPLE)
 # Plain signature, like the Windows link below - CMake refuses to mix the plain
 # and keyword forms on one target.
 target_link_libraries(${PROJECT_NAME} ${clap_frameworks})
+
+endif()
+
+if(UNIX AND NOT APPLE)
+    # Mirrors wrapper/VST3's Linux block, dependency for dependency. X11 +
+    # MIT-SHM for the embedded window, then the pieces the CPU renderer has no
+    # code of its own for: fontconfig to find faces, freetype to rasterise,
+    # harfbuzz to shape, libpng to decode. The helper headers select their
+    # implementation with __has_include, so a MISSING include path here does
+    # not fail the build -- it silently compiles a plugin that draws no text.
+    # That is why these are REQUIRED and PUBLIC rather than best-effort.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GMPI_CLAP_X11        REQUIRED x11 xext)
+    pkg_check_modules(GMPI_CLAP_FONTCONFIG REQUIRED fontconfig)
+    pkg_check_modules(GMPI_CLAP_FREETYPE   REQUIRED freetype2)
+    pkg_check_modules(GMPI_CLAP_HARFBUZZ   REQUIRED harfbuzz)
+    pkg_check_modules(GMPI_CLAP_LIBPNG     REQUIRED libpng)
+    # The X11 frame's file chooser goes through the XDG desktop portal, which
+    # is D-Bus -- not a Wayland-only dependency.
+    pkg_check_modules(GMPI_CLAP_DBUS       REQUIRED dbus-1)
+
+    target_include_directories(${PROJECT_NAME} PUBLIC
+        ${GMPI_CLAP_X11_INCLUDE_DIRS}
+        ${GMPI_CLAP_FONTCONFIG_INCLUDE_DIRS}
+        ${GMPI_CLAP_FREETYPE_INCLUDE_DIRS}
+        ${GMPI_CLAP_HARFBUZZ_INCLUDE_DIRS}
+        ${GMPI_CLAP_LIBPNG_INCLUDE_DIRS}
+        ${GMPI_CLAP_DBUS_INCLUDE_DIRS}
+    )
+
+    # Plain signature deliberately: every target_link_libraries on this target
+    # uses it, and CMake refuses to mix plain and keyword forms on one target.
+    target_link_libraries(${PROJECT_NAME}
+        ${GMPI_CLAP_X11_LIBRARIES}
+        ${GMPI_CLAP_FONTCONFIG_LIBRARIES}
+        ${GMPI_CLAP_FREETYPE_LIBRARIES}
+        ${GMPI_CLAP_HARFBUZZ_LIBRARIES}
+        ${GMPI_CLAP_LIBPNG_LIBRARIES}
+        ${GMPI_CLAP_DBUS_LIBRARIES}
+    )
 endif()
 
 if(CMAKE_HOST_WIN32)

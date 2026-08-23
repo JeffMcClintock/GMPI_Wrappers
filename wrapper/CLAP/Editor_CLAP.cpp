@@ -10,6 +10,60 @@
 #include "./Factory_CLAP.h"
 #include "Hosting/gmpi_factory.h"
 #include "Editor_CLAP.h"
+
+#if defined(__linux__)
+// The host-proxy template bodies. Processor_CLAP.cpp includes these too, but
+// implicit instantiation only emits the methods used in THAT translation unit
+// -- and canUsePosixFdSupport / posixFdSupportRegister are called from here.
+// Without this the module dlopens with an undefined symbol, which is how it
+// first showed up. They are weak symbols, so compiling them twice is free.
+#include <clap/helpers/host-proxy.hh>
+#include <clap/helpers/host-proxy.hxx>
+
+#include "helpers/CpuTextEngine.h"
+#include "helpers/DecodeImage.h"
+#include "helpers/FontProvider.h"
+
+namespace
+{
+// Copied from wrapper/VST3/SEVSTGUIEditorLinux.cpp rather than shared or
+// improved: that wrapper has shipped a working Linux editor for longer, and
+// this project's own lesson is that copying a fiddly block verbatim beats
+// rewriting it in passing. If the two ever need to diverge, that is the moment
+// to lift them into gmpi_ui, not before.
+//
+// The CPU backend contains no font, shaping or image-decode code, so every host
+// of it must supply them. One engine for the whole module: it caches rasterised
+// glyphs, and several plugin windows in one DAW should share that cache.
+void wireTextStack(gmpi::cpugfx::Factory& factory)
+{
+    static gmpi::drawing::CpuTextEngine textEngine{ gmpi::drawing::findFont };
+    static bool once = [&]
+    {
+        textEngine.imageDecoder = gmpi::drawing::decodeImageMemory;
+        return true;
+    }();
+    (void)once;
+    factory.textEngine   = &textEngine;
+    factory.imageDecoder = gmpi::drawing::decodeImageFile;
+}
+
+// Menus draw their own labels -- X11 supplies a grabbing window and nothing
+// else -- so the frame needs a text format of its own. Built once per module,
+// after the text engine is in place.
+gmpi::drawing::api::ITextFormat* menuFont(gmpi::cpugfx::Factory& factory)
+{
+    static gmpi::drawing::TextFormat format = [&factory]
+    {
+        gmpi::drawing::Factory facade;
+        *gmpi::drawing::AccessPtr::put(facade) = &factory;
+        const std::string_view family{ "sans-serif" };
+        return facade.createTextFormat(14.0f, std::span{ &family, 1 });
+    }();
+    return gmpi::drawing::AccessPtr::get(format);
+}
+} // anonymous namespace
+#endif
 #include "Processor_CLAP.h"
 
 #if __APPLE__
@@ -46,13 +100,22 @@ bool Processor_CLAP::guiIsApiSupported(const char* api, bool isFloating) noexcep
         return true;
 #endif
 
-    /*
-#if IS_LINUX
+#if defined(__linux__)
+    // BACKLOG S43(ii). Live again, and on __linux__ rather than this file's
+    // IS_LINUX -- which is defined NOWHERE in the repo, so every IS_LINUX and
+    // HAS_GUI block here has always compiled to nothing. The Windows and macOS
+    // editors work because they are guarded by _WIN32 and __APPLE__ instead.
+    // Reviving the dead macros would be a change to those platforms too; using
+    // the compiler's own is what the working arms already do.
+    //
+    // The two host extensions are not a nicety. X11DrawingFrame runs no event
+    // loop of its own by design -- the host polls connectionFd() and calls
+    // processEvents(), and ticks onTimer(). Without both we cannot drive it,
+    // so answering yes would be the same lie option (i) just removed.
     if (_host.canUseTimerSupport() && _host.canUsePosixFdSupport() &&
         strcmp(api, CLAP_WINDOW_API_X11) == 0)
         return true;
 #endif
-    */
 
     return false;
 }
@@ -136,8 +199,26 @@ void Processor_CLAP::guiDestroy() noexcept
 //    editor->getFrame()->close();
 #endif
 
-#if IS_LINUX
-    removeLinuxVSTGUIPlugin(this);
+#if defined(__linux__)
+    // UNREGISTER BEFORE CLOSING, and this ordering is not cosmetic: the host's
+    // loop holds our X connection fd, and closing the display first leaves it
+    // polling a descriptor the process may already have reused for something
+    // else. wrapper/VST3/SEVSTGUIEditorLinux::removed() carries the same note
+    // for the same reason.
+    if (editor)
+    {
+        if (editor->hasTimer)
+        {
+            _host.timerSupportUnregister(editor->timerId);
+            editor->hasTimer = false;
+        }
+        if (editor->registeredFd >= 0)
+        {
+            _host.posixFdSupportUnregister(editor->registeredFd);
+            editor->registeredFd = -1;
+        }
+        editor->drawingframe.close();
+    }
 #endif
 
     if (editor)
@@ -161,9 +242,31 @@ bool Processor_CLAP::guiSetParent(const clap_window* window) noexcept
 #if __APPLE__
     editor->open(window->cocoa);
 #endif
-    //#if IS_LINUX
-    //    editor->open((void*)(window->x11));
-    //#endif
+#if defined(__linux__)
+    // window->x11 is an X11 Window (XID) widened by CLAP to uint64. Round-trip
+    // it through uintptr_t rather than casting the field straight to a pointer:
+    // it is an id, not an address, and on a 32-bit build the widths differ.
+    editor->open(reinterpret_cast<void*>(static_cast<uintptr_t>(window->x11)));
+
+    if (!editor->drawingframe.isOpen())
+        return false;
+
+    // Hand the frame to the host's run loop. This is the half guiIsApiSupported
+    // promised the host we could do, so a failure here is worth refusing on:
+    // an editor nothing pumps is a window that never paints and never responds.
+    editor->registeredFd = editor->drawingframe.connectionFd();
+    if (editor->registeredFd < 0 ||
+        !_host.posixFdSupportRegister(editor->registeredFd, CLAP_POSIX_FD_READ))
+    {
+        editor->registeredFd = -1;
+        return false;
+    }
+
+    // 16 ms: display rate. The timer only repaints when something actually
+    // invalidated, and it also covers hosts that register our fd but poll it
+    // lazily -- the same two jobs SEVSTGUIEditorLinux::onTimer documents.
+    editor->hasTimer = _host.timerSupportRegister(16, &editor->timerId);
+#endif
 #ifdef _WIN32
     editor->open(window->win32);
 #endif
@@ -223,6 +326,16 @@ Editor_CLAP::Editor_CLAP(
 #ifdef _WIN32
     drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(gmpiController));
 #endif
+
+#if defined(__linux__)
+    wireTextStack(drawingframe.drawingFactory());
+    drawingframe.setMenuFont(menuFont(drawingframe.drawingFactory()));
+
+    // Before any setHost call: the plugin resolves IEditorHost during setHost,
+    // and the frame can only forward that once it knows where to. Without it
+    // the parameter pins are left null and the first knob drag dereferences one.
+    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(gmpiController));
+#endif
     
     // instansiate client now, so it can be measured.
     if (auto info = gmpi::hosting::factory::getInstance().getPluginInfo(); info)
@@ -233,6 +346,13 @@ Editor_CLAP::Editor_CLAP(
     }
     
 #ifdef _WIN32
+    if (pluginParameters_GMPI)
+    {
+        pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
+    }
+#endif
+
+#if defined(__linux__)
     if (pluginParameters_GMPI)
     {
         pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
@@ -324,6 +444,9 @@ void Editor_CLAP::setSize(uint32_t pwidth, uint32_t pheight)
 {
     width = pwidth;
     height = pheight;
+#if defined(__linux__)
+    sizeSetByHost = true;   // see the note on the flag (S43(ii))
+#endif
 
     gmpi::drawing::Rect r{ 0.f, 0.f, width / Dpi, height / Dpi };
 
@@ -381,6 +504,40 @@ void Editor_CLAP::open(void* parentWindow)
     }
 #endif
     
+#if defined(__linux__)
+    // A host that accepts get_size()'s answer never calls set_size, so
+    // width/height are still the {100} defaults here. getSize() MEASURES
+    // the client but only returns the answer -- it does not store it -- so
+    // ask it again and keep what it says. Measured symptom without this:
+    // a 100x100 child embedded in an 1100x600 parent.
+    if (!sizeSetByHost)
+        getSize(width, height);
+
+    // Mirrors SEVSTGUIEditorLinux::attached(). Order matters: attachClient
+    // before open(), because open() measures and paints immediately.
+    if (pluginGraphics_GMPI)
+    {
+        drawingframe.attachClient(pluginGraphics_GMPI.get());
+
+        // CLAP sizes the X11 window in physical pixels, as VST3 does on Linux,
+        // so the view size goes straight through with no DPI conversion.
+        if (!drawingframe.open(reinterpret_cast<uintptr_t>(parentWindow),
+                               static_cast<int>(width), static_cast<int>(height)))
+            return;
+
+        // LAY THE CLIENT OUT. Only Editor_CLAP::setSize did this, and a host
+        // that accepts get_size()'s answer never calls set_size -- so without
+        // this the client has no arranged rect and draws nothing at all.
+        // Measured symptom: a correctly sized, IsViewable 1100x600 child
+        // window containing one colour, 0x000000.
+        const gmpi::drawing::Rect r{ 0.f, 0.f, width / Dpi, height / Dpi };
+        pluginGraphics_GMPI->arrange(&r);
+    }
+
+    if (pluginParameters_GMPI)
+        pluginParameters_GMPI->initialize();
+#endif
+
 #if __APPLE__
     nsView = createNativeView(
           parentWindow
@@ -890,6 +1047,28 @@ void ClapSawDemoBackground::draw(VSTGUI::CDrawContext* dc)
     dc->setLineWidth(sc(1));
     dc->drawEllipse(VSTGUI::CRect(VSTGUI::CPoint(sc(10), sc(10)), VSTGUI::CPoint(sc(15), sc(15))),
         VSTGUI::kDrawFilledAndStroked);
+}
+#endif
+
+#if defined(__linux__)
+// The host's two callbacks, and between them they are the whole event loop
+// X11DrawingFrame is designed around -- it deliberately runs none of its own.
+void Processor_CLAP::onPosixFd(int /*fd*/, clap_posix_fd_flags_t /*flags*/) noexcept
+{
+    if (editor && editor->drawingframe.isOpen())
+        editor->drawingframe.processEvents();
+}
+
+void Processor_CLAP::onTimer(clap_id /*timerId*/) noexcept
+{
+    if (!editor || !editor->drawingframe.isOpen())
+        return;
+
+    // Two jobs, as on VST3: processEvents() because some hosts register the fd
+    // and then poll it lazily, and onTimer() to flush invalidations that came
+    // from automation rather than from input.
+    editor->drawingframe.processEvents();
+    editor->drawingframe.onTimer();
 }
 #endif
 
