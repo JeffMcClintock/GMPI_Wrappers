@@ -45,6 +45,12 @@ struct AU3Core : public gmpi::api::IProcessorHost, public gmpi::TimerClient
 
 	gmpi::hosting::gmpi_processor plugin;
 	gmpi::hosting::gmpi_controller_holder gmpiController;
+
+	// The plug-in's own <Controller/>. HELD, not just initialised: it publishes
+	// its state through the holder and must outlive initWithComponentDescription,
+	// or the editor has nothing to pick up. A plug-in that declares no
+	// <Controller/> simply leaves this null, exactly as in the VST3 wrapper.
+	gmpi::shared_ptr<gmpi::api::IController> pluginController;
 	gmpi::hosting::interThreadQue queueToDsp{0x500000}; // 5MB, see AU2 AUDIO_MESSAGE_QUE_SIZE
 	std::unique_ptr<gmpi::midi::MidiConverter2> midiConverter;
 
@@ -423,6 +429,36 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 	dispatch_async(dispatch_get_main_queue(), ^{
 		corePtr->startTimer(AU3Core::timerPeriodMs);
 	});
+
+	// Create the plug-in's own <Controller/> and initialise it. VST3 does this
+	// (Controller_VST3.cpp) and CLAP does this; AU3 did NOT, and neither does
+	// AU2 -- which is why the AUv3 editor came up BLANK.
+	//
+	// The chain that broke, measured end to end 2026-08-23 (TIDE M4): with no
+	// initialize() the plug-in controller never publishes its "seApp" pointer
+	// through parameter 0, so the editor's notifyPin(0) arrives with a ZERO
+	// byte payload instead of 8, so the editor's guard on that size fails, so
+	// its whole GUI is never constructed, so no GUI timer clients register, so
+	// invalidateRect is never called -- and drawRect, which IS called at the
+	// full view size, paints an empty scene.
+	//
+	// After the parameter tree, because initialize() may set parameters and
+	// the tree has to exist for notifyDaw to route them.
+	if (auto* info = gmpi::hosting::factory::getInstance().getPluginInfo(); info)
+	{
+		auto controllerUnknown = gmpi::hosting::factory::getInstance().createInstance(
+			info->id.c_str(), gmpi::api::PluginSubtype::Controller);
+
+		if (controllerUnknown)
+		{
+			if (auto pluginController = controllerUnknown.as<gmpi::api::IController>(); pluginController)
+			{
+				core->pluginController = pluginController;
+				pluginController->initialize(
+					static_cast<gmpi::api::IControllerHost*>(&core->gmpiController), 0);
+			}
+		}
+	}
 
 	self.maximumFramesToRender = 512;
 
