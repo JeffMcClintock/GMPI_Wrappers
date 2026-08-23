@@ -41,6 +41,10 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
     clap::helpers::CheckingLevel::Maximal>
 {
     Controller_CLAP controller;
+    // The plug-in's own <Controller/>. TIDE BACKLOG S43(ii); the same object
+    // AU3 gained in M4. HELD, not merely initialised: it publishes state
+    // through the holder and must outlive the editor that reads it.
+    gmpi::shared_ptr<gmpi::api::IController> pluginController;
     gmpi::hosting::gmpi_processor plugin;
 
     gmpi::hosting::pluginInfo& info;
