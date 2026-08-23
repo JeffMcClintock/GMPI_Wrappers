@@ -59,9 +59,26 @@ bool Processor_CLAP::guiIsApiSupported(const char* api, bool isFloating) noexcep
 
 /*
  * GUICreate gets called when the host requests the plugin create its editor with
- * a given API. We ignore the API and isFloating here, because we handled them
- * above and assume our host follows the protocol that it only calls us with
- * values which are supported.
+ * a given API.
+ *
+ * IT NOW REFUSES AN API guiIsApiSupported() SAID NO TO, rather than assuming the
+ * host asked politely (TIDE BACKLOG S43).
+ *
+ * The assumption was documented right here -- "we ignore the API and isFloating,
+ * because we handled them above and assume our host follows the protocol that it
+ * only calls us with values which are supported" -- and it was never enforced.
+ * On Linux that combination is live rather than theoretical: guiIsApiSupported()
+ * has no X11 arm (see above), so it answers false to EVERY api, and this function
+ * then answered true and reported a 1100x600 editor. Measured on the built
+ * TIDE Rack .clap: is_api_supported false for x11/wayland/win32/cocoa in both
+ * floating modes, get_preferred_api declines, guiCreate true. There is genuinely
+ * nothing to attach -- ldd on that binary links no X11, xcb or Wayland library at
+ * all -- so a host that skipped the query was being handed an editor that cannot
+ * exist, and would then pass guiSetParent a window nothing can use.
+ *
+ * A conformant host is unaffected: it asks first, gets the same answer it always
+ * got, and never reaches this line. This only changes what a host that does NOT
+ * ask is told, and "no" is the honest answer.
  *
  * The important thing from a VSTGUI perspective here is that we have to initialize
  * the VSTGUI static data structures. On Mac and Windows, this is an easy call and
@@ -73,6 +90,11 @@ bool Processor_CLAP::guiIsApiSupported(const char* api, bool isFloating) noexcep
  */
 bool Processor_CLAP::guiCreate(const char* api, bool isFloating) noexcept
 {
+    // One source of truth for "can we host a GUI over this api", so the two
+    // entry points cannot drift apart again.
+    if (!guiIsApiSupported(api, isFloating))
+        return false;
+
     static bool everInit{ false };
     if (!everInit)
     {
