@@ -253,6 +253,12 @@ protected:
     // (trivially) in clap-saw-demo.cpp not demo-editor
     void editorParamsFlush();
 
+// BACKLOG S43(ii). The block below is guarded by IS_LINUX && HAS_GUI, and
+// NEITHER MACRO IS DEFINED ANYWHERE IN THIS REPO -- so it has never compiled,
+// which is why its bodies in Processor_CLAP.cpp still name `ClapSawDemo`, the
+// demo class this wrapper was derived from. Left exactly as found rather than
+// revived: it is dead reference code, and reviving it would change Windows and
+// macOS too. The live Linux declarations are the ones after `#endif`.
 #if IS_LINUX && HAS_GUI
     // PLEASE see the README comments on Linux. We are working on making this more rational
     // but the VSTGUI global plus runnign a bit out of time has this implementation right now
@@ -278,6 +284,19 @@ public:
     bool registerPosixFd(int fd);
     bool unregisterPosixFD(int fd);
 
+#endif
+
+#if defined(__linux__)
+    // The X11 editor's event loop, borrowed from the host (S43(ii)).
+    // X11DrawingFrame runs none of its own: the host polls connectionFd() and
+    // calls processEvents(), and ticks onTimer(). Advertising both extensions
+    // is what lets guiIsApiSupported() answer yes to CLAP_WINDOW_API_X11.
+public:
+    bool implementsTimerSupport() const noexcept override { return true; }
+    void onTimer(clap_id timerId) noexcept override;
+
+    bool implementsPosixFdSupport() const noexcept override { return true; }
+    void onPosixFd(int fd, clap_posix_fd_flags_t flags) noexcept override;
 #endif
 
 public:
