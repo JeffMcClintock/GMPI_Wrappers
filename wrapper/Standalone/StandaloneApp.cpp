@@ -35,6 +35,33 @@ void PlatformShell::showFatalAlert(const std::string&)
 namespace
 {
 
+// BACKLOG E32 -- the persisted window geometry.
+//
+// "window." rather than a bare name because Settings is one flat key=value file
+// shared with the device selection, and its header promises unknown keys are
+// preserved on save. A prefix keeps a later "window.maximised" (the row's third
+// trap) from colliding with anything.
+constexpr const char* kWindowWidthKey  = "window.width";
+constexpr const char* kWindowHeightKey = "window.height";
+
+// One bound, stated once, used by both the read and the write -- so a size this
+// build refuses to restore is also a size it refuses to save, and the file
+// cannot accumulate values that are silently ignored forever.
+//
+// The lower bound is deliberately below setMinimumClientSize's 320: this only
+// has to reject nonsense (0 from a shell that could not report, or a negative
+// from a corrupted file). Clamping to the real minimum is the shell's job and
+// it already does it, on every path, including the ones that never read a file.
+//
+// The upper bound is a sanity rail, not a screen-size check: this code cannot
+// know the display geometry at the point it runs, and a window wider than any
+// monitor is still a window the user can drag and resize. It exists to stop a
+// garbled file producing something the compositor has to fight.
+bool isUsableWindowSize(int dips)
+{
+    return dips >= 64 && dips <= 16384;
+}
+
 // SIGTERM/SIGINT must run the normal shutdown, not the default instant kill.
 // The session manager sends SIGTERM at logout and some compositors crash when a
 // client vanishes without disconnecting - the workaround roundtrip lives in
@@ -99,9 +126,42 @@ int runStandaloneApp(PlatformShell& shell)
     float editorHeight = 0.0f;
     host.getEditorSize(editorWidth, editorHeight);
 
-    if (!shell.createWindow(host.pluginName(),
-                            static_cast<int>(std::ceil(editorWidth)),
-                            static_cast<int>(std::ceil(editorHeight + MenuBarView::kHeight))))
+    int windowWidth  = static_cast<int>(std::ceil(editorWidth));
+    int windowHeight = static_cast<int>(std::ceil(editorHeight + MenuBarView::kHeight));
+
+    // BACKLOG E32 -- reopen at the size the user left, not the editor's default.
+    //
+    // IN DIPs, NOT PIXELS, and that is the whole reason these are stored rather
+    // than the canvas size: a window moved to a monitor of a different scale
+    // must reopen the same LOGICAL size. The shell already does that arithmetic
+    // (canvasSize multiplies by the scale); saving pixels would bake one
+    // monitor's scale into the file and reopen wrong on the other.
+    //
+    // WHY SIZE AND NOT POSITION. Position is per-shell and Linux can never have
+    // it: xdg-shell has no set-position, so a Wayland client cannot place its
+    // own window. That is a property of the protocol, not a gap to close later.
+    // Size is portable, so it lives here; whatever Windows and macOS do about
+    // position belongs in their own shells.
+    //
+    // A saved size is a REQUEST. Every shell may be handed something else by the
+    // compositor or the window manager, and setMinimumClientSize below still
+    // applies -- so this cannot reopen a window too small to use even if the
+    // file says so.
+    {
+        const int savedWidth  = settings.getInt(kWindowWidthKey,  0);
+        const int savedHeight = settings.getInt(kWindowHeightKey, 0);
+
+        // Both, or neither. A half-written pair is likelier to be a truncated
+        // file than a deliberate one, and one restored dimension against one
+        // default is a shape the user never chose.
+        if (isUsableWindowSize(savedWidth) && isUsableWindowSize(savedHeight))
+        {
+            windowWidth  = savedWidth;
+            windowHeight = savedHeight;
+        }
+    }
+
+    if (!shell.createWindow(host.pluginName(), windowWidth, windowHeight))
     {
         const auto why = shell.lastError();
         shell.reportFatal(why.empty() ? "Could not create the application window." : why);
@@ -445,6 +505,35 @@ int runStandaloneApp(PlatformShell& shell)
     // otherwise keep it permanently so - which is why the debounce never wrote
     // them and why this call is unconditional.
     session.saveNow(shell);
+
+    // BACKLOG E32 -- the window's own geometry, saved beside the device
+    // selection rather than in the plugin's patch. SessionState.h states the
+    // rule this follows: "Window size and position are the shell's business,
+    // not the plugin's, and are not kept here."
+    //
+    // BEFORE closeWindow(), because logicalSize() reads the live frame and the
+    // shells destroy it in there. Measured on Wayland: after closeWindow() the
+    // call returns 0x0, which would persist as a size the next launch rejects --
+    // silently reverting to the default and looking like the feature never
+    // worked.
+    {
+        float finalWidth = 0.0f;
+        float finalHeight = 0.0f;
+        shell.logicalSize(finalWidth, finalHeight);
+
+        const int w = static_cast<int>(finalWidth + 0.5f);
+        const int h = static_cast<int>(finalHeight + 0.5f);
+
+        // Only write a size worth restoring. A shell that could not report one
+        // must leave whatever is already in the file alone, so an unrelated
+        // failure at teardown does not erase a good saved size.
+        if (isUsableWindowSize(w) && isUsableWindowSize(h))
+        {
+            settings.setInt(kWindowWidthKey, w);
+            settings.setInt(kWindowHeightKey, h);
+            settings.save();
+        }
+    }
 
     // `session` is destroyed BEFORE `host`, being declared after it, and the
     // callback installed on the host captures `&session`. ~StandaloneHost calls
