@@ -1077,19 +1077,12 @@ tresult Processor_VST3::setState (IBStream* state)
 {
 	int32 chunkSize{};
 	if (!readAll(state, &chunkSize, sizeof(chunkSize)) || chunkSize < 0)
-	{
-		fprintf(stderr, "E27DBG: setState header read failed\n"); // TEMP diagnosis
 		return kResultFalse;
-	}
 
 	std::string chunk;
 	chunk.resize(chunkSize);
 	if (!readAll(state, chunk.data(), chunkSize))
-	{
-		fprintf(stderr, "E27DBG: setState short stream, wanted %d\n", chunkSize); // TEMP diagnosis
 		return kResultFalse;
-	}
-	fprintf(stderr, "E27DBG: setState got %d bytes, tail ...%.20s\n", chunkSize, chunk.c_str() + (chunkSize > 20 ? chunkSize - 20 : 0)); // TEMP diagnosis
 
 	// Fail safe. This is a host boundary on the MAIN thread: the DAW calls it
 	// while opening a project, and an exception escaping here unwinds into the
