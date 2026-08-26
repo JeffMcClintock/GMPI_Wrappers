@@ -205,6 +205,17 @@ public:
     // "captureState() contains a <Param>" cannot disagree.
     bool hasStatefulParameters() const;
 
+    // Ask the plugin's <Controller/> to refresh any lazily-maintained state
+    // BEFORE the patch is read (IController::syncState - "sync unsaved state
+    // from plugin to host"). For a flat-parameter plugin this is a no-op; for
+    // one whose real state lives behind a chunk parameter (TIDE's document)
+    // it is the difference between saving the patch and saving a stale copy.
+    //
+    // The refresh arrives back through onParameterChanged like any edit, so
+    // edit-notification is suppressed for its duration - otherwise every save
+    // would mark the session dirty and schedule the next save.
+    void syncPluginState();
+
     // The current patch. MAIN THREAD ONLY.
     //
     // Read from the CONTROLLER's store, never the processor's, and that is a
@@ -433,6 +444,7 @@ private:
     // listening. Cleared by the app before this object is destroyed, because
     // whatever it captures is a shorter-lived thing than the host.
     std::function<void()> onParameterEdited_;
+    bool suppressEditNotify_ = false;   // see syncPluginState
 
     std::unique_ptr<AudioDriver> audioDriver_;
     std::unique_ptr<MidiDriver>  midiDriver_;

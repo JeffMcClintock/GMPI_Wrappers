@@ -135,6 +135,23 @@ public:
 	}
 	Steinberg::tresult PLUGIN_API getState(Steinberg::IBStream* state) override
 	{
+		// The host is saving. Give the plugin's <Controller/> its "imminent
+		// save" warning (IController::syncState) so lazily-maintained state -
+		// a chunk parameter refreshed on demand, like TIDE's document - is
+		// current before the host serialises it.
+		//
+		// HONEST CAVEAT on ordering: VST3 saves read the PROCESSOR's store
+		// (Processor_VST3::getState), and a refreshed blob travels there
+		// asynchronously via IMessage into the ui->dsp queue, applied when
+		// audio next runs. A host that reads the component's state BEFORE
+		// calling here, on a suspended processor, can still capture the
+		// previous refresh. The standalone has no such gap (its save is
+		// synchronous, SessionState::saveNow); closing it for VST3 needs a
+		// dirty-flag periodic sync, which is the VST3Adaptor's own open TODO
+		// (ControllerWrapper::onTimer).
+		if (sePluginController)
+			sePluginController->syncState();
+
 		return Steinberg::kResultOk;
 	}
 

@@ -265,8 +265,18 @@ void StandaloneHost::onParameterChanged(gmpi::hosting::GmpiParameter* param)
 {
     pendingQueueClients_.AddWaiter(param);
 
-    if (onParameterEdited_)
+    if (onParameterEdited_ && !suppressEditNotify_)
         onParameterEdited_();
+}
+
+void StandaloneHost::syncPluginState()
+{
+    if (!pluginController_)
+        return;
+
+    suppressEditNotify_ = true;
+    pluginController_->syncState();
+    suppressEditNotify_ = false;
 }
 
 void StandaloneHost::setOnParameterEdited(std::function<void()> onEdited)

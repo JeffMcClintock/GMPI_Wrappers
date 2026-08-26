@@ -462,6 +462,11 @@ void SessionState::saveNow(PlatformShell& shell)
     std::string document;
     try
     {
+        // The plugin may maintain part of its state lazily (a chunk parameter
+        // refreshed on demand); this is the "imminent save" warning that makes
+        // captureState() read CURRENT bytes. See StandaloneHost::syncPluginState.
+        host_.syncPluginState();
+
         document = wrapWithIdentity(host_.captureState());
     }
     catch (...)
