@@ -1,3 +1,4 @@
+#include <cctype>
 #include "SessionState.h"
 
 #include <cstdint>
@@ -103,7 +104,21 @@ bool SessionState::identityMatches(const std::string& document, std::string& why
         return false;
     }
 
-    if (pluginName_ != name)
+    // CASE-INSENSITIVE, from experience rather than caution: renaming the
+    // product "TIDE Rack" -> "TiDE Rack" (a spelling pass, 2026-08-26) made
+    // this exact check refuse every session the app itself had ever written,
+    // quarantining the user's patch on next launch. Two names that differ
+    // only by case are the same plugin; a genuinely different plugin still
+    // differs by more than case.
+    const auto sameName = [](const char* a, const char* b)
+    {
+        for (; *a && *b; ++a, ++b)
+            if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
+                return false;
+        return *a == *b;
+    };
+
+    if (!sameName(pluginName_.c_str(), name))
     {
         why = std::string("it was written by '") + name + "'";
         return false;
