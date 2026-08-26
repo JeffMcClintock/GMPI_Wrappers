@@ -228,6 +228,107 @@ public:
         return capture_.capture(forceRedraw, pixels, width, height, stride);
     }
 
+    // BACKLOG E32 -- the position half, which Windows can do and Wayland cannot.
+    //
+    // The OUTER frame's top-left, in virtual-desktop pixels: what SetWindowPos
+    // takes, so the value read here can be handed straight back to the setter.
+    bool windowPosition(int& xPixels, int& yPixels) const override
+    {
+        if (!window_.hwnd())
+            return false;
+
+        RECT r{};
+        if (!::GetWindowRect(window_.hwnd(), &r))
+            return false;
+
+        xPixels = r.left;
+        yPixels = r.top;
+        return true;
+    }
+
+    // Move without resizing, and CLAMP -- the caller cannot, because only this
+    // side can see the monitors.
+    //
+    // The failure this exists to prevent is concrete: save a window on a second
+    // display, unplug it, relaunch. The saved coordinates now name a region of
+    // the virtual desktop no monitor covers, the window opens where nothing is
+    // drawn, and there is no title bar on screen to drag it back by. The same
+    // happens when a display is rearranged or its resolution drops.
+    //
+    // The rule is not "fully on screen" -- a partly-off window is a normal thing
+    // a user does on purpose, and snapping it flush would undo their layout on
+    // every launch. It is "enough of the title bar is reachable to drag it", so
+    // an ordinary overhang survives a round trip untouched.
+    bool setWindowPosition(int xPixels, int yPixels) override
+    {
+        HWND const hwnd = window_.hwnd();
+        if (!hwnd)
+            return false;
+
+        RECT cur{};
+        if (!::GetWindowRect(hwnd, &cur))
+            return false;
+
+        const int width  = cur.right - cur.left;
+        const int height = cur.bottom - cur.top;
+
+        RECT want{ xPixels, yPixels, xPixels + width, yPixels + height };
+
+        // MONITOR_DEFAULTTONULL, not ...TONEAREST: the question here is whether
+        // the saved rectangle touches a monitor AT ALL, and "nearest" would
+        // answer a different one by silently supplying a monitor for a window
+        // that is nowhere near it.
+        HMONITOR mon = ::MonitorFromRect(&want, MONITOR_DEFAULTTONULL);
+
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+
+        if (!mon)
+        {
+            // Nothing intersects: the display it was saved on is gone. Give up
+            // on the position rather than trying to preserve some of it, and
+            // open on the primary monitor where the window certainly is usable.
+            mon = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+            if (!mon || !::GetMonitorInfoW(mon, &mi))
+                return false;
+
+            xPixels = mi.rcWork.left;
+            yPixels = mi.rcWork.top;
+        }
+        else
+        {
+            if (!::GetMonitorInfoW(mon, &mi))
+                return false;
+
+            // Keep a grabbable strip of the caption inside the work area. The
+            // horizontal bound allows the window to hang off either edge as
+            // long as this much of it remains; the vertical one only stops it
+            // going ABOVE the top, because a title bar above the screen is the
+            // one overhang the mouse can never reach.
+            constexpr int kGrabbableWidth = 96;
+
+            // Plain comparisons rather than std::min/std::max: <windows.h>
+            // defines min and max as MACROS, so the std:: forms do not compile
+            // here without either NOMINMAX or a parenthesised call, and both of
+            // those are a footnote where this is just an if.
+            const int minX = mi.rcWork.left  - (width - kGrabbableWidth);
+            const int maxX = mi.rcWork.right - kGrabbableWidth;
+            if (xPixels < minX) xPixels = minX;
+            if (xPixels > maxX) xPixels = maxX;
+
+            const int maxY = mi.rcWork.bottom - kGrabbableWidth;
+            if (yPixels < mi.rcWork.top) yPixels = mi.rcWork.top;
+            if (yPixels > maxY)          yPixels = maxY;
+        }
+
+        // SWP_NOSIZE, so a monitor with a different scale is handled by the
+        // WM_DPICHANGED path ToplevelWindow already has: Windows sends the
+        // suggested rectangle, that handler takes it, and the window keeps the
+        // LOGICAL size the size half restored. Resizing here would fight it.
+        return ::SetWindowPos(hwnd, nullptr, xPixels, yPixels, 0, 0,
+                              SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
+    }
+
     void logicalSize(float& width, float& height) override
     {
         // DIPs, which is the space pointer coordinates are in. The scale comes
