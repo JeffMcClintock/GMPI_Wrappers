@@ -419,7 +419,7 @@ std::string cmdPointer(AppContext& context, PointerAction action,
                        std::string_view cmd, const std::vector<std::string>& args)
 {
     if (args.size() < 2)
-        return errorLine(cmd, std::string("usage: ") + std::string(cmd) + " <x,y> [--double]");
+        return errorLine(cmd, std::string("usage: ") + std::string(cmd) + " <x,y> [--double] [--right]");
     if (!context.inputClient)
         return errorLine(cmd, "this build has no input path");
 
@@ -451,10 +451,28 @@ std::string cmdPointer(AppContext& context, PointerAction action,
     // verb: the flag rides on an ordinary pointer-down, so a caller still sends
     // its own matching --pointer-up and keeps control of the sequence, exactly
     // as with the single-click case.
+    //
+    // `--right` is the same shape and exists for the same reason -- TideSynth
+    // BACKLOG E38. Without it no context menu could be raised from a test run
+    // at all, so every menu item in the app was unreachable and V7 shipped its
+    // context-menu override with the on-screen half UNVERIFIED. That is the
+    // second verification handed back for want of one flag; `--double` was the
+    // first, and adding it made an entire row (E36) measurable in a script the
+    // next day.
     for (size_t i = 2; i < args.size(); ++i)
     {
         if (args[i] == "--double")
             flags |= static_cast<int32_t>(gmpi::api::PointerFlags::Double);
+        else if (args[i] == "--right")
+        {
+            // SECONDARY BUTTON, and it REPLACES the primary rather than joining
+            // it: a real right-click reports SecondButton alone, and a widget
+            // testing for FirstButton would otherwise treat this as an ordinary
+            // click that happens to also be right -- which is how you get a
+            // context menu AND a selection change from one gesture.
+            flags &= ~static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
+            flags |= static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton);
+        }
         else
             return errorLine(cmd, "unknown option '" + args[i] + "'");
     }
@@ -470,6 +488,7 @@ std::string cmdPointer(AppContext& context, PointerAction action,
     return JsonObject().str("cmd", cmd).boolean("ok", true)
         .num("x", x).num("y", y)
         .boolean("double", (flags & static_cast<int32_t>(gmpi::api::PointerFlags::Double)) != 0)
+        .boolean("right", (flags & static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton)) != 0)
         .done();
 }
 
