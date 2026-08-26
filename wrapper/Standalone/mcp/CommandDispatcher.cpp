@@ -419,7 +419,7 @@ std::string cmdPointer(AppContext& context, PointerAction action,
                        std::string_view cmd, const std::vector<std::string>& args)
 {
     if (args.size() < 2)
-        return errorLine(cmd, std::string("usage: ") + std::string(cmd) + " <x,y>");
+        return errorLine(cmd, std::string("usage: ") + std::string(cmd) + " <x,y> [--double]");
     if (!context.inputClient)
         return errorLine(cmd, "this build has no input path");
 
@@ -432,7 +432,32 @@ std::string cmdPointer(AppContext& context, PointerAction action,
         return errorLine(cmd, "no window is attached");
 
     const gmpi::drawing::Point point{ x, y };
-    const int32_t flags = (action == PointerAction::Hover) ? kHoverFlags : kContactFlags;
+    int32_t flags = (action == PointerAction::Hover) ? kHoverFlags : kContactFlags;
+
+    // `--double` sets PointerFlags::Double, and it is the ONLY way to express a
+    // double-click over this channel.
+    //
+    // The enum's own comment is the whole reason this option has to exist:
+    // "Double-click (set by OS hit-test, not timing)". A widget therefore reads
+    // the FLAG; it does not time successive clicks. So sending two rapid
+    // down/up pairs -- the obvious thing to try, and what a human hand does --
+    // can never produce a double-click here, no matter how fast. Measured the
+    // long way on 2026-08-26: two down/up pairs on a module browser entry
+    // SELECTED it (visibly, in a screenshot) and inserted nothing, and the same
+    // gesture as a --drag inserted nothing either. An entire verification had
+    // to be handed back to a human for want of this flag.
+    //
+    // Deliberately a MODIFIER on --pointer-down rather than a --double-click
+    // verb: the flag rides on an ordinary pointer-down, so a caller still sends
+    // its own matching --pointer-up and keeps control of the sequence, exactly
+    // as with the single-click case.
+    for (size_t i = 2; i < args.size(); ++i)
+    {
+        if (args[i] == "--double")
+            flags |= static_cast<int32_t>(gmpi::api::PointerFlags::Double);
+        else
+            return errorLine(cmd, "unknown option '" + args[i] + "'");
+    }
 
     switch (action)
     {
@@ -443,7 +468,9 @@ std::string cmdPointer(AppContext& context, PointerAction action,
     }
 
     return JsonObject().str("cmd", cmd).boolean("ok", true)
-        .num("x", x).num("y", y).done();
+        .num("x", x).num("y", y)
+        .boolean("double", (flags & static_cast<int32_t>(gmpi::api::PointerFlags::Double)) != 0)
+        .done();
 }
 
 std::string cmdDrag(AppContext& context, const std::vector<std::string>& args)
