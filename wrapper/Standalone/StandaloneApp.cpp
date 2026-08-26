@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <climits>                     // INT_MIN -- E32's "no saved position"
 #include <csignal>
 #include <string>
 #include <vector>
@@ -43,6 +44,17 @@ namespace
 // trap) from colliding with anything.
 constexpr const char* kWindowWidthKey  = "window.width";
 constexpr const char* kWindowHeightKey = "window.height";
+
+// BACKLOG E32, the position half. Screen PIXELS, not DIPs -- see
+// PlatformShell::windowPosition for why the two halves use different units.
+constexpr const char* kWindowXKey = "window.x";
+constexpr const char* kWindowYKey = "window.y";
+
+// "no saved position", because 0,0 is a POSITION -- the top-left of the primary
+// monitor, and on a multi-monitor desktop a perfectly ordinary place to leave a
+// window. A missing key cannot be spelled as a value in range, so it is spelled
+// as one that cannot be.
+constexpr int kNoSavedPosition = INT_MIN;
 
 // One bound, stated once, used by both the read and the write -- so a size this
 // build refuses to restore is also a size it refuses to save, and the file
@@ -166,6 +178,27 @@ int runStandaloneApp(PlatformShell& shell)
         const auto why = shell.lastError();
         shell.reportFatal(why.empty() ? "Could not create the application window." : why);
         return 1;
+    }
+
+    // BACKLOG E32 -- and reopen WHERE the user left it, on the shells that can.
+    //
+    // AFTER createWindow rather than as an argument to it, for two reasons.
+    // The window is created hidden on every shell that supports this and only
+    // shown when the event loop starts, so there is no visible jump to avoid;
+    // and passing a position down would mean changing a pure virtual that all
+    // three shells implement, to carry something two of them would ignore.
+    //
+    // NO CLAMPING HERE ON PURPOSE. Only the shell can see the monitors, so the
+    // shell decides what "on screen" means -- see setWindowPosition.
+    //
+    // Both, or neither, for the same reason the size half pairs its two: half a
+    // position is a coordinate the user never chose.
+    {
+        const int savedX = settings.getInt(kWindowXKey, kNoSavedPosition);
+        const int savedY = settings.getInt(kWindowYKey, kNoSavedPosition);
+
+        if (savedX != kNoSavedPosition && savedY != kNoSavedPosition)
+            shell.setWindowPosition(savedX, savedY);
     }
 
     // A window narrower than the menu bar's titles is not useful.
@@ -531,6 +564,21 @@ int runStandaloneApp(PlatformShell& shell)
         {
             settings.setInt(kWindowWidthKey, w);
             settings.setInt(kWindowHeightKey, h);
+            settings.save();
+        }
+
+        // BACKLOG E32, the position half. BEFORE closeWindow() for the same
+        // reason the size is: the shell reads its live window, and closeWindow
+        // destroys it. A shell that cannot answer leaves whatever is in the
+        // file alone -- so Linux, which never can, neither writes nor erases,
+        // and a config carried between machines keeps a position the box that
+        // wrote it can still use.
+        int finalX = 0;
+        int finalY = 0;
+        if (shell.windowPosition(finalX, finalY))
+        {
+            settings.setInt(kWindowXKey, finalX);
+            settings.setInt(kWindowYKey, finalY);
             settings.save();
         }
     }

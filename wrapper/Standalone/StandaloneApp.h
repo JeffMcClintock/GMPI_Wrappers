@@ -292,6 +292,38 @@ public:
     // fractional scaling is not the pixel size above.
     virtual void logicalSize(float& width, float& height) = 0;
 
+    // BACKLOG E32 -- the window's position on the desktop.
+    //
+    // NOT PURE, and the default is "no". Wayland clients cannot place their own
+    // windows: xdg-shell has no set-position, deliberately, so a compositor is
+    // free to ignore anything a client asked for. That is a property of the
+    // protocol rather than a gap to close later, so the Linux shell inherits
+    // this default instead of writing a stub that reports success and does
+    // nothing. Whoever calls these has to cope with false anyway, because a
+    // window that does not exist yet cannot report a position either.
+    //
+    // IN PHYSICAL SCREEN PIXELS, unlike logicalSize() above, which is in DIPs.
+    // The virtual desktop is ONE pixel space spanning every monitor, and a
+    // position expressed in DIPs would have to say which monitor's scale it
+    // meant -- which is precisely the question restoring a position has to
+    // answer, so naming it in the unit dodges it. Size is different: a size in
+    // DIPs is the same window whichever monitor shows it, which is why that one
+    // is stored logically and this one is not.
+    //
+    // The rectangle is the OUTER frame's, the same one SetWindowPos and its
+    // equivalents take, so a value read back here can be handed straight to the
+    // setter without either side knowing about borders or title bars.
+    virtual bool windowPosition(int& xPixels, int& yPixels) const { return false; }
+
+    // Move the window, WITHOUT resizing it. Returns false if this shell cannot.
+    //
+    // THE IMPLEMENTATION IS EXPECTED TO CLAMP, and the caller deliberately does
+    // not: only the shell can see the monitors. A saved position is a REQUEST,
+    // and the display it referred to may since have been unplugged, moved, or
+    // resized -- so restoring one verbatim is how an app disappears off the
+    // edge of the desktop with no way to drag it back.
+    virtual bool setWindowPosition(int xPixels, int yPixels) { return false; }
+
     // The same window in PIXELS - the space a screenshot is measured in, and
     // the dimensions of the buffer framePixels() would hand back.
     //
