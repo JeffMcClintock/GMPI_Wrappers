@@ -176,8 +176,10 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 const coordNote =
-  "Coordinates are in logical DIPs measured from the top-left of the WINDOW — the same space a screenshot is in at scale 1, so you can read them straight off the PNG. " +
-  "The plugin's own editor starts `editorOriginY` pixels down (gmpi_info), because the menu bar is above it.";
+  "Coordinates are in logical DIPs measured from the top-left of the WINDOW. " +
+  "SCREENSHOTS ARE NOT IN THIS SPACE unless `scale` is 1: gmpi_screenshot returns the CANVAS (window x scale), so DIVIDE pixel coordinates read off the PNG by `scale` from gmpi_info. " +
+  "At scale 1.5 a 1100x626 window screenshots as 1650x939, and passing raw PNG coordinates puts the gesture off the window entirely - it silently lands on whatever is nearest instead of erroring. " +
+  "The plugin's own editor starts `editorOriginY` DIPs down, because the menu bar is above it.";
 
 server.registerTool(
   "gmpi_drag",
