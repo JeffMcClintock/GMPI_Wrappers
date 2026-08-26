@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../StandaloneHost.h"
+#include "MainThreadQueue.h"
 #include "PngWriter.h"
 #include "TextUtil.h"
 #include "WavWriter.h"
@@ -1006,6 +1007,14 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
     // --- render ------------------------------------------------------------
     for (int64_t frame = 0; frame < totalFrames; frame += blockSize)
     {
+        // The ONLY verb that legitimately holds the main thread for longer than
+        // MainThreadQueue's progress deadline: up to 240 s of audio, and a heavy
+        // rack does not render that in real time. Without this the caller would
+        // be told the command had stalled while it was doing exactly what it was
+        // asked to. Everything else in this file finishes in microseconds and
+        // needs no beat. See MainThreadQueue.h, BACKLOG E43.
+        MainThreadQueue::heartbeat();
+
         const int frames = static_cast<int>(std::min<int64_t>(blockSize, totalFrames - frame));
 
         if (wantsNote)

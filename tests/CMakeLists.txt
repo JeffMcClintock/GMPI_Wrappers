@@ -13,6 +13,21 @@ project(gmpi_wrapper_tests)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# main_thread_queue_deadline_probe - the command channel's two deadlines, and
+# the heartbeat that lets a genuinely long job outlive the second one
+# (BACKLOG E43). No window system, no plugin, no SDK: one header and the
+# standard library, so it builds and runs identically on all three platforms
+# and is deliberately OUTSIDE the guard below.
+#
+# NOT added to any test runner. It sleeps out two real 20-second deadlines, so
+# it takes about a minute; that is affordable to run by hand after touching
+# MainThreadQueue.h and not affordable per CI job. It also compiles in one
+# command with no CMake at all - see the comment at the top of the file, which
+# is the way it is expected to be run.
+add_executable(main_thread_queue_deadline_probe main_thread_queue_deadline_probe.cpp)
+find_package(Threads REQUIRED)
+target_link_libraries(main_thread_queue_deadline_probe PRIVATE Threads::Threads)
+
 # Everything below this point was written for Linux and pkg-config's it
 # unconditionally, so the whole directory used to be un-configurable anywhere
 # else. Guard it by platform rather than by hand, so a Windows or macOS build
