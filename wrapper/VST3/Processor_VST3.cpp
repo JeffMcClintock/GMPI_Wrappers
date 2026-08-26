@@ -1042,15 +1042,54 @@ void Processor_VST3::DoNoteOff(int channel, int32_t noteId, float velocity, int 
 	}
 }
 
+// Read EXACTLY `size` bytes, or say so. IBStream::read is allowed to return
+// fewer bytes than asked - REAPER 7.78 serves a project's chunk in pieces of
+// roughly 14KB - and a single read that stops there leaves the tail of the
+// buffer unwritten. That is not a hypothetical: any TIDE rack document over
+// ~14,136 bytes (five VCV modules is ~31KB) came back truncated, failed to
+// parse, and the plugin restored a BLANK rack with no error and no log line
+// (TideSynth BACKLOG E27, measured 2026-08-26 with a size-only A/B - the
+// failing and passing documents differed by an XML comment).
+//
+// Returns false on a genuinely short stream (corrupt or foreign project);
+// callers turn that into kResultFalse, because "the restore failed" is honest
+// and a silently blank rack is not.
+static bool readAll(Steinberg::IBStream* state, void* dest, Steinberg::int32 size)
+{
+	auto* at = static_cast<char*>(dest);
+	Steinberg::int32 remaining = size;
+
+	while (remaining > 0)
+	{
+		Steinberg::int32 bytesRead{};
+		const auto r = state->read(at, remaining, &bytesRead);
+		if (r != Steinberg::kResultOk || bytesRead <= 0)
+			return false;
+
+		at += bytesRead;
+		remaining -= bytesRead;
+	}
+
+	return true;
+}
+
 tresult Processor_VST3::setState (IBStream* state)
 {
-	int32 bytesRead{};
 	int32 chunkSize{};
-	state->read( &chunkSize, sizeof(chunkSize), &bytesRead );
+	if (!readAll(state, &chunkSize, sizeof(chunkSize)) || chunkSize < 0)
+	{
+		fprintf(stderr, "E27DBG: setState header read failed\n"); // TEMP diagnosis
+		return kResultFalse;
+	}
 
 	std::string chunk;
 	chunk.resize(chunkSize);
-	state->read(chunk.data(), chunkSize, &bytesRead);
+	if (!readAll(state, chunk.data(), chunkSize))
+	{
+		fprintf(stderr, "E27DBG: setState short stream, wanted %d\n", chunkSize); // TEMP diagnosis
+		return kResultFalse;
+	}
+	fprintf(stderr, "E27DBG: setState got %d bytes, tail ...%.20s\n", chunkSize, chunk.c_str() + (chunkSize > 20 ? chunkSize - 20 : 0)); // TEMP diagnosis
 
 	// Fail safe. This is a host boundary on the MAIN thread: the DAW calls it
 	// while opening a project, and an exception escaping here unwinds into the

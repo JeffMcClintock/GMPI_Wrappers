@@ -453,15 +453,39 @@ IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 // todo init all params and pins			initializeGui(&helper)
 }
 
+// Same loop as Processor_VST3.cpp's readAll, same reason, same measurement
+// (TideSynth BACKLOG E27): IBStream::read may return short - REAPER serves
+// ~14KB pieces - and an unchecked read truncated any larger chunk into a
+// silently blank restore.
+static bool readAll(Steinberg::IBStream* state, void* dest, Steinberg::int32 size)
+{
+	auto* at = static_cast<char*>(dest);
+	Steinberg::int32 remaining = size;
+
+	while (remaining > 0)
+	{
+		Steinberg::int32 bytesRead{};
+		const auto r = state->read(at, remaining, &bytesRead);
+		if (r != Steinberg::kResultOk || bytesRead <= 0)
+			return false;
+
+		at += bytesRead;
+		remaining -= bytesRead;
+	}
+
+	return true;
+}
+
 // Preset Loaded.
 tresult PLUGIN_API Controller_VST3::setComponentState (IBStream* state)
 {
-	int32 bytesRead;
 	int32 chunkSize = 0;
 	std::string chunk;
-	state->read( &chunkSize, sizeof(chunkSize), &bytesRead );
+	if (!readAll(state, &chunkSize, sizeof(chunkSize)) || chunkSize < 0)
+		return kResultFalse;
 	chunk.resize(chunkSize);
-	state->read((void*) chunk.data(), chunkSize, &bytesRead);
+	if (!readAll(state, chunk.data(), chunkSize))
+		return kResultFalse;
 
 #if 0
 	DawPreset preset(parametersInfo, chunk);
