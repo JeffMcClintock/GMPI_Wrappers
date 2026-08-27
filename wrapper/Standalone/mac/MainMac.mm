@@ -314,25 +314,14 @@ public:
         }
     }
 
-#if GMPI_STANDALONE_COMMAND_CHANNEL
-    bool framePixels(bool forceRedraw,
-                     const uint8_t*& pixels, int& width, int& height, int& stride) override
-    {
-        return capture_.capture(forceRedraw, pixels, width, height, stride);
-    }
-
     // BACKLOG E32 -- the position half.
     //
-    // INSIDE this guard because MainWin32.cpp puts its pair inside the same
-    // one and PlatformShell declares them there. That placement is WRONG for
-    // what these do -- reopening where the user left the window is a shipping
-    // feature, not a test affordance -- and it already breaks the build:
-    // with the channel OFF, StandaloneApp.cpp calls windowPosition,
-    // setWindowPosition and logicalSize unconditionally and does not compile.
-    // That is true on origin/main today, before this change, and the third of
-    // those is E32's already-merged SIZE half. Filed rather than fixed here:
-    // moving the seam out means moving all three shells' overrides with it,
-    // and only the mac one can be built on this box.
+    // OUTSIDE the command-channel guard, with the seam that declares them --
+    // BACKLOG E52, and this is the fix rather than the filing. The comment
+    // that stood here said the placement was wrong and already broke
+    // -DGMPI_STANDALONE_COMMAND_CHANNEL=OFF, and left it because moving the
+    // seam means moving all three shells with it and only this one builds on
+    // a mac. All three moved together; see StandaloneApp.h for the rule.
     //
     // Thin on purpose. The arithmetic and the clamp live in ToplevelWindowMac,
     // next to the only object that can see the screens, and its header says why
@@ -359,6 +348,13 @@ public:
         // frame's own view rather than from the window, so this cannot drift
         // from what the editor was arranged at.
         window_.logicalSize(width, height);
+    }
+
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+    bool framePixels(bool forceRedraw,
+                     const uint8_t*& pixels, int& width, int& height, int& stride) override
+    {
+        return capture_.capture(forceRedraw, pixels, width, height, stride);
     }
 
     void canvasSize(int& width, int& height) override

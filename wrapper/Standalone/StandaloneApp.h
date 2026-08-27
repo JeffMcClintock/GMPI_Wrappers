@@ -279,18 +279,24 @@ public:
     // stderr line above is the whole report, and there is no override.
     virtual void showFatalAlert(const std::string& message);
 
-    // --- the command channel ----------------------------------------------
-    // Behind the switch for the same reason the shells' FrameCapture members
-    // are: with the channel off, mcp/ and the capture code are not compiled at
-    // all, so there is nothing left for these to call.
-#if GMPI_STANDALONE_COMMAND_CHANNEL
-
-    // Semantics of mcp::AppContext::framePixels. BGRX8888 on every platform.
-    virtual bool framePixels(bool forceRedraw,
-                             const uint8_t*& pixels, int& width, int& height, int& stride) = 0;
+    // --- the window's geometry ---------------------------------------------
+    // OUTSIDE the command-channel switch, and BACKLOG E52 is why. These three
+    // are the seam StandaloneApp.cpp restores a window through on every launch
+    // -- reopening where the user left it is a SHIPPING FEATURE, not a test
+    // affordance -- so it calls them unconditionally. They used to be declared
+    // inside the switch below, next to framePixels(), which made
+    // -DGMPI_STANDALONE_COMMAND_CHANNEL=OFF fail to compile with three
+    // `no member named` errors and nothing else: setWindowPosition,
+    // logicalSize, windowPosition.
+    //
+    // Guarding the CALL SITES was the tempting fix and is the wrong one: it
+    // compiles, and silently deletes window restoration from every OFF build.
+    // The seam belongs out here; framePixels() and canvasSize() belong in
+    // there, because with the channel off nothing calls them and mcp/ is not
+    // compiled at all.
 
     // The window in DIPs - the space pointer coordinates are in, which under
-    // fractional scaling is not the pixel size above.
+    // fractional scaling is not the pixel size framePixels() reports below.
     virtual void logicalSize(float& width, float& height) = 0;
 
     // BACKLOG E32 -- the window's position on the desktop.
@@ -324,6 +330,16 @@ public:
     // resized -- so restoring one verbatim is how an app disappears off the
     // edge of the desktop with no way to drag it back.
     virtual bool setWindowPosition(int xPixels, int yPixels) { return false; }
+
+    // --- the command channel ----------------------------------------------
+    // Behind the switch for the same reason the shells' FrameCapture members
+    // are: with the channel off, mcp/ and the capture code are not compiled at
+    // all, so there is nothing left for these to call.
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+
+    // Semantics of mcp::AppContext::framePixels. BGRX8888 on every platform.
+    virtual bool framePixels(bool forceRedraw,
+                             const uint8_t*& pixels, int& width, int& height, int& stride) = 0;
 
     // The same window in PIXELS - the space a screenshot is measured in, and
     // the dimensions of the buffer framePixels() would hand back.
