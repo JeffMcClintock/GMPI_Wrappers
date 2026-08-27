@@ -344,7 +344,24 @@ public:
 
 // The whole app. Returns the process exit code; reports its own fatal errors
 // through the shell before returning 1.
-int runStandaloneApp(PlatformShell& shell);
+// The process's own command line, or (0, nullptr) if no main() passed it.
+//
+// EXISTS BECAUSE A PLUGIN CANNOT ASK. Everything below the wrapper is built to
+// be loaded into a DAW as well, where the command line belongs to the host and
+// reading it would let someone else's flags configure us. Under the standalone
+// it is ours, so main() hands it over and this is where the plugin can find it.
+//
+// Reading argv out of the C runtime instead (__argv, _NSGetArgv, /proc/self/
+// cmdline) would need a different incantation per platform and would work
+// equally well inside a DAW, which is exactly the thing that must not happen.
+// One mechanism, and it can only be populated by a standalone main().
+int    standaloneArgc();
+char** standaloneArgv();
+
+// argc/argv are OPTIONAL and default to none, so a shell's main() that has not
+// been updated still compiles and simply reports no command line rather than
+// reporting a wrong one.
+int runStandaloneApp(PlatformShell& shell, int argc = 0, char** argv = nullptr);
 
 } // namespace standalone
 } // namespace gmpi

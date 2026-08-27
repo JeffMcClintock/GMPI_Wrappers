@@ -442,6 +442,27 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PUBLIC
     GMPI_STANDALONE_COMMAND_CHANNEL=$<IF:$<BOOL:${GMPI_STANDALONE_COMMAND_CHANNEL}>,1,0>)
 
+# "This plugin is being built INTO a standalone executable", and nothing more.
+#
+# A SEPARATE DEFINE FROM THE ONE ABOVE, deliberately. The command channel is
+# standalone-only TODAY, so it is tempting to test for it and save a line -- but
+# it answers "can this build be driven by a test harness", which is a different
+# question, and it can be turned OFF by its own option. A plugin that read it as
+# "am I standalone" would silently change behaviour when someone built with
+# -DGMPI_STANDALONE_COMMAND_CHANNEL=OFF. TIDE BACKLOG E52 is what that class of
+# conflation costs.
+#
+# WHAT IT IS FOR. A plugin hosted in a DAW must not read the process command
+# line: that belongs to the host, and a flag meant for TIDE could be anything to
+# REAPER. Under the standalone the command line IS ours, so an app-level setting
+# like -quiet can be honoured. Nothing else should gate on this -- if a check
+# wants "do I have a window of my own" or "is there a channel", those are their
+# own questions.
+#
+# Defined to 1 only. A plugin build simply does not see it, which is the honest
+# default for every other wrapper in this repo -- none of them include this file.
+target_compile_definitions(${PROJECT_NAME} PUBLIC GMPI_STANDALONE=1)
+
 if(WIN32)
     # PUBLIC: the executable compiles windows/MainWin32.cpp itself, and it calls
     # the same wide-character entry points this library does.
