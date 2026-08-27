@@ -252,12 +252,16 @@ private:
 
 int main(int argc, char** argv)
 {
-    (void)argc;
-    (void)argv;
-
     // Constructed here rather than inside runStandaloneApp so that the display
     // connection and the surface outlive it - the app is torn down first, and
     // only then, as this frame unwinds, the connection it ran on.
     WaylandShell shell;
-    return gmpi::standalone::runStandaloneApp(shell);
+
+    // argc/argv FORWARDED, not discarded. runStandaloneApp defaults them to
+    // (0, nullptr), so dropping them here compiles cleanly and silently turns
+    // every command-line flag off: applyCommandLineConfig bails at
+    // `argc <= 1 || !argv`, SetQuiet() never runs, and -quiet is inert.
+    // Measured on Windows 2026-08-27 (TIDE BACKLOG E48/E51), where this shell
+    // had the same omission.
+    return gmpi::standalone::runStandaloneApp(shell, argc, argv);
 }

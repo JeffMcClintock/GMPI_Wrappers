@@ -34,6 +34,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>       // the UTF-8 argv copies in wWinMain
 
 #include <windows.h>
 
@@ -381,5 +382,36 @@ int APIENTRY wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int)
     // apartment and the window outlive it - the app is torn down first, and
     // only then, as this frame unwinds, the process it ran in.
     Win32Shell shell;
-    return gmpi::standalone::runStandaloneApp(shell);
+
+    // THE COMMAND LINE, which this entry point was throwing away.
+    //
+    // runStandaloneApp defaults argc/argv to (0, nullptr), so passing neither
+    // compiled cleanly and turned EVERY flag off without a word:
+    // applyCommandLineConfig bails at `argc <= 1 || !argv`, SetQuiet() is never
+    // called, and -quiet was inert on this platform while working on macOS --
+    // which is the only shell that forwarded them. Measured 2026-08-27: no
+    // launch given -quiet ever printed SetQuiet's own "Logging dialogs to
+    // stderr" announcement, and TIDE BACKLOG E48's modal blocked identically
+    // with and without the flag.
+    //
+    // __wargv, NOT __argv -- and this correction was measured, not read. In a
+    // Unicode build entered through wWinMain the CRT populates ONLY the wide
+    // set; __argv stays NULL. The first version of this fix passed __argv, and
+    // the app's own trace answered `argc=2, argv=NULL`: the count arrived, the
+    // strings did not, and applyCommandLineConfig correctly refused the pair.
+    // A count without its strings is exactly as inert as the (0, nullptr) this
+    // fix exists to remove -- it just fails one line later.
+    //
+    // Still the CRT's parse rather than CommandLineToArgvW: same splitter that
+    // fed wWinMain, nothing to LocalFree. The UTF-8 copies are function-local
+    // statics because gArgv aliases them for the life of the process.
+    static std::vector<std::string> argStorage;
+    static std::vector<char*> argPtrs;
+    for (int i = 0; i < __argc && __wargv; ++i)
+        argStorage.push_back(gmpi::unicode::to_utf8(__wargv[i]));
+    for (auto& arg : argStorage)
+        argPtrs.push_back(arg.data());
+
+    return gmpi::standalone::runStandaloneApp(
+        shell, static_cast<int>(argPtrs.size()), argPtrs.empty() ? nullptr : argPtrs.data());
 }
