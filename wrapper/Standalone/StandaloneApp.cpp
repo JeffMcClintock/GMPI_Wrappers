@@ -100,8 +100,22 @@ void onTerminationSignal(int)
 
 } // namespace
 
-int runStandaloneApp(PlatformShell& shell)
+namespace
 {
+int    gArgc = 0;
+char** gArgv = nullptr;
+}
+
+int    standaloneArgc() { return gArgc; }
+char** standaloneArgv() { return gArgv; }
+
+int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
+{
+    // FIRST, before the host or the plugin exist: the controller reads this
+    // during its own initialize(), which runs well inside the setup below.
+    gArgc = argc;
+    gArgv = argv;
+
     StandaloneHost host;
     if (!host.init())
     {

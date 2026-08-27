@@ -404,8 +404,6 @@ private:
 
 int main(int argc, char** argv)
 {
-    (void)argc;
-    (void)argv;
 
     @autoreleasepool
     {
@@ -414,6 +412,6 @@ int main(int argc, char** argv)
         // out have to land. Constructed here rather than inside runStandaloneApp
         // so that the NSApplication and the window outlive it.
         MacShell shell;
-        return gmpi::standalone::runStandaloneApp(shell);
+        return gmpi::standalone::runStandaloneApp(shell, argc, argv);
     }
 }
