@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>   // strtol, for --type's \xNN escape
 #include <map>
 #include <string>
 #include <vector>
@@ -536,6 +537,182 @@ std::string cmdDrag(AppContext& context, const std::vector<std::string>& args)
         .num("fromX", x1).num("fromY", y1)
         .num("toX", x2).num("toY", y2)
         .num("steps", steps)
+        .done();
+}
+
+// --- keyboard and wheel -----------------------------------------------------
+//
+// Both of these call methods gmpi::api::IInputClient ALREADY HAS and that this
+// channel simply never called: onKeyPress and onMouseWheel. No GMPI change is
+// involved -- the interface was complete and the gap was ours.
+//
+// WHY THEY ARE WORTH THE LINES. Without them the channel can only reach what is
+// already on screen and can never enter a character, so a whole class of
+// verification is human-only: any text field (a module's name, the properties
+// pane's X/Y), any keyboard shortcut, and anything scrolled out of view. E34
+// was handed to a human for exactly this -- a module inserted from a script
+// landed at X=3732 on a 1100-DIP-wide view, and with no way to scroll to it and
+// no way to type a coordinate, a two-module cabled rack could not be built at
+// all.
+
+/// One notch of a wheel. 120 is the Windows convention and the number both the
+/// mac and Wayland backends convert into, so a caller saying `--notches 3`
+/// produces exactly what three real clicks of a wheel produce.
+constexpr int32_t kWheelNotch = 120;
+
+std::string cmdScroll(AppContext& context, const std::vector<std::string>& args)
+{
+    if (args.size() < 2)
+        return errorLine("scroll", "usage: --scroll <x,y> [--notches N] [--delta N] [--horiz]");
+    if (!context.inputClient)
+        return errorLine("scroll", "this build has no input path");
+
+    float x = 0.0f, y = 0.0f;
+    if (!parsePoint(args[1], x, y))
+        return errorLine("scroll", "'" + args[1] + "' is not an x,y coordinate");
+
+    // Notches are the unit a caller thinks in; --delta is the escape hatch for
+    // a trackpad-sized fractional scroll, which some views treat differently
+    // from a discrete click.
+    int notches = 0;
+    int delta = 0;
+    bool haveDelta = false;
+    bool horiz = false;
+
+    for (size_t i = 2; i < args.size(); ++i)
+    {
+        if (args[i] == "--horiz")
+        {
+            horiz = true;
+        }
+        else if (args[i] == "--notches" && i + 1 < args.size())
+        {
+            if (!parseInt(args[++i], notches))
+                return errorLine("scroll", "'" + args[i] + "' is not a notch count");
+        }
+        else if (args[i] == "--delta" && i + 1 < args.size())
+        {
+            if (!parseInt(args[++i], delta))
+                return errorLine("scroll", "'" + args[i] + "' is not a delta");
+            haveDelta = true;
+        }
+    }
+
+    if (!haveDelta)
+    {
+        if (notches == 0)
+            notches = 1; // a --scroll with no amount means one notch, not a no-op
+        delta = notches * kWheelNotch;
+    }
+
+    auto* client = context.inputClient();
+    if (!client)
+        return errorLine("scroll", "no window is attached");
+
+    // Same flag set the mac backend builds for a wheel event: hover-shaped
+    // (nothing is in contact), plus ScrollHoriz on the horizontal axis.
+    int32_t flags = kHoverFlags;
+    if (horiz)
+        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ScrollHoriz);
+
+    client->onMouseWheel({ x, y }, flags, delta);
+
+    return JsonObject().str("cmd", "scroll").boolean("ok", true)
+        .num("x", x).num("y", y)
+        .num("delta", delta)
+        .boolean("horiz", horiz)
+        .done();
+}
+
+/// Text, one character at a time.
+///
+/// IInputClient::onKeyPress takes a single wchar_t and HAS NO RELEASE HALF (the
+/// X11 backend says so where it drops key-up), so a string is just a loop and
+/// there is no down/up pairing for a caller to get wrong.
+///
+/// WHAT THIS DELIBERATELY DOES NOT COVER: keys that are not characters --
+/// arrows, function keys, plain modifiers. Those do not fit in a wchar_t and
+/// the backends route them through a separate key sink
+/// (DrawingFrameX11's `keySink->handleKey`), which this channel does not reach.
+/// Naming that boundary here rather than shipping a --key verb that silently
+/// ignores "Left": if arrow keys are needed, that is a second, larger change.
+/// Control characters that DO fit are usable today -- \n, \t, \b, and \x7f.
+///
+/// AND ONE LIMIT THAT IS NOT OURS TO LIFT: while a NATIVE field editor holds
+/// first responder -- the NSTextView macOS puts up when a properties value is
+/// being edited, which DrawingFrameMac.mm detects by isFieldEditor -- no key
+/// reaches the frame at all, so nothing here can drive it. A real keyboard
+/// cannot either, in the sense that matters: those keys go to the OS control,
+/// not through onKeyPress. Driving native text edits and OS dialogs is a
+/// different feature, and TIDE BACKLOG E51 is the decision it waits on.
+/// Measured 2026-08-27: with a properties field in edit mode, --type reports
+/// the characters delivered and NOTHING on screen changes; dismiss the editor
+/// and the same command moves the selection.
+std::string cmdType(AppContext& context, const std::vector<std::string>& args)
+{
+    if (args.size() < 2)
+        return errorLine("type", "usage: --type <text>   (\\n \\t \\b \\\\ and \\xNN understood)");
+    if (!context.inputClient)
+        return errorLine("type", "this build has no input path");
+
+    // Everything after the verb, space-joined: a caller should not have to
+    // quote a sentence to type one.
+    std::string text;
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        if (i > 1)
+            text += ' ';
+        text += args[i];
+    }
+
+    std::wstring out;
+    for (size_t i = 0; i < text.size(); ++i)
+    {
+        if (text[i] != '\\' || i + 1 >= text.size())
+        {
+            out += static_cast<wchar_t>(static_cast<unsigned char>(text[i]));
+            continue;
+        }
+
+        switch (text[++i])
+        {
+        case 'n': out += L'\n'; break;
+        case 'r': out += L'\r'; break;
+        case 't': out += L'\t'; break;
+        case 'b': out += L'\b'; break;
+        case '\\': out += L'\\'; break;
+        case 'x':
+        {
+            // \xNN, exactly two hex digits. A short or malformed escape is an
+            // error rather than a silent literal, because a test that meant to
+            // press Delete and typed "x7" instead should say so.
+            if (i + 2 >= text.size())
+                return errorLine("type", "\\x needs two hex digits");
+            const std::string hex = text.substr(i + 1, 2);
+            char* end = nullptr;
+            const long v = std::strtol(hex.c_str(), &end, 16);
+            if (end != hex.c_str() + 2)
+                return errorLine("type", "'" + hex + "' is not two hex digits");
+            out += static_cast<wchar_t>(v);
+            i += 2;
+            break;
+        }
+        default:
+            return errorLine("type", std::string("unknown escape '\\") + text[i] + "'");
+        }
+    }
+
+    auto* client = context.inputClient();
+    if (!client)
+        return errorLine("type", "no window is attached");
+
+    // One dispatched job for the whole string, matching --drag: a repaint
+    // between two characters of one word is not something a typist produces.
+    for (const wchar_t c : out)
+        client->onKeyPress(c);
+
+    return JsonObject().str("cmd", "type").boolean("ok", true)
+        .num("characters", static_cast<double>(out.size()))
         .done();
 }
 
@@ -1112,6 +1289,8 @@ std::string dispatchCommand(AppContext& context, const std::string& line)
     if (verb == "--pointer-up")    return cmdPointer(context, PointerAction::Up,    "pointer-up",   args);
     if (verb == "--hover")         return cmdPointer(context, PointerAction::Hover, "hover",        args);
     if (verb == "--drag")          return cmdDrag(context, args);
+    if (verb == "--scroll")        return cmdScroll(context, args);
+    if (verb == "--type")          return cmdType(context, args);
 
     if (verb == "--note-on")       return cmdNoteOn(context, args);
     if (verb == "--note-off")      return cmdNoteOff(context, args);
