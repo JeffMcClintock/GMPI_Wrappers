@@ -383,6 +383,19 @@ struct DivertedDialog
 // DRAINING, not peeking -- the drain lives on the plugin side and clears as it
 // reads, so "what happened since I last asked" is the natural question and a
 // long-running app cannot grow the list without bound.
+class MenuBarView;
+
+// The app's menu bar, for the command channel's --menu verb. Set by
+// runStandaloneApp once the bar exists; null in a build with no menus.
+//
+// A TYPED POINTER rather than the callback pair the two hooks above use, because
+// unlike argv and the diverted dialogs this does not cross the plugin boundary:
+// MenuBarView and the dispatcher are both in this library, so there is nothing to
+// convert and a function to invoke plus a model to list would be two hooks where
+// one pointer does.
+void setMenuBar(MenuBarView* bar);
+MenuBarView* menuBar();
+
 void setDialogDrain(std::function<std::vector<DivertedDialog>()> drain);
 std::vector<DivertedDialog> drainDivertedDialogs();
 

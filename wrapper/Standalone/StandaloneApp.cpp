@@ -114,6 +114,14 @@ namespace
 std::function<std::vector<DivertedDialog>()> gDialogDrain;
 }
 
+namespace
+{
+MenuBarView* gMenuBar = nullptr;
+}
+
+void setMenuBar(MenuBarView* bar) { gMenuBar = bar; }
+MenuBarView* menuBar() { return gMenuBar; }
+
 void setDialogDrain(std::function<std::vector<DivertedDialog>()> drain)
 {
     gDialogDrain = std::move(drain);
@@ -332,6 +340,10 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
         } });
 
         menuBar->setMenus(std::move(menus));
+
+        // Reachable by name from the command channel (--menu). Set here rather
+        // than at construction so it is never published half-built.
+        setMenuBar(menuBar.get());
     }
 
     if (!shell.attachClient(static_cast<gmpi::api::IDrawingClient*>(layout.get()),
