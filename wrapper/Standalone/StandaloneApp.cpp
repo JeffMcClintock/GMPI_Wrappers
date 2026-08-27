@@ -109,6 +109,23 @@ char** gArgv = nullptr;
 int    standaloneArgc() { return gArgc; }
 char** standaloneArgv() { return gArgv; }
 
+namespace
+{
+std::function<std::vector<DivertedDialog>()> gDialogDrain;
+}
+
+void setDialogDrain(std::function<std::vector<DivertedDialog>()> drain)
+{
+    gDialogDrain = std::move(drain);
+}
+
+std::vector<DivertedDialog> drainDivertedDialogs()
+{
+    // No drain installed is not an error: a plugin that raises no dialogs, or one
+    // not built against EditorLib at all, simply has nothing to report.
+    return gDialogDrain ? gDialogDrain() : std::vector<DivertedDialog>{};
+}
+
 int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
 {
     // FIRST, before the host or the plugin exist: the controller reads this

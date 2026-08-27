@@ -25,6 +25,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "AudioMidiDevices.h"
 #include "CommandChannel.h"
@@ -357,6 +358,33 @@ public:
 // One mechanism, and it can only be populated by a standalone main().
 int    standaloneArgc();
 char** standaloneArgv();
+
+// One prompt that quiet mode diverted instead of raising.
+//
+// Mirrors SynthEditLib's ApplicationBase::DivertedPrompt without depending on
+// it: the wrapper is built against plugins that know nothing of EditorLib, so
+// the plugin converts into this on its way out.
+struct DivertedDialog
+{
+    std::string title;
+    std::string text;
+    int flags{};
+    int answered{}; // what the caller was told, so a reader sees what the app then did
+};
+
+// Installed by the plugin at startup; called by the command channel's --dialogs
+// verb. Empty until something installs it, which is the honest answer for a
+// build whose plugin does not divert anything.
+//
+// SAME SHAPE AS standaloneArgv ABOVE, for the same reason: the wrapper cannot
+// reach into the plugin, and the plugin cannot reach the AppContext the channel
+// builds. A setter both can see is the whole mechanism.
+//
+// DRAINING, not peeking -- the drain lives on the plugin side and clears as it
+// reads, so "what happened since I last asked" is the natural question and a
+// long-running app cannot grow the list without bound.
+void setDialogDrain(std::function<std::vector<DivertedDialog>()> drain);
+std::vector<DivertedDialog> drainDivertedDialogs();
 
 // argc/argv are OPTIONAL and default to none, so a shell's main() that has not
 // been updated still compiles and simply reports no command line rather than
