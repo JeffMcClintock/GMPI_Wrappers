@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../StandaloneHost.h"
+#include "../StandaloneApp.h"   // drainDivertedDialogs
 #include "MainThreadQueue.h"
 #include "PngWriter.h"
 #include "TextUtil.h"
@@ -537,6 +538,53 @@ std::string cmdDrag(AppContext& context, const std::vector<std::string>& args)
         .num("fromX", x1).num("fromY", y1)
         .num("toX", x2).num("toY", y2)
         .num("steps", steps)
+        .done();
+}
+
+// --- diverted dialogs -------------------------------------------------------
+
+/// Every prompt quiet mode diverted instead of raising, oldest first.
+///
+/// READ-ONLY, AND THAT IS STRUCTURAL RATHER THAN UNFINISHED. Under the E51
+/// ruling a diverted prompt never blocks: the caller is answered on the spot and
+/// the app has already acted by the time anything reads this. There is nothing
+/// left to answer, so a `--dialog <button>` verb is not merely unimplemented, it
+/// is unreachable. The only lever on a prompt's answer is a policy declared
+/// BEFORE the fact, and Jeff has ruled the current one acceptable: the single
+/// call site that consumes an answer (CContainer.cpp's MB_YESNO in module
+/// replacement) gets MB_OK, which is not IDYES, so it takes the Replace branch --
+/// and that path is unlikely to arise in a headless session at all.
+///
+/// DRAINS. The list clears as it is read, so this answers "what happened since I
+/// last asked" and a long-running app cannot grow it without bound. A caller that
+/// wants everything should ask once at the end, not poll.
+///
+/// An empty list is ok:true with count 0. Nothing having gone wrong is a result,
+/// not an error -- and so is a build whose plugin installed no drain at all,
+/// which is why this cannot distinguish the two and does not pretend to.
+std::string cmdDialogs(AppContext& context)
+{
+    (void)context; // the drain is process-wide; see StandaloneApp.h
+
+    const auto dialogs = drainDivertedDialogs();
+
+    std::string arr = "[";
+    for (size_t i = 0; i < dialogs.size(); ++i)
+    {
+        if (i)
+            arr += ',';
+        arr += JsonObject()
+            .str("title", dialogs[i].title)
+            .str("text", dialogs[i].text)
+            .num("flags", dialogs[i].flags)
+            .num("answered", dialogs[i].answered)
+            .done();
+    }
+    arr += ']';
+
+    return JsonObject().str("cmd", "dialogs").boolean("ok", true)
+        .num("count", static_cast<double>(dialogs.size()))
+        .raw("dialogs", arr)
         .done();
 }
 
@@ -1291,6 +1339,7 @@ std::string dispatchCommand(AppContext& context, const std::string& line)
     if (verb == "--drag")          return cmdDrag(context, args);
     if (verb == "--scroll")        return cmdScroll(context, args);
     if (verb == "--type")          return cmdType(context, args);
+    if (verb == "--dialogs")       return cmdDialogs(context);
 
     if (verb == "--note-on")       return cmdNoteOn(context, args);
     if (verb == "--note-off")      return cmdNoteOff(context, args);
