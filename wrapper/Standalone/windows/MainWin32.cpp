@@ -221,13 +221,12 @@ public:
                       MB_OK | MB_ICONERROR);
     }
 
-#if GMPI_STANDALONE_COMMAND_CHANNEL
-    bool framePixels(bool forceRedraw,
-                     const uint8_t*& pixels, int& width, int& height, int& stride) override
-    {
-        return capture_.capture(forceRedraw, pixels, width, height, stride);
-    }
-
+    // OUTSIDE the command-channel guard, with the seam that declares them --
+    // BACKLOG E52. Restoring a window where the user left it is a shipping
+    // feature, so StandaloneApp.cpp calls it on every launch; declaring it
+    // beside framePixels() made -DGMPI_STANDALONE_COMMAND_CHANNEL=OFF fail to
+    // compile. Unchanged for an ON build, which compiled all of this already.
+    //
     // BACKLOG E32 -- the position half, which Windows can do and Wayland cannot.
     //
     // The OUTER frame's top-left, in virtual-desktop pixels: what SetWindowPos
@@ -340,6 +339,13 @@ public:
         const float scale = window_.frame().getRasterizationScale();
         width  = scale > 0.0f ? client.right  / scale : static_cast<float>(client.right);
         height = scale > 0.0f ? client.bottom / scale : static_cast<float>(client.bottom);
+    }
+
+#if GMPI_STANDALONE_COMMAND_CHANNEL
+    bool framePixels(bool forceRedraw,
+                     const uint8_t*& pixels, int& width, int& height, int& stride) override
+    {
+        return capture_.capture(forceRedraw, pixels, width, height, stride);
     }
 
     void canvasSize(int& width, int& height) override

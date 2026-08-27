@@ -180,6 +180,19 @@ public:
     // No showFatalAlert override: stderr is the whole report on this platform,
     // and PlatformShell::showFatalAlert says why.
 
+    // OUTSIDE the command-channel guard, with the seam that declares it --
+    // BACKLOG E52. StandaloneApp.cpp reads it on every teardown to save the
+    // window size, so an OFF build needs it as much as an ON one does.
+    //
+    // No windowPosition/setWindowPosition here, and that is not an omission:
+    // this shell takes PlatformShell's "no" default, because xdg-shell gives
+    // a Wayland client no way to place its own window.
+    void logicalSize(float& width, float& height) override
+    {
+        width  = static_cast<float>(frame_.logicalWidth());
+        height = static_cast<float>(frame_.logicalHeight());
+    }
+
 #if GMPI_STANDALONE_COMMAND_CHANNEL
     bool framePixels(bool forceRedraw,
                      const uint8_t*& pixels, int& width, int& height, int& stride) override
@@ -204,12 +217,6 @@ public:
         height = buffer.height();
         stride = buffer.stride();
         return true;
-    }
-
-    void logicalSize(float& width, float& height) override
-    {
-        width  = static_cast<float>(frame_.logicalWidth());
-        height = static_cast<float>(frame_.logicalHeight());
     }
 
     void canvasSize(int& width, int& height) override
