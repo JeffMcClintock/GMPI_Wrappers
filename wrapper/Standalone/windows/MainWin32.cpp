@@ -381,5 +381,22 @@ int APIENTRY wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int)
     // apartment and the window outlive it - the app is torn down first, and
     // only then, as this frame unwinds, the process it ran in.
     Win32Shell shell;
-    return gmpi::standalone::runStandaloneApp(shell);
+
+    // THE COMMAND LINE, which this entry point was throwing away.
+    //
+    // runStandaloneApp defaults argc/argv to (0, nullptr), so passing neither
+    // compiled cleanly and turned EVERY flag off without a word:
+    // applyCommandLineConfig bails at `argc <= 1 || !argv`, SetQuiet() is never
+    // called, and -quiet was inert on this platform while working on macOS --
+    // which is the only shell that forwarded them. Measured 2026-08-27: no
+    // launch given -quiet ever printed SetQuiet's own "Logging dialogs to
+    // stderr" announcement, and TIDE BACKLOG E48's modal blocked identically
+    // with and without the flag.
+    //
+    // __argc/__argv rather than CommandLineToArgvW: the CRT has already parsed
+    // and split the line for us and owns the memory, so there is nothing to
+    // free and no second parser to disagree with the first. They are narrow,
+    // which is what runStandaloneApp wants -- the wide LPWSTR parameter above
+    // would have to be converted anyway.
+    return gmpi::standalone::runStandaloneApp(shell, __argc, __argv);
 }
