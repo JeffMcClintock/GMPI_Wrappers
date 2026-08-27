@@ -321,6 +321,38 @@ public:
         return capture_.capture(forceRedraw, pixels, width, height, stride);
     }
 
+    // BACKLOG E32 -- the position half.
+    //
+    // INSIDE this guard because MainWin32.cpp puts its pair inside the same
+    // one and PlatformShell declares them there. That placement is WRONG for
+    // what these do -- reopening where the user left the window is a shipping
+    // feature, not a test affordance -- and it already breaks the build:
+    // with the channel OFF, StandaloneApp.cpp calls windowPosition,
+    // setWindowPosition and logicalSize unconditionally and does not compile.
+    // That is true on origin/main today, before this change, and the third of
+    // those is E32's already-merged SIZE half. Filed rather than fixed here:
+    // moving the seam out means moving all three shells' overrides with it,
+    // and only the mac one can be built on this box.
+    //
+    // Thin on purpose. The arithmetic and the clamp live in ToplevelWindowMac,
+    // next to the only object that can see the screens, and its header says why
+    // this shell answers in POINTS where the seam says pixels.
+    //
+    // NSWindow's own frame autosave was the obvious alternative and is not used:
+    // it writes to NSUserDefaults on its own schedule, which would put the
+    // position in a different file from the SIZE the portable half already
+    // keeps in standalone.conf, and give two mechanisms the chance to restore
+    // conflicting halves of one rectangle.
+    bool windowPosition(int& xPixels, int& yPixels) const override
+    {
+        return window_.framePositionTopLeft(xPixels, yPixels);
+    }
+
+    bool setWindowPosition(int xPixels, int yPixels) override
+    {
+        return window_.setFramePositionTopLeft(xPixels, yPixels);
+    }
+
     void logicalSize(float& width, float& height) override
     {
         // Points, which is the space pointer coordinates are in. Read from the

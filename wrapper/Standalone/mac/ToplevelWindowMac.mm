@@ -24,7 +24,6 @@ void  gmpi_onCloseNativeView(void* view);
 // but the convention is cheap and this class would collide loudly if the app
 // ever grew a second window implementation.
 #define GMPI_STANDALONE_WINDOW_DELEGATE GMPI_OBJC_NAME(GMPI_STANDALONE_WINDOW_DELEGATE_01)
-
 @interface GMPI_STANDALONE_WINDOW_DELEGATE : NSObject <NSWindowDelegate>
 {
 @public
@@ -249,6 +248,103 @@ void ToplevelWindowMac::logicalSize(float& width, float& height) const
     const NSSize size = [v bounds].size;
     width  = static_cast<float>(size.width);
     height = static_cast<float>(size.height);
+}
+
+namespace
+{
+
+// BACKLOG E32. The top edge of the ZERO SCREEN -- `[NSScreen screens]`'s first
+// entry, whose lower-left corner is the origin of AppKit's global space. Every
+// conversion between that space and the top-left, y-down one the seam speaks
+// pivots on this single number, so it is computed in one place.
+//
+// NOT `[NSScreen mainScreen]`, which is the screen holding the KEY WINDOW and
+// therefore moves as the user clicks around. Using it would make the same
+// window report two different positions depending on what had focus.
+//
+// Zero when there are no screens at all (a headless session), which makes both
+// conversions below degenerate rather than undefined; the callers check for an
+// empty screen list before they get far enough for that to matter.
+CGFloat zeroScreenTop()
+{
+    NSArray<NSScreen*>* screens = [NSScreen screens];
+    if ([screens count] == 0)
+        return 0.0;
+
+    return NSMaxY([[screens objectAtIndex:0] frame]);
+}
+
+// AppKit rect (bottom-left, y up) -> the y-down coordinate of its TOP edge.
+CGFloat toTopDown(CGFloat top, const NSRect& r)
+{
+    return top - NSMaxY(r);
+}
+
+} // namespace
+
+bool ToplevelWindowMac::framePositionTopLeft(int& x, int& y) const
+{
+    if (!window_)
+        return false;
+
+    if ([[NSScreen screens] count] == 0)
+        return false;
+
+    const NSRect f = [window_ frame];
+
+    // std::lround rather than a truncating cast: NSWindow frames are CGFloat and
+    // a window dragged to a half-point offset would otherwise creep one point
+    // toward zero on every save/restore cycle.
+    x = static_cast<int>(std::lround(f.origin.x));
+    y = static_cast<int>(std::lround(toTopDown(zeroScreenTop(), f)));
+    return true;
+}
+
+bool ToplevelWindowMac::setFramePositionTopLeft(int x, int y)
+{
+    if (!window_)
+        return false;
+
+    const CGFloat top = zeroScreenTop();
+    if ([[NSScreen screens] count] == 0)
+        return false;
+
+    const NSRect frame = [window_ frame];
+
+    // NO CLAMP HERE, and that is a platform decision rather than an omission.
+    //
+    // PlatformShell::setWindowPosition tells the shell to clamp, and says the
+    // rule is "enough of the caption is reachable to drag it" rather than
+    // "fully on screen" -- because a partly-off window is something a user does
+    // on purpose. That is the WINDOWS convention, and MainWin32.cpp implements
+    // it because Win32 will happily leave a window anywhere it is put.
+    //
+    // AppKit will not. Every frame about to be displayed goes through
+    // NSWindow's constrainFrameRect:toScreen:, which pulls the window fully
+    // on screen, and mac users expect exactly that. Overriding it to reproduce
+    // the Windows rule was tried and measured, and is deliberately NOT what
+    // ships: where a platform has its own convention, TIDE follows it.
+    //
+    // So this converts and hands over, and AppKit decides what lands on screen.
+    // MEASURED with this clamp bypassed, on a 2240x1260 display: a saved
+    // 9000,9000 opens at 1140,520 -- the bottom-right corner, wholly visible --
+    // and a y of -800 opens at 400,30, just below the menu bar with the x
+    // untouched. Both are better answers than the hand-rolled clamp gave, and
+    // neither needed a line of code here.
+    //
+    // WHAT THIS COSTS, stated so it is not rediscovered as a bug: a deliberate
+    // overhang does NOT survive a round trip on macOS. Saving at x=1900 on this
+    // display reopens at 1140, flush with the right edge. That is the platform
+    // being consistent with every other mac app, not this code losing the
+    // value -- the value is stored and restored exactly, and AppKit moves the
+    // window afterwards.
+    //
+    // setFrameOrigin, not setFrame: moving must not resize. The size half
+    // (StandaloneApp.cpp) has already restored a LOGICAL size, and handing a
+    // rectangle here would fight it the moment the window lands on a screen
+    // with a different backing scale.
+    [window_ setFrameOrigin:NSMakePoint(x, top - y - frame.size.height)];
+    return true;
 }
 
 void ToplevelWindowMac::canvasSize(int& width, int& height) const

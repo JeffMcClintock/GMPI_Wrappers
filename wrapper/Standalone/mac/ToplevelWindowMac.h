@@ -111,6 +111,45 @@ public:
     // and the space a screenshot is measured in at scale 1.
     void logicalSize(float& width, float& height) const;
 
+    // BACKLOG E32 -- the position half, which macOS can do and Wayland cannot.
+    //
+    // The OUTER frame's TOP-LEFT, y increasing DOWNWARD, measured from the top
+    // of the zero screen. Two conversions away from what AppKit hands out, and
+    // both are deliberate:
+    //
+    // ORIGIN. NSWindow's frame is bottom-left with y increasing UP, from the
+    // lower-left of `[NSScreen screens].firstObject`. The seam is specified
+    // top-left because that is what every other shell's window manager uses,
+    // and because a saved value that changes meaning when a display's HEIGHT
+    // changes is a position that quietly drifts. Converting here means the
+    // clamp below reads the same as the Windows one, rather than being its
+    // mirror image with the bugs that invites.
+    //
+    // UNIT: POINTS, not backing pixels, which is a documented deviation from
+    // PlatformShell's "physical screen pixels". The seam asks for pixels to get
+    // ONE unambiguous space spanning every monitor -- its own comment says a
+    // value in DIPs "would have to say which monitor's scale it meant". On
+    // macOS that property belongs to POINTS: the global window space is points,
+    // and backing pixels are per-display, so converting would reintroduce
+    // exactly the ambiguity the seam is dodging. The round trip is what has to
+    // hold, and it does: the same shell writes and reads this value, and
+    // AppKit's own frame APIs take it back unchanged.
+    //
+    // False before there is a window, like every other geometry accessor here.
+    bool framePositionTopLeft(int& x, int& y) const;
+
+    // Move without resizing. Returns false if there is no window, or no screen
+    // to measure the conversion against.
+    //
+    // DOES NOT CLAMP, unlike the Windows shell, and the .mm says why at length:
+    // AppKit's own constrainFrameRect:toScreen: already pulls the window fully
+    // on screen and mac users expect that, so this follows the platform instead
+    // of reproducing PlatformShell::setWindowPosition's Windows-shaped rule on
+    // top of it. The visible consequence is that a deliberate overhang does not
+    // survive a round trip here, which is a platform difference rather than a
+    // lost value.
+    bool setFramePositionTopLeft(int x, int y);
+
     // The same area in BACKING PIXELS - what a capture of this window measures.
     //
     // Here rather than at the two call sites (FrameCapture, and the shell's
