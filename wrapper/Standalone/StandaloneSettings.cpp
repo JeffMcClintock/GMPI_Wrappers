@@ -30,6 +30,31 @@ constexpr char kListSeparator = '\x1f';
 
 std::filesystem::path configRoot()
 {
+    // BACKLOG E55 -- ONE OVERRIDE, CHECKED BEFORE THE PER-PLATFORM ARMS.
+    //
+    // The three arms below are not equivalent: mac reads $HOME and linux reads
+    // $XDG_CONFIG_HOME, so a test run on either can point the config root at a
+    // scratch dir and leave the developer's own folder untouched -- S23
+    // measured exactly that, byte-identical before and after. Windows calls
+    // SHGetKnownFolderPath and consults nothing, not even %APPDATA%, so a
+    // Windows reproduction has to back up the real folder and restore it.
+    //
+    // That asymmetry is not theoretical. It cost a session on 2026-08-28: E53
+    // could not be re-measured on the windows box because a concurrent session
+    // held that one folder, and two processes cannot both own it.
+    //
+    // So the seam is ONE rule rather than three, and it is checked FIRST --
+    // before the platform arms, so its behaviour does not depend on which
+    // platform's fallbacks happen to be set. The name matches the existing
+    // GMPI_STANDALONE_IPC_DIR (mcp/IpcServer.h), which redirects the command
+    // channel's socket directory for the same reason.
+    //
+    // Deliberately NOT created if missing: a typo in the variable should fail
+    // loudly where the caller opens the file, not silently start a fresh
+    // config tree somewhere unexpected.
+    if (const char* override_ = std::getenv("GMPI_STANDALONE_CONFIG_DIR"); override_ && *override_)
+        return std::filesystem::path(override_);
+
 #ifdef _WIN32
     if (PWSTR appData{}; SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &appData)))
     {
