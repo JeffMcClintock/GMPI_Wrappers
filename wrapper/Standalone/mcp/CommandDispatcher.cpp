@@ -3,13 +3,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cctype>
 #include <cstdlib>   // strtol, for --type's \xNN escape
 #include <map>
 #include <string>
 #include <vector>
 
 #include "../StandaloneHost.h"
-#include "../StandaloneApp.h"   // drainDivertedDialogs
+#include "../StandaloneApp.h"   // drainDivertedDialogs, menuBar
+#include "../MenuBarView.h"
 #include "MainThreadQueue.h"
 #include "PngWriter.h"
 #include "TextUtil.h"
@@ -538,6 +540,161 @@ std::string cmdDrag(AppContext& context, const std::vector<std::string>& args)
         .num("fromX", x1).num("fromY", y1)
         .num("toX", x2).num("toY", y2)
         .num("steps", steps)
+        .done();
+}
+
+// --- menus ------------------------------------------------------------------
+
+/// Invoke a menu item BY NAME, or list what there is.
+///
+/// WHY NOT A CLICK, and this is the whole reason the verb exists. A pointer-down
+/// on the menu bar opens a native menu whose nested modal run loop runs INSIDE
+/// this command's job: the best outcome is a bounded "started and has not
+/// finished", nothing else can run, and the app stops answering SIGTERM so a run
+/// that tries it must kill -9. There is no sequence of pointer verbs that gets
+/// from there to a saved file. TIDE BACKLOG E43 measured that; E44 is this.
+///
+/// So this never raises a menu at all. MenuBarView keeps its items as a model --
+/// a label and a std::function -- and this calls the function. The drawn bar is
+/// not involved and no modal loop is entered.
+///
+///   --menu                 list every menu and item, with enabled/checked state
+///   --menu Save            invoke by item label
+///   --menu File/Save       invoke by menu and item, when a label is ambiguous
+///
+/// Matching is case-insensitive and ignores a trailing "...", so `--menu
+/// "Audio/MIDI Settings"` finds `Audio/MIDI Settings...`. An ambiguous bare label
+/// is an ERROR naming the candidates rather than a guess -- picking the first of
+/// two "Quit"s would be a coin toss the caller cannot see.
+std::string cmdMenu(AppContext& context, const std::vector<std::string>& args)
+{
+    (void)context; // the bar is process-wide; see StandaloneApp.h
+
+    auto* bar = menuBar();
+    if (!bar)
+        return errorLine("menu", "this build has no menu bar");
+
+    const auto& menus = bar->menus();
+
+    // Normalised for comparison: lower-cased, and without the trailing ellipsis
+    // that marks an item as opening a dialog. A caller should not have to know
+    // which items carry it.
+    auto norm = [](std::string_view v)
+    {
+        std::string out;
+        for (const char c : v)
+            out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        while (out.size() >= 3 && out.compare(out.size() - 3, 3, "...") == 0)
+            out.erase(out.size() - 3);
+        while (!out.empty() && out.back() == ' ')
+            out.pop_back();
+        return out;
+    };
+
+    if (args.size() < 2)
+    {
+        std::string arr = "[";
+        for (size_t m = 0; m < menus.size(); ++m)
+        {
+            if (m)
+                arr += ',';
+            std::string items = "[";
+            for (size_t i = 0; i < menus[m].items.size(); ++i)
+            {
+                const auto& it = menus[m].items[i];
+                if (i)
+                    items += ',';
+                items += JsonObject()
+                    .str("label", it.label)
+                    // An item with no action is a separator, which is how
+                    // MenuBarView spells one -- say so rather than offering it.
+                    .boolean("separator", !it.action)
+                    .boolean("enabled", it.action && (!it.enabled || it.enabled()))
+                    .boolean("checked", it.checked && it.checked())
+                    .done();
+            }
+            items += ']';
+            arr += JsonObject().str("title", menus[m].title).raw("items", items).done();
+        }
+        arr += ']';
+        return JsonObject().str("cmd", "menu").boolean("ok", true).raw("menus", arr).done();
+    }
+
+    // Everything after the verb, space-joined: an item label has spaces in it and
+    // a caller should not have to quote "Revert to Plugin Defaults".
+    std::string wanted;
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        if (i > 1)
+            wanted += ' ';
+        wanted += args[i];
+    }
+
+    std::string wantMenu, wantItem = wanted;
+    if (const auto slash = wanted.find('/'); slash != std::string::npos)
+    {
+        // A slash is only a menu/item split when the LEFT side names a menu --
+        // otherwise "Audio/MIDI Settings..." would be read as menu "Audio".
+        const auto lhs = norm(wanted.substr(0, slash));
+        for (const auto& m : menus)
+        {
+            if (norm(m.title) == lhs)
+            {
+                wantMenu = lhs;
+                wantItem = wanted.substr(slash + 1);
+                break;
+            }
+        }
+    }
+
+    const auto target = norm(wantItem);
+
+    const MenuBarView::Item* found{};
+    std::string foundIn;
+    std::string candidates;
+    for (const auto& m : menus)
+    {
+        if (!wantMenu.empty() && norm(m.title) != wantMenu)
+            continue;
+
+        for (const auto& it : m.items)
+        {
+            if (norm(it.label) != target)
+                continue;
+
+            if (!candidates.empty())
+                candidates += ", ";
+            candidates += m.title + "/" + it.label;
+
+            if (!found)
+            {
+                found = &it;
+                foundIn = m.title;
+            }
+        }
+    }
+
+    if (!found)
+        return errorLine("menu", "no item named '" + wantItem + "' (try --menu with no argument)");
+
+    if (candidates.find(", ") != std::string::npos)
+        return errorLine("menu", "'" + wantItem + "' is ambiguous: " + candidates);
+
+    if (!found->action)
+        return errorLine("menu", "'" + found->label + "' is a separator");
+
+    // Refused rather than silently ignored: an item greyed out because the app is
+    // in the wrong state is a fact the caller wants, and a verb that returned ok
+    // while doing nothing is how a test passes for the wrong reason.
+    if (found->enabled && !found->enabled())
+        return errorLine("menu", "'" + found->label + "' is disabled");
+
+    // The action runs on the MAIN THREAD, because this whole command does -- the
+    // same guarantee that lets cmdPointer call the input client directly.
+    found->action();
+
+    return JsonObject().str("cmd", "menu").boolean("ok", true)
+        .str("menu", foundIn).str("item", found->label)
         .done();
 }
 
@@ -1340,6 +1497,7 @@ std::string dispatchCommand(AppContext& context, const std::string& line)
     if (verb == "--scroll")        return cmdScroll(context, args);
     if (verb == "--type")          return cmdType(context, args);
     if (verb == "--dialogs")       return cmdDialogs(context);
+    if (verb == "--menu")          return cmdMenu(context, args);
 
     if (verb == "--note-on")       return cmdNoteOn(context, args);
     if (verb == "--note-off")      return cmdNoteOff(context, args);

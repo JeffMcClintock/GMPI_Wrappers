@@ -76,6 +76,17 @@ public:
     static constexpr float kHeight = 26.0f;
 
     void setMenus(std::vector<Menu> menus) { menus_ = std::move(menus); }
+
+    // Read the model back, for a caller that wants to INVOKE an item by name
+    // rather than by clicking it. Const, so nothing can reach in and rebind an
+    // action -- the app that built the menus stays the only thing that can
+    // change them.
+    //
+    // TIDE BACKLOG E44: a pointer click on this bar opens a native menu whose
+    // nested modal loop runs inside the caller's job, so a test run that clicks
+    // here wedges and must be kill -9'd. Naming the action instead never goes
+    // near that loop.
+    const std::vector<Menu>& menus() const { return menus_; }
     void setFont(gmpi::drawing::api::ITextFormat* f) { font_ = f; }
 
     // --- IGraphicsRedrawClient ---
