@@ -66,6 +66,20 @@ SettingsPane::~SettingsPane()
 
 void SettingsPane::reload()
 {
+	// E66 -- release the visuals BEFORE touching the states they point at.
+	// The MIDI tick boxes bind StateRef<bool> into midiInputs_, and the
+	// rebuild below destroys those States (midiInputs_.clear()). The old
+	// widget tree is only torn down at the NEXT renderVisuals -- so without
+	// this, every surviving ToggleSwitch held a dangling pointer and its
+	// destructor walked a freed subscriber list two frames later. Reproduced
+	// 2/2 (close the pane, re-open it); the pane's own DESTRUCTOR already
+	// documents and follows exactly this order, and reload() is the same
+	// teardown happening mid-life. gmpi_forms::State now also asserts on
+	// death if anything still watches it, which is what makes a future
+	// regression here loud instead of a heap corruption.
+	clear();
+	formIsDirty_ = true; // the page is blank until Body() rebuilds at the next render
+
     auto* audio = host_.audioDriver();
     auto* midi  = host_.midiDriver();
 
