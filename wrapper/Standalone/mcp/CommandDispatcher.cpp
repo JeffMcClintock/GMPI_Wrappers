@@ -985,12 +985,22 @@ std::string cmdScroll(AppContext& context, const std::vector<std::string>& args)
     int delta = 0;
     bool haveDelta = false;
     bool horiz = false;
+    bool ctrl = false;
 
     for (size_t i = 2; i < args.size(); ++i)
     {
         if (args[i] == "--horiz")
         {
             horiz = true;
+        }
+        else if (args[i] == "--ctrl")
+        {
+            // Wheel with the control key: the zoom-about-cursor gesture.
+            // Same shape as --double and --right on the pointer verbs, and
+            // for the same reason -- without it the gesture cannot be driven
+            // from a test at all, and E67's anchor drift needed a HUMAN to
+            // observe until this flag existed.
+            ctrl = true;
         }
         else if (args[i] == "--notches" && i + 1 < args.size())
         {
@@ -1021,6 +1031,8 @@ std::string cmdScroll(AppContext& context, const std::vector<std::string>& args)
     int32_t flags = kHoverFlags;
     if (horiz)
         flags |= static_cast<int32_t>(gmpi::api::PointerFlags::ScrollHoriz);
+    if (ctrl)
+        flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
 
     client->onMouseWheel({ x, y }, flags, delta);
 
