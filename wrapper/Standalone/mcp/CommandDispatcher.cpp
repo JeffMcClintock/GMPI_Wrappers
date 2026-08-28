@@ -719,6 +719,208 @@ std::string cmdMenu(AppContext& context, const std::vector<std::string>& args)
 /// An empty list is ok:true with count 0. Nothing having gone wrong is a result,
 /// not an error -- and so is a build whose plugin installed no drain at all,
 /// which is why this cannot distinguish the two and does not pretend to.
+/// TIDE BACKLOG E38 -- observe and drive the EDITOR's context menu, headlessly.
+///
+///   --context-menu <x,y>            list what a right-click there would offer
+///   --context-menu <x,y> <label>    invoke that item, as if the user picked it
+///
+/// THE READOUT IS THE MENU MODEL, NOT PIXELS, and that is the whole design.
+/// E38's first attempt added a --right pointer flag and measured it doing
+/// nothing: the menu is raised by the FRAME (DrawingFrameCommon::doContextMenu
+/// -- and on macOS by the Cocoa view's right-mouse handler), which the channel
+/// never touches; and the Accept's instrument, --screenshot, could never have
+/// shown it anyway, because cmdScreenshot reads the app's own render buffer
+/// and a native popup is a separate window. So this verb does what the frame
+/// does -- inputClient->populateContextMenu(point, sink) -- but hands it a
+/// RECORDING sink instead of a native menu. Same population path, same
+/// per-object routing (AppLayout forwards to the child under the point, the
+/// editor to the module under the point), no window, no modal tracking loop.
+///
+/// Invocation is exactly what the native menu does on a pick: the item's
+/// callback is queried for IPopupMenuCallback and told
+/// onComplete(Ok, id). Nothing is simulated further up.
+///
+/// DELIBERATELY NOT MERGED WITH --menu: that verb reads MenuBarView, the
+/// standalone's own menu bar. This one reaches the plugin's editor. Two
+/// surfaces, two owners (see E44 vs E38, and C15/C16 for what happens when
+/// two ids get one job).
+///
+/// Matching is --menu's: case-insensitive, trailing "..." ignored, and '&'
+/// (the MFC accelerator marker, part of the stored string) stripped. Ambiguity
+/// is an error naming the candidates, never a guess. Separators and the
+/// begin/end markers of submenus are listed (a caller reproducing V7's
+/// filtering questions needs to see structure) but cannot be invoked.
+///
+/// THE MENU IS BUILT FOR THE CURRENT SELECTION, NOT THE PROBE POINT -- measured
+/// 2026-08-28 on TIDE: --context-menu over a module returns the background menu
+/// until the module has been SELECTED (--pointer-down/up first), after which
+/// "Show Circuit" appears and "Goto Rack" grays. That mirrors the GUI, where a
+/// right-click selects before it opens, so a caller must do the same two steps
+/// a hand does. Said here because the first reading of "same menu at both
+/// points" is that the routing is broken, and it is not.
+namespace {
+struct RecordedContextItem
+{
+    std::string text;
+    int32_t id{};
+    int32_t flags{};
+    gmpi::shared_ptr<gmpi::api::IUnknown> callback;
+};
+
+/// The recording sink. Implements IPopupMenu because that is the type the
+/// population path is handed (IPopupMenu IS an IContextItemSink plus
+/// setAlignment/showAsync); both extra methods are no-ops -- recording is the
+/// point, showing is exactly what this verb exists to avoid.
+struct ContextMenuRecorder : public gmpi::api::IPopupMenu
+{
+    std::vector<RecordedContextItem> items;
+
+    gmpi::ReturnCode addItem(const char* text, int32_t id, int32_t flags,
+                             gmpi::api::IUnknown* callback) override
+    {
+        RecordedContextItem it;
+        it.text = text ? text : "";
+        it.id = id;
+        it.flags = flags;
+        // shared_ptr's raw-pointer assignment addRefs (GmpiSdkCommon assign()),
+        // so no manual addRef here -- one would leak the callback.
+        it.callback = callback;
+        items.push_back(std::move(it));
+        return gmpi::ReturnCode::Ok;
+    }
+
+    gmpi::ReturnCode setAlignment(int32_t) override { return gmpi::ReturnCode::Ok; }
+    gmpi::ReturnCode showAsync() override { return gmpi::ReturnCode::Ok; }
+
+    gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
+    {
+        *returnInterface = {};
+        if (*iid == gmpi::api::IPopupMenu::guid || *iid == gmpi::api::IContextItemSink::guid
+            || *iid == gmpi::api::IUnknown::guid)
+        {
+            *returnInterface = static_cast<gmpi::api::IPopupMenu*>(this);
+            addRef();
+            return gmpi::ReturnCode::Ok;
+        }
+        return gmpi::ReturnCode::NoSupport;
+    }
+    GMPI_REFCOUNT_NO_DELETE; // stack object; the population call does not outlive it
+};
+} // namespace
+
+std::string cmdContextMenu(AppContext& context, const std::vector<std::string>& args)
+{
+    if (args.size() < 2)
+        return errorLine("context-menu", "usage: --context-menu <x,y> [item label]");
+
+    float x = 0.0f, y = 0.0f;
+    if (!parsePoint(args[1], x, y))
+        return errorLine("context-menu", "'" + args[1] + "' is not an x,y coordinate");
+
+    if (!context.inputClient)
+        return errorLine("context-menu", "this build has no input path");
+    auto* client = context.inputClient();
+    if (!client)
+        return errorLine("context-menu", "no window is attached");
+
+    ContextMenuRecorder recorder;
+    const gmpi::drawing::Point point{ x, y };
+    const auto r = client->populateContextMenu(point, static_cast<gmpi::api::IPopupMenu*>(&recorder));
+    if (r != gmpi::ReturnCode::Ok && r != gmpi::ReturnCode::Handled && recorder.items.empty())
+        return errorLine("context-menu", "nothing populates a menu at that point");
+
+    // --- list ---------------------------------------------------------------
+    if (args.size() == 2)
+    {
+        std::string arr = "[";
+        bool first = true;
+        for (const auto& it : recorder.items)
+        {
+            if (!first) arr += ',';
+            first = false;
+            const bool sep   = 0 != (it.flags & 8);   // PopupMenuFlags::Separator
+            const bool begin = 0 != (it.flags & 16);  // SubMenuBegin
+            const bool end   = 0 != (it.flags & 32);  // SubMenuEnd
+            const bool gray  = 0 != (it.flags & 1);   // Grayed
+            const bool tick  = 0 != (it.flags & 4);   // Ticked
+            arr += JsonObject().str("label", it.text)
+                .num("id", static_cast<double>(it.id))
+                .boolean("separator", sep)
+                .boolean("subMenuBegin", begin)
+                .boolean("subMenuEnd", end)
+                .boolean("grayed", gray)
+                .boolean("ticked", tick)
+                .done();
+        }
+        arr += ']';
+        return JsonObject().str("cmd", "context-menu").boolean("ok", true)
+            .num("count", static_cast<double>(recorder.items.size()))
+            .raw("items", arr).done();
+    }
+
+    // --- invoke -------------------------------------------------------------
+    std::string wanted;
+    for (size_t i = 2; i < args.size(); ++i)
+    {
+        if (i > 2) wanted += ' ';
+        wanted += args[i];
+    }
+    auto norm = [](std::string_view v)
+    {
+        std::string out;
+        for (const char c : v)
+            out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        while (out.size() >= 3 && out.compare(out.size() - 3, 3, "...") == 0)
+            out.erase(out.size() - 3);
+        while (!out.empty() && out.back() == ' ')
+            out.pop_back();
+        // The MFC accelerator marker is part of the stored string ("&Arrange");
+        // a caller should not have to know which letter carries it.
+        std::string noAmp;
+        for (const char c : out)
+            if (c != '&') noAmp += c;
+        return noAmp;
+    };
+    const auto target = norm(wanted);
+
+    RecordedContextItem* found{};
+    std::string candidates;
+    for (auto& it : recorder.items)
+    {
+        if (0 != (it.flags & (8 | 16 | 32)))  // separators and submenu markers are structure, not choices
+            continue;
+        if (norm(it.text) != target)
+            continue;
+        if (found)
+            return errorLine("context-menu", "'" + wanted + "' is ambiguous here" + candidates);
+        found = &it;
+        candidates += " (first match id " + std::to_string(it.id) + ")";
+    }
+    if (!found)
+    {
+        std::string have;
+        for (const auto& it : recorder.items)
+            if (0 == (it.flags & (8 | 16 | 32)) && !it.text.empty())
+                have += (have.empty() ? "" : ", ") + it.text;
+        return errorLine("context-menu", "no item '" + wanted + "' at that point; menu offers: " + have);
+    }
+    if (0 != (found->flags & 1))
+        return errorLine("context-menu", "'" + found->text + "' is grayed (disabled) here");
+    if (!found->callback.get())
+        return errorLine("context-menu", "'" + found->text + "' has no callback to invoke");
+
+    gmpi::shared_ptr<gmpi::api::IPopupMenuCallback> cb;
+    found->callback->queryInterface(&gmpi::api::IPopupMenuCallback::guid, cb.put_void());
+    if (!cb)
+        return errorLine("context-menu", "'" + found->text + "' has a callback of an unknown kind");
+
+    cb->onComplete(gmpi::ReturnCode::Ok, found->id);
+
+    return JsonObject().str("cmd", "context-menu").boolean("ok", true)
+        .str("invoked", found->text)
+        .num("id", static_cast<double>(found->id)).done();
+}
+
 std::string cmdDialogs(AppContext& context)
 {
     (void)context; // the drain is process-wide; see StandaloneApp.h
@@ -1498,6 +1700,7 @@ std::string dispatchCommand(AppContext& context, const std::string& line)
     if (verb == "--type")          return cmdType(context, args);
     if (verb == "--dialogs")       return cmdDialogs(context);
     if (verb == "--menu")          return cmdMenu(context, args);
+    if (verb == "--context-menu")  return cmdContextMenu(context, args);
 
     if (verb == "--note-on")       return cmdNoteOn(context, args);
     if (verb == "--note-off")      return cmdNoteOff(context, args);
