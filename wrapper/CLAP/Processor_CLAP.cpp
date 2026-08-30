@@ -876,6 +876,43 @@ bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
     // read leaves the plugin in its default state and reports failure.
     try
     {
+        // TIDE BACKLOG E69 -- FEED THE CONTROLLER'S STORE TOO, and do it first.
+        //
+        // This wrapper used to write only the processor's store, which was
+        // self-consistent while stateSave echoed that same store. #36 moved the
+        // save to the CONTROLLER's store (correctly - it is the one a save must
+        // read), and that turned a harmless asymmetry into total data loss: load
+        // wrote one store, save read the other, and the other was never written.
+        //
+        // MEASURED with tests/e69_clap_state_probe.c (TideSynth), driving the
+        // CLAP C ABI with no host GUI: load an 18,893-byte four-cable rack, save
+        // immediately.
+        //
+        //   #35 (save echoes the processor)   18,933 bytes out, 4 cables
+        //   #36 (save reads the controller)      85 bytes out, 0 cables -
+        //                                     <Param id="1" val=""/>, empty
+        //   this commit                       18,9xx bytes out, 4 cables
+        //
+        // No async hop explains the 85: setPresetXmlFromDaw is simply never
+        // called on this path, so nothing can arrive later. TIDE's controller
+        // then declines to publish (E59's refusal, which is correct - it has
+        // nothing to say) and the save writes an empty document.
+        //
+        // The two calls are the standalone's restoreState verbatim
+        // (StandaloneHost.cpp) and the VST3 controller's setComponentState
+        // (Controller_VST3.cpp): the store, then the plug-in's own
+        // <Controller/>, which is not one of the editors and would otherwise
+        // never hear that its state had been restored. For a plug-in whose
+        // state IS a parameter - TIDE builds its whole application object in
+        // its controller - that second call is the entire restore.
+        //
+        // Order matters and matches both references: controller store first,
+        // then the plug-in controller, then the DSP's copy. A failed parse
+        // leaves every store untouched, which is what setPresetXmlFromDaw's
+        // false return means.
+        controller.gmpiController.setPresetXmlFromDaw(dat);
+        controller.gmpiController.notifyControllerOfPreset(pluginController.get());
+
         plugin.setPresetUnsafe(dat);
     }
     catch (...)
