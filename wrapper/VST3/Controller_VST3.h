@@ -192,6 +192,26 @@ public:
 	}
 #endif
 
+	// TIDE BACKLOG E68 -- mint the plugin's state NOW, from the controller's
+	// live store, for the paired processor's getState to write. The
+	// controller is never stale (edits land in its patch manager the moment
+	// they happen), so a state minted here is complete -- knobs, patch
+	// cables, document -- regardless of what the async controller->processor
+	// hop has or has not delivered yet, and regardless of which side's
+	// getState the host happens to call first. Runs on the host's own
+	// calling thread; per the VST3 spec state calls arrive on the main
+	// thread, which is also where every editor operation already runs.
+	std::string mintFreshPresetXml()
+	{
+		// The plugin's <Controller/> refreshes lazily-maintained state (TIDE's
+		// document chunk) into the store first -- synchronous: syncState ->
+		// exportChunkXmlForSave -> host->setParameter -> the store, all in
+		// this process on this thread.
+		if (sePluginController)
+			sePluginController->syncState();
+
+		return gmpiController.getPresetXml();
+	}
 	bool onTimer() override;
 
 	gmpi::hosting::IWriteableQue* getQueueToDsp() // override
