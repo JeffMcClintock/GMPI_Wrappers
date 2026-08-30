@@ -135,6 +135,21 @@ tresult PLUGIN_API Controller_VST3::connect(IConnectionPoint* other)
 
 	isConnected = true;
 
+	// TIDE BACKLOG E68 -- hand the processor OUR pointer, once, so its
+	// getState can pull fresh state synchronously instead of serialising
+	// whatever the async message hop last delivered. A MESSAGE rather than a
+	// cast of `other`: hosts may interpose a connection proxy, and a proxy
+	// forwards messages faithfully while defeating any dynamic_cast. The
+	// pointer is only meaningful in-process -- which this wrapper already
+	// assumes (parameter 0 publishes the app object's address the same way).
+	if (auto* msg = allocateMessage(); msg)
+	{
+		msg->setMessageID("GmpiCtlPtr");
+		msg->getAttributes()->setInt("ptr", (Steinberg::int64)(intptr_t)this);
+		sendMessage(msg);
+		msg->release();
+	}
+
 #if 0
 
 	// Can only init controllers after both VST controller initialised AND controller is connected to processor.

@@ -1,4 +1,5 @@
 #include "Processor_VST3.h"
+#include "Controller_VST3.h"   // E68 - the paired-controller pull
 //#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
@@ -1107,6 +1108,27 @@ tresult Processor_VST3::setState (IBStream* state)
 // Seems to be called before audio starts to set GUI up correctly.
 tresult Processor_VST3::getState (IBStream* state)
 {
+	// TIDE BACKLOG E68 -- PULL the state from the controller, synchronously,
+	// when one is connected. The old shape serialised this processor's own
+	// store, which is only as fresh as the last async IMessage the audio
+	// thread had applied -- so a host that saved before the hop completed
+	// (or that reads the component's state before ever calling the
+	// controller's getState, which the spec allows) captured stale state.
+	// Measured (TIDE E68, Ableton Live 12): a patch whose last edits were
+	// its patch cables saved WITHOUT them -- modules present, wiring gone,
+	// silence on reload. The controller's store is never stale, so a state
+	// minted there at this instant is complete by construction: no hop, no
+	// ordering, nothing to race.
+	if (pairedController_)
+	{
+		const auto chunk = pairedController_->mintFreshPresetXml();
+		int32 chunkSize = (int32)chunk.size();
+		int32 bytesWritten{};
+		state->write(&chunkSize, sizeof(chunkSize), &bytesWritten);
+		state->write((void*)chunk.data(), chunkSize, &bytesWritten);
+		return kResultTrue;
+	}
+
 	const auto chunk = plugin.getPresetUnsafe();// active_);
 
 	int32 chunkSize = (int32) chunk.size();
@@ -1118,12 +1140,28 @@ tresult Processor_VST3::getState (IBStream* state)
 	return kResultTrue;
 }
 
+tresult PLUGIN_API Processor_VST3::disconnect(Steinberg::Vst::IConnectionPoint* other)
+{
+	// TIDE BACKLOG E68 -- the controller may be torn down after this; a pull
+	// through a freed pointer would be E66 again one layer up. getState falls
+	// back to the processor's own store from here on.
+	pairedController_ = {};
+	return AudioEffect::disconnect(other);
+}
 tresult PLUGIN_API Processor_VST3::notify( IMessage* message )
 {
 	// WARNING: CALLED FROM GUI THREAD (In Ableton Live).
 	if( !message )
 		return kInvalidArgument;
 
+	if (!strcmp(message->getMessageID(), "GmpiCtlPtr"))
+	{
+		// TIDE BACKLOG E68 -- the paired controller's address; see the member.
+		Steinberg::int64 ptr{};
+		if (message->getAttributes()->getInt("ptr", ptr) == kResultOk)
+			pairedController_ = reinterpret_cast<Controller_VST3*>((intptr_t)ptr);
+		return kResultOk;
+	}
 	if( !strcmp( message->getMessageID(), "BinaryMessage" ) )
 	{
 		const void* data;

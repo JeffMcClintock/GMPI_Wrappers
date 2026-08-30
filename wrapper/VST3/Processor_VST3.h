@@ -34,6 +34,16 @@ class Processor_VST3 : public Steinberg::Vst::AudioEffect //, public GmpiBaseCla
 {
 	gmpi::hosting::gmpi_processor plugin;
 
+	// TIDE BACKLOG E68 -- the same-process controller this instance is
+	// connected to, delivered once over the connection-point message channel
+	// ("GmpiCtlPtr") so a host-interposed connection proxy cannot hide it.
+	// getState PULLS fresh state from it synchronously; see there for why
+	// the push-based hop can never make saves race-free. Null when the
+	// controller is gone (disconnect) or was never connected (a headless
+	// validator), in which case getState falls back to the processor's own
+	// store exactly as before.
+	class Controller_VST3* pairedController_ = {};
+
 public:
 	Processor_VST3 (gmpi::hosting::pluginInfo& pinfo);
 	~Processor_VST3 ();
@@ -49,6 +59,7 @@ public:
 	Steinberg::tresult PLUGIN_API getState (Steinberg::IBStream* state) override;
 
 	Steinberg::tresult PLUGIN_API notify(Steinberg::Vst::IMessage* message) override;
+	Steinberg::tresult PLUGIN_API disconnect(Steinberg::Vst::IConnectionPoint* other) override;
 
 //	static FUnknown* createInstance (void*) { return (IAudioProcessor*)new SeProcessor (); }
 
