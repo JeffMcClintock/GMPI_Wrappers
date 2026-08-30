@@ -512,6 +512,15 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 	if (!state)
 		state = [NSMutableDictionary dictionary];
 
+	// TIDE BACKLOG E68 -- the store is the right one (the controller's) but
+	// lazily-maintained state (TIDE's document chunk) is only as fresh as the
+	// last structural push without this: syncState() is what embeds current
+	// values -- knobs, patch cables -- into the document at the moment of
+	// saving. The VST3 wrapper and the standalone both already do this; this
+	// call was the one missing line in the AU3 save.
+	if (core->pluginController)
+		core->pluginController->syncState();
+
 	const auto chunk = core->gmpiController.getPreset();
 	if (NSString* s = [NSString stringWithUTF8String:chunk.c_str()]; s)
 		state[@"GMPIPRESET"] = s;
