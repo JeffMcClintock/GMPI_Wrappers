@@ -808,7 +808,25 @@ void Processor_CLAP::paramsFlush(const clap_input_events *in, const clap_output_
 
 bool Processor_CLAP::stateSave(const clap_ostream *stream) noexcept
 {
-    const auto st = plugin.getPresetUnsafe();// active_);
+    // TIDE BACKLOG E68 -- serialise the CONTROLLER's store, freshly synced,
+    // never an echo of the processor's. The processor's store is only as
+    // fresh as the last message the audio thread applied, and lazily-
+    // maintained controller state (TIDE's document chunk) is not in it at
+    // all until syncState() mints it. Same discipline as the VST3 wrapper's
+    // paired-controller pull and the standalone's save -- and simpler here,
+    // because this one object owns both halves: no handshake, just members.
+    // Fallback to the processor's store only when no <Controller/> was
+    // instantiated, where nothing can have edited anything.
+    std::string st;
+    if (pluginController)
+    {
+        pluginController->syncState();
+        st = controller.gmpiController.getPresetXml();
+    }
+    else
+    {
+        st = plugin.getPresetUnsafe();
+    }
 
     auto c = st.c_str();
     auto s = st.length() + 1; // write the null terminator
