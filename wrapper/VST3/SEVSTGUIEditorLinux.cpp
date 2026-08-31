@@ -4,6 +4,7 @@
 #include <algorithm>
 
 #include "helpers/CpuTextEngine.h"
+#include "helpers/Timer.h"
 #include "helpers/DecodeImage.h"
 #include "helpers/FontProvider.h"
 
@@ -189,6 +190,25 @@ void PLUGIN_API SEVSTGUIEditorLinux::onFDIsSet(Linux::FileDescriptor /*fd*/)
 
 void PLUGIN_API SEVSTGUIEditorLinux::onTimer()
 {
+    // TIDE BACKLOG E74 -- and this is the ONLY place the process gets a
+    // UI-thread tick on Linux, which is why it is here rather than anywhere
+    // more obvious.
+    //
+    // gmpi::TimerManager has a native timer source on Windows (SetTimer) and
+    // macOS (CFRunLoopTimer) and NONE on Linux (gmpi_ui/helpers/Timer.cpp), so
+    // there it must be pumped. The standalone pumps it from its own loop; a
+    // plug-in has no loop of its own and nothing pumped it at all. So every
+    // gmpi::TimerClient in a hosted Linux plug-in never ran -- including
+    // Controller_VST3::onTimer, which is the ONE caller of
+    // message_que_dsp_to_ui.pollMessage(). The processor's whole DSP->GUI
+    // channel was therefore dead: measured in REAPER 7.43 on TIDE, 2,700
+    // parameter updates shipped by the processor and ZERO delivered to the
+    // editor, against one-for-one in the standalone control on the same build.
+    //
+    // The no-argument pump() measures its own elapsed time, so several open
+    // editors pumping the one process-wide manager cannot make it run fast.
+    gmpi::TimerManager::instance()->pump();
+
     // Two jobs. processEvents() because some hosts register our fd but poll it
     // lazily, and onTimer() to flush invalidations that came from automation
     // rather than from input.
