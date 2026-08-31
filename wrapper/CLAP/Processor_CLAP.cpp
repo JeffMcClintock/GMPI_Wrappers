@@ -844,31 +844,43 @@ bool Processor_CLAP::stateSave(const clap_ostream *stream) noexcept
 
 bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
 {
-    static constexpr uint32_t maxSize = 4096 * 8, chunkSize = 256;
-    char buffer[maxSize];
-    char *bp = &(buffer[0]);
+    // GROW A std::string RATHER THAN FILL A FIXED STACK BUFFER. TIDE BACKLOG
+    // E60. This used to read into `char buffer[4096 * 8]` and `return false` as
+    // soon as the total passed 32,511 bytes, with a comment reasoning about a
+    // "700 byte string" -- true of the demo synth this wrapper was grown from,
+    // and false of any plug-in whose state is a document.
+    //
+    // A TIDE rack is a serialised patch, so it passes 32 KB as soon as the user
+    // builds anything: measured on linux 2026-08-28, the repo's own host
+    // fixtures are 18,893 / 29,117 / 32,025 bytes -- the last of those within
+    // 486 bytes of the old cliff -- and tests/fixtures/e53-vcv-rack-segv.xml is
+    // 51,690 and was refused outright. The VST3 wrapper's setState has never had
+    // a limit; it reads a length-prefixed chunk into a std::string, and this is
+    // now the same shape. A user's patch must not be silently discarded because
+    // it grew.
+    //
+    // The old bound also could not do the job it was written for: it protected
+    // the stack buffer, not the process, and there is nothing to protect once
+    // the buffer is gone. A host that streams unbounded garbage now costs
+    // memory instead of a lost patch, which is the better failure of the two.
+    std::string dat;
+    static constexpr size_t chunkSize = 4096;
+    char buffer[chunkSize];
     int64_t rd{0};
-    int64_t totalRd{0};
 
-    buffer[0] = 0;
-    while ((rd = stream->read(stream, bp, chunkSize)) > 0)
-    {
-        bp += rd;
-        totalRd += rd;
-        if (totalRd >= maxSize - chunkSize - 1)
-        {
- //           _DBGCOUT << "Invalid stream: Why did you send me so many bytes!" << std::endl;
-            // What the heck? You sdent me more than 32kb of data for a 700 byte string?
-            // That means my next chunk read will blow out memory so....
-            return false;
-        }
-    }
+    while ((rd = stream->read(stream, buffer, chunkSize)) > 0)
+        dat.append(buffer, static_cast<size_t>(rd));
 
-    // Make sure I'm null terminated in case you hand me total garbage
-    if (totalRd < maxSize)
-        buffer[totalRd] = 0;
+    if (rd < 0)
+        return false; // a stream error is a failed restore, not an empty one
 
-    auto dat = std::string(buffer);
+    // stateSave writes the terminating NUL, so a state we wrote ourselves ends
+    // with one. Drop it: setPresetUnsafe parses `dat` as XML, and a trailing NUL
+    // inside the string is not part of the document. Anything after the first
+    // NUL goes too, which is what the old `std::string(buffer)` did implicitly
+    // and is preserved here deliberately rather than by accident.
+    if (const auto nul = dat.find('\0'); nul != std::string::npos)
+        dat.resize(nul);
 
     // Fail safe, as in the VST3 wrapper's setState. Doubly so here: stateLoad
     // is noexcept, so an escaping exception does not even unwind - it calls
