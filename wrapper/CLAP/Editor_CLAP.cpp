@@ -21,6 +21,7 @@
 #include <clap/helpers/host-proxy.hxx>
 
 #include "helpers/CpuTextEngine.h"
+#include "helpers/Timer.h"
 #include "helpers/DecodeImage.h"
 #include "helpers/FontProvider.h"
 
@@ -1061,6 +1062,31 @@ void Processor_CLAP::onPosixFd(int /*fd*/, clap_posix_fd_flags_t /*flags*/) noex
 
 void Processor_CLAP::onTimer(clap_id /*timerId*/) noexcept
 {
+    // TIDE BACKLOG E78, the CLAP twin of E74 -- and this runs BEFORE the early
+    // return below on purpose; see the last paragraph.
+    //
+    // gmpi::TimerManager has a native timer source on Windows (SetTimer) and
+    // macOS (CFRunLoopTimer) and NONE on Linux (gmpi_ui/helpers/Timer.cpp), so
+    // there it must be pumped from a UI-thread loop. The standalone pumps it
+    // from its own loop; a plug-in has no loop of its own, and this timer is
+    // the only UI-thread tick the host gives us. So no gmpi::TimerClient in
+    // the process ever ran.
+    //
+    // Controller_CLAP is one, and it is the ONLY caller of BOTH directions of
+    // the parameter channel: message_que_dsp_to_ui.pollMessage() and
+    // pendingQueueClients.ServiceWaitersIncremental(&message_que_ui_to_dsp).
+    //
+    // Before the editor check, unlike the two drawingframe calls below: the
+    // timer client served here is the CONTROLLER's, and it has no relationship
+    // to whether a window happens to be open. The host only runs this timer
+    // while the GUI extension is active, so this does not resurrect a tick
+    // that would otherwise be absent -- it just refuses to tie the parameter
+    // channel to drawingframe state that does not govern it.
+    //
+    // The no-argument pump() measures its own elapsed time, so several open
+    // editors pumping the one process-wide manager cannot make it run fast.
+    gmpi::TimerManager::instance()->pump();
+
     if (!editor || !editor->drawingframe.isOpen())
         return;
 
