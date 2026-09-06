@@ -539,6 +539,22 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 	if (!core->gmpiController.setPresetXmlFromDaw([s UTF8String]))
 		return;
 
+	// TIDE BACKLOG E71 -- hand the restored parameters to the plug-in's own
+	// <Controller/>. It registers as an IParameterObserver, and neither call in
+	// the loop below reaches one: notifyGui walks m_editors, and
+	// sendParameterToProcessorQueue walks to the DSP. So a plug-in whose state
+	// IS a parameter -- TIDE builds its whole application object in its
+	// controller -- had no way to learn its state had been restored, and
+	// started blank however good the preset was.
+	//
+	// The other three wrappers all do this and AU3 was the only one that did
+	// not: Controller_VST3.cpp:526, StandaloneHost.cpp:318 and :383, and
+	// Processor_CLAP.cpp:926. Order matches all three -- the controller's store
+	// first, then the plug-in's controller, then the DSP's and the GUI's copies
+	// below. Null is fine: a plug-in that declares no <Controller/> leaves the
+	// holder's loop empty.
+	core->gmpiController.notifyControllerOfPreset(core->pluginController.get());
+
 	// Deliver the restored values everywhere they matter:
 	//  * the processor, through its queue - drained at the top of the next
 	//    render, or held until the first one if we're not yet initialised;
