@@ -932,6 +932,65 @@ bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
         return false;
     }
 
+    // TIDE BACKLOG E79 -- DELIVER A RESTORE THAT ARRIVES AFTER activate().
+    //
+    // Everything above writes STORES and nothing above reaches a processor that
+    // is already running. `setPresetXmlFromDaw` writes the controller's store,
+    // `setPresetUnsafe` writes the processor's (gmpi_processor::patchManager).
+    // The document reaches a LIVE DSP graph by exactly one route:
+    //
+    //     activate() -> plugin.start_processor() -> "initialise pins", which
+    //     seeds every input pin from the parameter store, blobs included
+    //     ("Seed the pin with the parameter's CURRENT bytes, not a default",
+    //     GMPI Hosting/processor_holder.cpp).
+    //
+    // So a load that happens BEFORE activate works, and a load that happens
+    // AFTER activate is dropped on the floor. The CLAP spec permits the latter:
+    // `clap_plugin_state.load` is [main-thread] and carries no ordering
+    // requirement relative to activate, and restoring a preset onto a running
+    // plug-in is simply what a preset change IS.
+    //
+    // MEASURED with tests/e79_clap_headless_probe.c (TideSynth), a bare CLAP
+    // host with no DAW, no window and no editor ever created, restoring the
+    // repo's own 18,893-byte v1-rack fixture:
+    //
+    //   load then activate   `instance #1 building rack from 14136 byte
+    //                        document`, peak -6.3 dBFS
+    //   activate then load   `controller #1 restore of a 14136 byte document ->
+    //                        imported`, then NO `building rack` line at all and
+    //                        `TIDE: unprepared - writing silence`, -inf dBFS
+    //
+    // That second line pair is E79's REAPER 7.43 symptom verbatim, and a user
+    // meets it by loading a project and pressing play without opening the
+    // plug-in window.
+    //
+    // WHAT THIS IS NOT, because the row said otherwise and it cost a wrong fix
+    // first. E79 blamed the Linux host timer -- registered in `guiSetParent`,
+    // so absent with no editor -- on the reasoning that
+    // `Controller_CLAP::onTimer` carries the document. It does not, on any
+    // platform: `notifyDaw` is what enqueues a parameter for the processor, and
+    // `gmpi_controller_holder::setPresetXmlFromDaw` never calls it. There is
+    // nothing in that queue after a restore to carry. A timer whose lifetime is
+    // the plug-in's rather than the editor's -- the fix the row proposed -- would
+    // have changed nothing here.
+    //
+    // Nor is it Linux-specific. Every line above is `#ifdef`-free and shared by
+    // all three platforms; Linux was only where it was met first.
+    //
+    // THE FIX IS CLAP'S OWN MECHANISM FOR EXACTLY THIS. `request_restart` asks
+    // the host to deactivate and reactivate us, and that reactivation re-runs
+    // `start_processor` against the store we have just written -- the same
+    // route, and the only route, that already works. The host performs it with
+    // no `process()` call in flight, which is what makes this safe where
+    // re-seeding the pins from this thread would be a data race against the
+    // audio thread.
+    //
+    // Guarded on isActive(): in the load-then-activate order the seeding is
+    // still to come and a restart would be a pointless deactivate/reactivate
+    // cycle on every project load.
+    if (isActive())
+        _host.requestRestart();
+
 #if 0 // TODO
 //    _DBGCOUT << dat << std::endl;
 
