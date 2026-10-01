@@ -297,6 +297,26 @@ bool Processor_CLAP::guiSetParent(const clap_window* window) noexcept
     return true;
 }
 
+/*
+ * guiShow / guiHide. Without these the clap::helpers defaults answer false, so
+ * the host is told the editor failed to show even though it is open and
+ * drawing (TIDE BACKLOG E85, measured by a bare host).
+ *
+ * guiIsApiSupported() refuses floating windows, so the editor is always
+ * embedded in a window the host owns, and showing or hiding it is the host's
+ * job (it shows or hides its own parent). Report success whenever an editor
+ * exists, as the CLAP spec expects of an embedded GUI.
+ */
+bool Processor_CLAP::guiShow() noexcept
+{
+    return editor != nullptr;
+}
+
+bool Processor_CLAP::guiHide() noexcept
+{
+    return editor != nullptr;
+}
+
 #ifdef _WIN32
 LRESULT CALLBACK Editor_CLAPWindowProc(
     HWND hwnd,
