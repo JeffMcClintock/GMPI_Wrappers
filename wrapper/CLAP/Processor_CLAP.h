@@ -240,6 +240,8 @@ protected:
     bool guiCreate(const char* api, bool isFloating) noexcept override;
     void guiDestroy() noexcept override;
     bool guiSetParent(const clap_window* window) noexcept override;
+    bool guiShow() noexcept override;
+    bool guiHide() noexcept override;
 
     bool guiSetScale(double scale) noexcept override;
     bool guiCanResize() const noexcept override { return true; }
