@@ -621,7 +621,7 @@ std::string cmdMenu(AppContext& context, const std::vector<std::string>& args)
     }
 
     // Everything after the verb, space-joined: an item label has spaces in it and
-    // a caller should not have to quote "Revert to Plugin Defaults".
+    // a caller should not have to quote "New Project".
     std::string wanted;
     for (size_t i = 1; i < args.size(); ++i)
     {

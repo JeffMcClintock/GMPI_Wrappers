@@ -262,7 +262,7 @@ public:
     bool acceptsParameterText(int id, const char* text) const;
 
     // Put every stateful parameter back to the default the plugin's own spec
-    // declares - what File > Revert to Plugin Defaults does.
+    // declares - what File > New Project does.
     //
     // Safe WHILE AUDIO RUNS, unlike restoreState, and that is the whole reason
     // it is a separate call rather than restoreState("<Preset/>"): the DSP is

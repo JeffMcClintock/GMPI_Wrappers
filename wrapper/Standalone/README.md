@@ -280,7 +280,7 @@ the staging protocols the backend binds.
   `standalonePluginVersion` attribute is author-declared and optional, so a
   match would prove nothing about the parameters and a mismatch is usually a
   routine release.
-- **File > Revert to Plugin Defaults** puts every stateful parameter back to
+- **File > New Project** puts every stateful parameter back to
   what the plugin's own spec declares, and keeps the outgoing patch as
   `session.previous.xml` first. It is the only way back out of a session that is
   always restored.

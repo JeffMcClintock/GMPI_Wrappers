@@ -119,7 +119,7 @@ public:
     void saveNow(PlatformShell& shell);
 
     // Save the current patch and then move it aside, so that whatever replaces
-    // it is not the only thing left. What File > Revert to Plugin Defaults
+    // it is not the only thing left. What File > New Project
     // calls before it reverts: revert is the one action here that deliberately
     // throws a sound away, and it is the one that most needs an undo.
     //

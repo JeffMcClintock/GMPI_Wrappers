@@ -284,7 +284,7 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
     if (host.editorDrawingClient())
         settingsPane->setOnClose([&] { layout->showPage(pageEditor); });
 
-    // What File > Revert to Plugin Defaults has asked for, applied by the tick.
+    // What File > New Project has asked for, applied by the tick.
     // Declared before the menus so the item can capture it, and beside them
     // rather than inside SessionState because it is a request the USER made, not
     // a fact about the file.
@@ -308,7 +308,7 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
                 // own completion, with the editor's event handling underneath
                 // it, and pushing a parameter into the editor from there means
                 // reentering a view that is still handling a click.
-                "Revert to Plugin Defaults",
+                "New Project",
                 [&] { revertPending = true; },
                 // Greyed out for a plugin with no patch, rather than offered and
                 // silently doing nothing.
