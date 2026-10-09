@@ -50,6 +50,9 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
     gmpi::hosting::pluginInfo& info;
     gmpi::midi::MidiConverter2 midiConverter;
 
+    // Main thread only - the ui->dsp queue is single-producer.
+    void sendParameterToProcessorQueue(gmpi::hosting::GmpiParameter* param);
+
     static constexpr int max_voices = 64;
     Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& info, const clap_host* host);
     ~Processor_CLAP();

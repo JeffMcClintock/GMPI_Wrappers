@@ -1550,10 +1550,11 @@ std::string cmdRenderAudio(AppContext& context, const std::vector<std::string>& 
     //
     // start_processor has already queued a GraphStart plus a PinSet for EVERY
     // input pin carrying the plugin's DEFAULT value - all stamped timeDelta 0.
-    // EventQue::push inserts with lower_bound, so among equal timestamps the
-    // most recently pushed lands FIRST. Priming straight after
+    // EventQue::push used to insert with lower_bound, so among equal timestamps
+    // the most recently pushed landed FIRST. Priming straight after
     // start_processor therefore put our values ahead of those defaults, and
-    // the defaults overwrote every one of them.
+    // the defaults overwrote every one of them. (It now keeps push order and a
+    // later PinSet replaces the default, but the sequencing below still holds.)
     //
     // The symptom was a render that ignored the parameters completely while
     // looking perfectly healthy: correct duration, plausible level, a note

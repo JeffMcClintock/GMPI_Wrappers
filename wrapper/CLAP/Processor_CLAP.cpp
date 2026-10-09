@@ -70,6 +70,12 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
 
     controller.gmpiController.init(pinfo);
 
+    // Blobs the controller sets can't ride CLAP's parameter path; frame them straight into the ui->dsp queue, as AU3 does.
+    controller.gmpiController.sendNonNativeParameterToProcessor = [this](gmpi::hosting::GmpiParameter* param)
+        {
+            sendParameterToProcessorQueue(param);
+        };
+
     // CREATE AND INITIALISE THE PLUG-IN'S OWN CONTROLLER. TIDE BACKLOG S43(ii),
     // and it is M4's defect on a third wrapper -- this wrapper never created one
     // at all (`PluginSubtype::Controller` appeared nowhere in wrapper/CLAP).
@@ -806,6 +812,24 @@ void Processor_CLAP::paramsFlush(const clap_input_events *in, const clap_output_
     // output, so we are done.
 }
 
+void Processor_CLAP::sendParameterToProcessorQueue(gmpi::hosting::GmpiParameter* param)
+{
+    auto& que = controller.message_que_ui_to_dsp;
+    const auto messageLength = param->queryQueMessageLength(0);
+
+    // No room while process() isn't draining: the waiting list throttles, and sends the latest value when it does.
+    constexpr int headerAndSlack = 1024;
+    if (messageLength + headerAndSlack > que.freeSpace())
+    {
+        controller.pendingQueueClients.AddWaiter(param);
+        return;
+    }
+
+    gmpi::hosting::my_msg_que_output_stream strm(&que); // getQueMessage writes the whole frame
+    param->getQueMessage(strm, messageLength);
+    strm.Send();
+}
+
 bool Processor_CLAP::stateSave(const clap_ostream *stream) noexcept
 {
     // TIDE BACKLOG E68 -- serialise the CONTROLLER's store, freshly synced,
@@ -925,11 +949,22 @@ bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
         controller.gmpiController.setPresetXmlFromDaw(dat);
         controller.gmpiController.notifyControllerOfPreset(pluginController.get());
 
-        plugin.setPresetUnsafe(dat);
+        // Only while inactive: no process() can be touching the processor's store then.
+        if (!isActive())
+            plugin.setPresetUnsafe(dat);
     }
     catch (...)
     {
         return false;
+    }
+
+    // Also queue the restore, behind anything already queued, so an older queued blob can't override it (as AU3 does).
+    for (auto& [handle, param] : controller.gmpiController.patchManager.parameters)
+    {
+        if (gmpi::hosting::HostControls::None != param.info->hostConnect || !param.info->is_stateful)
+            continue;
+
+        sendParameterToProcessorQueue(&param);
     }
 
     // TIDE BACKLOG E79 -- DELIVER A RESTORE THAT ARRIVES AFTER activate().
@@ -979,11 +1014,15 @@ bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
     //
     // THE FIX IS CLAP'S OWN MECHANISM FOR EXACTLY THIS. `request_restart` asks
     // the host to deactivate and reactivate us, and that reactivation re-runs
-    // `start_processor` against the store we have just written -- the same
-    // route, and the only route, that already works. The host performs it with
-    // no `process()` call in flight, which is what makes this safe where
-    // re-seeding the pins from this thread would be a data race against the
-    // audio thread.
+    // `start_processor` -- the same route, and the only route, that already
+    // works. The host performs it with no `process()` call in flight, which is
+    // what makes this safe where re-seeding the pins from this thread would be
+    // a data race against the audio thread.
+    //
+    // While active the restore reaches the processor's store only through the
+    // queue above, so a restart that beats the next process() seeds the old
+    // values and the queued restore replaces them in its first block. The
+    // restart is still needed: a prepared TIDE rack ignores a Sync chunk.
     //
     // Guarded on isActive(): in the load-then-activate order the seeding is
     // still to come and a restart would be a pointless deactivate/reactivate
