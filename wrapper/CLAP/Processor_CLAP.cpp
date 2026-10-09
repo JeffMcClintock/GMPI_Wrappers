@@ -818,9 +818,13 @@ void Processor_CLAP::sendParameterToProcessorQueue(gmpi::hosting::GmpiParameter*
     const auto messageLength = param->queryQueMessageLength(0);
 
     // No room while process() isn't draining: the waiting list throttles, and sends the latest value when it does.
+    // Once one is waiting, later ones wait behind it, so none overtakes it.
+    std::erase_if(waitingForRoom, [](const gmpi::hosting::GmpiParameter* p) { return !(p->inQue_ && p->dirty_); });
     constexpr int headerAndSlack = 1024;
-    if (messageLength + headerAndSlack > que.freeSpace())
+    if (!waitingForRoom.empty() || messageLength + headerAndSlack > que.freeSpace())
     {
+        if (std::find(waitingForRoom.begin(), waitingForRoom.end(), param) == waitingForRoom.end())
+            waitingForRoom.push_back(param);
         controller.pendingQueueClients.AddWaiter(param);
         return;
     }
@@ -1022,7 +1026,8 @@ bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
     // While active the restore reaches the processor's store only through the
     // queue above, so a restart that beats the next process() seeds the old
     // values and the queued restore replaces them in its first block. The
-    // restart is still needed: a prepared TIDE rack ignores a Sync chunk.
+    // restart is still needed for a processor that reads its state only when
+    // it starts.
     //
     // Guarded on isActive(): in the load-then-activate order the seeding is
     // still to come and a restart would be a pointless deactivate/reactivate

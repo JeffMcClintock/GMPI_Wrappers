@@ -103,6 +103,7 @@ class Controller_VST3 :
 	static const int numMidiControllers = 130; // usual 128 + Bender.
 	bool isInitialised;
 	bool isConnected;
+	std::vector<gmpi::hosting::GmpiParameter*> blobsSetBeforeConnect; // no peer yet: sent by connect()
 //	std::map<int, MpParameterVst3* > tagToParameter;	// DAW parameter Index to parameter
 //	std::vector<MpParameterVst3* > vst3Parameters;      // flat list.
 
@@ -123,6 +124,7 @@ public:
 
 	Steinberg::tresult PLUGIN_API initialize (FUnknown* context) override;
 	Steinberg::tresult PLUGIN_API connect(IConnectionPoint* other) override;
+	Steinberg::tresult PLUGIN_API disconnect(IConnectionPoint* other) override;
 	Steinberg::tresult PLUGIN_API notify(Steinberg::Vst::IMessage* message ) override;
 	virtual Steinberg::IPlugView* PLUGIN_API createView (Steinberg::FIDString name) override;
 

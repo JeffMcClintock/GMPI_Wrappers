@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "base/source/fstring.h"
 #include "base/source/updatehandler.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -105,6 +106,15 @@ Controller_VST3::Controller_VST3(gmpi::hosting::pluginInfo& pinfo) :
 	// across - Processor_VST3::notify pushes them into that queue verbatim.
 	gmpiController.sendNonNativeParameterToProcessor = [this](gmpi::hosting::GmpiParameter* param)
 		{
+			// initialize() runs before connect(), and a message with no peer is dropped. A stateful
+			// blob reaches the processor through its own setState, which a replay could overwrite.
+			if (!isConnected)
+			{
+				if (!param->info->is_stateful && std::find(blobsSetBeforeConnect.begin(), blobsSetBeforeConnect.end(), param) == blobsSetBeforeConnect.end())
+					blobsSetBeforeConnect.push_back(param);
+				return;
+			}
+
 			struct MemStream : gmpi::hosting::my_output_stream
 			{
 				std::vector<uint8_t> bytes;
@@ -150,6 +160,11 @@ tresult PLUGIN_API Controller_VST3::connect(IConnectionPoint* other)
 		msg->release();
 	}
 
+	// Their current values, in the order they were first set.
+	for (auto* param : blobsSetBeforeConnect)
+		gmpiController.sendNonNativeParameterToProcessor(param);
+	blobsSetBeforeConnect.clear();
+
 #if 0
 
 	// Can only init controllers after both VST controller initialised AND controller is connected to processor.
@@ -159,6 +174,13 @@ tresult PLUGIN_API Controller_VST3::connect(IConnectionPoint* other)
 #endif
 
 	return r;
+}
+
+// Blobs set while there is no peer wait for the next connect() again.
+tresult PLUGIN_API Controller_VST3::disconnect(IConnectionPoint* other)
+{
+	isConnected = false;
+	return EditController::disconnect(other);
 }
 
 tresult PLUGIN_API Controller_VST3::notify( IMessage* message )

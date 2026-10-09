@@ -85,6 +85,9 @@ It runs on its own processor instance primed with the current parameter values,
 so it neither disturbs nor is disturbed by whatever the app is playing, and it
 works even when no audio device is open. Being deterministic, it is a
 repeatable check rather than a recording of what you are hearing right now.
+String and blob parameters are not primed (the result counts them as
+`parametersUnprimed`), so a plugin whose patch is a blob renders from its
+defaults.
 
 ## How it finds the app
 

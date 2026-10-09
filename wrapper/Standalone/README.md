@@ -357,7 +357,8 @@ lists.
   parameter values — faster than realtime, without disturbing what is playing,
   and even when no audio device would open. The result reports peak, rms and
   clipping, so "did it make the right sound" is answerable without opening the
-  WAV.
+  WAV. String and blob parameters are not primed; the result counts them as
+  `parametersUnprimed`.
 
 ### Implementation notes
 

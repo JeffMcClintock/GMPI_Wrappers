@@ -52,6 +52,7 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
 
     // Main thread only - the ui->dsp queue is single-producer.
     void sendParameterToProcessorQueue(gmpi::hosting::GmpiParameter* param);
+    std::vector<gmpi::hosting::GmpiParameter*> waitingForRoom; // sent later by the waiting list
 
     static constexpr int max_voices = 64;
     Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& info, const clap_host* host);
