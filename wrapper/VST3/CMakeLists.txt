@@ -36,6 +36,11 @@ ${GMPI_UI_SDK}/helpers/Timer.h
 ${GMPI_UI_SDK}/helpers/Timer.cpp
 )
 
+# MpController (Controller_VST3's base, in SynthEditLib) uses DawPreset, defined here.
+if(se_sdk_hosting_folder AND EXISTS "${se_sdk_hosting_folder}/ProcessorStateManager.cpp")
+set(srcs ${srcs} ${se_sdk_hosting_folder}/ProcessorStateManager.h ${se_sdk_hosting_folder}/ProcessorStateManager.cpp)
+endif()
+
 IF(WIN32)
 set(srcs ${srcs}
 SEVSTGUIEditorWin.h
