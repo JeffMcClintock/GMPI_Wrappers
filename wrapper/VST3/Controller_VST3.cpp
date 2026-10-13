@@ -33,42 +33,24 @@ typedef gmpi::ReturnCode(*MP_DllEntry)(void**);
 namespace wrapper
 {
 
-#if 0
-void Safe Messagebox(
-	void* hWnd,
-	const wchar_t* lpText,
-	const wchar_t* lpCaption = L"",
-	int uType = 0
-)
-{
-	_RPTW1(0, L"%s\n", lpText);
-}
-
-MpParameterVst3::MpParameterVst3(Controller_VST3* controller, /*int strictIndex, */int ParameterTag, bool isInverted) :
-	MpParameter_native({}),//controller),
+MpParameterVst3::MpParameterVst3(Controller_VST3* controller, int ParameterTag, bool isInverted) :
+	MpParameter_native(controller),
 	vst3Controller(controller),
-	isInverted_(isInverted),
 	hostTag(ParameterTag)
 {
+	isInverted_ = isInverted;
 }
 
-void MpParameterVst3::updateProcessor(gmpi::Field fieldId, int32_t voice)
+void MpParameterVst3::updateProcessor(gmpi::FieldType fieldId, int32_t voice)
 {
 	switch (fieldId)
 	{
-		/* double up
-	case gmpi::Field::Grab:
-		controller_->ParamGrabbed(this, voice);
-		break;
-		*/
-
-	case gmpi::Field::Value:
-	case gmpi::Field::Normalized:
+	case gmpi::MP_FT_VALUE:
+	case gmpi::MP_FT_NORMALIZED:
 		vst3Controller->ParamToProcessorViaHost(this, voice);
 		break;
 	}
 }
-#endif
 
 
 Controller_VST3::Controller_VST3(gmpi::hosting::pluginInfo& pinfo) :
@@ -201,16 +183,32 @@ tresult PLUGIN_API Controller_VST3::notify( IMessage* message )
 		}
 	}
 
+	// SynthEdit engine feedback, on its own message id - see Processor_VST3.h's seMsgQues_
+	// comment for why this can't share "BinaryMessage" with gmpiController's own traffic.
+	// MpController::OnTimer() (called from our own onTimer() below) is what actually drains
+	// this into the panel's modules.
+	if (!strcmp(message->getMessageID(), "SeBinaryMessage"))
+	{
+		const void* data;
+		uint32 size;
+		if (message->getAttributes()->getBinary("MyData", data, size) == kResultOk)
+		{
+			message_que_dsp_to_ui.pushString(size, (unsigned char*)data);
+			message_que_dsp_to_ui.Send();
+			return kResultOk;
+		}
+	}
+
 	return EditController::notify( message );
 }
 
-bool Controller_VST3::sendMessageToProcessor(const void* data, int size)
+bool Controller_VST3::sendMessageToProcessor(const void* data, int size, const char* messageId)
 {
 	auto message = allocateMessage();
 	if (message)
 	{
 		FReleaser msgReleaser(message);
-		message->setMessageID("BinaryMessage");
+		message->setMessageID(messageId);
 
 		message->getAttributes()->setBinary("MyData", data, size);
 		sendMessage(message);
@@ -218,47 +216,37 @@ bool Controller_VST3::sendMessageToProcessor(const void* data, int size)
 
 	return true;
 }
-#if 0
-
 void Controller_VST3::ParamGrabbed(MpParameter_native* param)
 {
 	auto paramID = param->getNativeTag();
 
 	if (param->isGrabbed())
 	{
-//		_RPT0(0, "DAW GRAB\n");
 		beginEdit(paramID);
 	}
 	else
 	{
-//		_RPT0(0, "DAW UN-GRAB\n");
 		endEdit(paramID);
 	}
 }
-#endif
 
-#if 0
+// See MpParameterVst3's class comment: paramID here is not registered with
+// getParameterCount()/getParameterInfo(), so beginEdit/performEdit/endEdit are a safe
+// no-op from the host's perspective until that registration exists - unrecognised ids
+// are routinely ignored. Written now so updateProcessor() has something to call and
+// the shape matches gmpiController.notifyDaw's already-working equivalent exactly.
 void Controller_VST3::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice)
 {
 	const auto paramID = param->getNativeTag();
 
-	// Usually parameter will have sent beginEdit() already (if it has mouse-down connected properly, else fake it.
 	if (!param->isGrabbed())
 		beginEdit(paramID);
 
- //   _RPT2(0, "param[%d] %f => DAW\n", paramID, param->getNormalized());
-	performEdit(paramID, param->convertNormalized(param->getNormalized())); // Send the value to DSP.
+	performEdit(paramID, param->convertNormalized(param->getNormalized()));
 
 	if (!param->isGrabbed())
 		endEdit(paramID);
 }
-
-void Controller_VST3::ResetProcessor()
-{
-	// Currently called when polyphony etc changes, VST2 wrapper ignores this completely, at least in Live.
-//	componentHandler->restartComponent(kLatencyChanged); // or kIoChanged might be less overhead for DAW
-}
-#endif
 
 enum class ElatencyContraintType
 {
@@ -329,7 +317,7 @@ tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 //?			ModuleFactory()->RegisterExternalPluginsXmlOnce(nullptr);
 		}
 
-//		MpController::Initialize();
+		MpController::Initialize();
 
 		supportedChannels = 1; // TODO countPins(info, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) == 0 ? 0 : 16;
 
@@ -458,6 +446,10 @@ IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 
 	if (!info)
 		return {};
+
+	// See IGuiHost2.h's g_pendingEditorGuiHost comment: the only way to hand this
+	// (an IGuiHost2 via the MpController base) to the editor the next line constructs.
+	g_pendingEditorGuiHost = this;
 
 	auto pluginUnknown = gmpi::hosting::factory::getInstance().createInstance(info->id.c_str(), gmpi::api::PluginSubtype::Editor);
 
@@ -823,11 +815,16 @@ bool Controller_VST3::onTimer()
 */
 	if (!queueToDsp_.empty())
 	{
-		sendMessageToProcessor(queueToDsp_.data(), queueToDsp_.size());
+		// SynthEdit engine feedback's own id - see Processor_VST3.h's seMsgQues_ comment.
+		sendMessageToProcessor(queueToDsp_.data(), queueToDsp_.size(), "SeBinaryMessage");
 		queueToDsp_.clear();
 	}
 
-	return true; // MpController::onTimer();
+	// Drains message_que_dsp_to_ui (fed by notify()'s "SeBinaryMessage" handler above) into
+	// the panel's modules, plus MpController's own startup/watchdog/preset-rescan bookkeeping -
+	// see VST3Controller::OnTimer (se_vst3/source/adelaycontroller.cpp) for the precedent this
+	// mirrors.
+	return MpController::OnTimer();
 }
 
 int32 Controller_VST3::getNoteExpressionCount(int32 busIndex, int16 channel)

@@ -223,6 +223,10 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 	}
     
     plugin.init(info);
+
+	seMsgQues_ = dynamic_cast<IProcessorMessageQues*>(plugin.processor.get());
+	if (seMsgQues_)
+		seDspToUiQueue_ = dynamic_cast<gmpi::hosting::lock_free_fifo*>(seMsgQues_->MessageQueToGui());
 }
 
 Processor_VST3::~Processor_VST3 ()
@@ -1066,6 +1070,14 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 		onQueDataAvailable();
 	}
 
+	// SynthEdit engine feedback (see seMsgQues_'s declaration comment). The engine itself
+	// already wrote any new bytes directly into this queue, via SeGmpiProcessor's connectPeer
+	// at construction - this just wakes the background thread that forwards them.
+	if (seDspToUiQueue_ && seDspToUiQueue_->readyBytes())
+	{
+		onQueDataAvailable();
+	}
+
 	return kResultTrue;
 }
 
@@ -1254,10 +1266,25 @@ tresult PLUGIN_API Processor_VST3::notify( IMessage* message )
 		uint32 size;
 		if( message->getAttributes()->getBinary( "MyData", data, size ) == kResultOk )
 		{
-			//auto que = synthEditProject.ControllerToProcessorQue();
-
 			m_message_que_ui_to_dsp.pushString(size, (unsigned char*) data);
 			m_message_que_ui_to_dsp.Send();
+
+			return kResultOk;
+		}
+	}
+
+	// SynthEdit engine feedback's reverse direction (see seMsgQues_'s declaration comment).
+	// SynthRuntime::connectPeer already polls ControllerToProcessorQue() itself every block
+	// (SynthRuntime.cpp), so pushing bytes in here is the entire job - nothing else reads them.
+	if (seMsgQues_ && !strcmp(message->getMessageID(), "SeBinaryMessage"))
+	{
+		const void* data;
+		uint32 size;
+		if (message->getAttributes()->getBinary("MyData", data, size) == kResultOk)
+		{
+			auto* toDsp = seMsgQues_->ControllerToProcessorQue();
+			toDsp->pushString(size, (unsigned char*)data);
+			toDsp->Send();
 
 			return kResultOk;
 		}
@@ -1303,6 +1330,34 @@ void Processor_VST3::CommunicationProc()
 
 			readyBytes -= size;
 		}
+
+		// SynthEdit engine feedback, on its own VST3 message id (see seMsgQues_'s declaration
+		// comment for why this can't share "BinaryMessage" with gmpiController's own traffic).
+		if (seDspToUiQueue_)
+		{
+			auto seReadyBytes = seDspToUiQueue_->readyBytes();
+			while (seReadyBytes > 0)
+			{
+				IMessage* message = allocateMessage();
+				if (!message)
+					break;
+
+				Steinberg::FReleaser msgReleaser(message);
+				message->setMessageID("SeBinaryMessage");
+
+				void* data{};
+				const auto size = seDspToUiQueue_->siphon2(&data);
+				assert(size > 0);
+
+				message->getAttributes()->setBinary("MyData", data, size);
+				sendMessage(message);
+
+				seDspToUiQueue_->siphon2_advance(size);
+
+				seReadyBytes -= size;
+			}
+		}
+
 		// wait to be signalled.
 		{
 			std::unique_lock<std::mutex> lk(backgroundMutex);
