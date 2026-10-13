@@ -12,6 +12,8 @@
 //#include "wrapper/common/se_datatypes.h" // kill this
 #include "wrapper/common/unicode_conversion.h"
 #include "Hosting/gmpi_factory.h"
+#include "jsoncpp/json/json.h"
+#include "BundleInfo.h"
 
 
 #ifdef _WIN32
@@ -461,8 +463,33 @@ IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 	if (!editor)
 		return {};
 
-	const int width { 200 };
-	const int height{ 200 };
+	// Read the real size straight from the bundle, rather than asking the editor via
+	// measure(): VST3EditorBase::measurePreferredSize() pre-fills its desiredSize guess
+	// with whatever width/height the platform editor constructor below is given, and
+	// ViewBase::measure() (ContainerViewPanel's base) never actually writes to its
+	// returnDesiredSize out-param - it only measures children for side effects (making
+	// sure images are loaded). So an initial guess of {200,200} measures as "the editor
+	// confirmed 200x200", not "the editor expressed no preference" - there is no
+	// after-the-fact correction path once a platform editor opens at the wrong size,
+	// so getting it right here, before construction, is the only point that matters.
+	int width { 200 };
+	int height{ 200 };
+	{
+		Json::Value document_json;
+		{
+			Json::Reader reader;
+			reader.parse(BundleInfo::instance()->getResource("gui.se.json"), document_json);
+		}
+		const auto& gui_json = document_json["gui"];
+		const auto jsonWidth = gui_json["width"].asFloat();
+		const auto jsonHeight = gui_json["height"].asFloat();
+
+		if (jsonWidth >= 1.0f && jsonHeight >= 1.0f)
+		{
+			width = static_cast<int>(jsonWidth);
+			height = static_cast<int>(jsonHeight);
+		}
+	}
 #ifdef _WIN32
 	return new SEVSTGUIEditorWin(*info, editor, this, width, height);
 #elif defined(__APPLE__)
