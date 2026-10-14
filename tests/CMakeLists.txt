@@ -28,6 +28,28 @@ add_executable(main_thread_queue_deadline_probe main_thread_queue_deadline_probe
 find_package(Threads REQUIRED)
 target_link_libraries(main_thread_queue_deadline_probe PRIVATE Threads::Threads)
 
+# vst3_class_ids_test - the VST3 class IDs the VST3 factory reports: an explicit
+# vst3ProcessorId/vst3ControllerId from the plugin descriptor, else the hashed
+# fallback, pinned to the same GUID string on every platform. Runs in
+# milliseconds; also compiles in one command (see the top of the file).
+if(VST3_SDK AND GMPI_SDK)
+    add_executable(vst3_class_ids_test
+        vst3_class_ids_test.cpp
+        ${GMPI_SDK}/Hosting/xml_spec_reader.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../wrapper/common/tinyXml2/tinyxml2.cpp
+        ${VST3_SDK}/pluginterfaces/base/funknown.cpp
+    )
+    target_include_directories(vst3_class_ids_test PRIVATE
+        ${GMPI_SDK} ${GMPI_SDK}/Core
+        ${CMAKE_CURRENT_SOURCE_DIR}/../wrapper/common
+        ${VST3_SDK}
+    )
+    if(WIN32)
+        target_compile_definitions(vst3_class_ids_test PRIVATE NOMINMAX)
+        target_link_libraries(vst3_class_ids_test PRIVATE ole32)
+    endif()
+endif()
+
 # Everything below this point was written for Linux and pkg-config's it
 # unconditionally, so the whole directory used to be un-configurable anywhere
 # else. Guard it by platform rather than by hand, so a Windows or macOS build

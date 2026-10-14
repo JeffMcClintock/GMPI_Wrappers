@@ -19,6 +19,7 @@ ${GMPI_HOSTING_SRCS}
 
 MyVstPluginFactory.h
 MyVstPluginFactory.cpp
+Vst3ClassIds.h
 Processor_VST3.h
 Processor_VST3.cpp
 Controller_VST3.h

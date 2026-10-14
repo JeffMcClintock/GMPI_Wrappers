@@ -17,6 +17,7 @@
 //#include "Common.h"
 //#include "wrapper/common/dynamic_linking.h"
 #include "Hosting/gmpi_factory.h"
+#include "Vst3ClassIds.h"
 
 
 #if defined( _WIN32 )
@@ -184,39 +185,6 @@ int32 MyVstPluginFactory::countClasses ()
 	return static_cast<int32>(2);
 }
 
-uint32 hashString(const std::string& s)
-{
-	uint32_t hash = 5381;
-	{
-		for (auto c : s)
-		{
-			hash = ((hash << 5) + hash) + c; // magic * 33 + c
-		}
-	}
-
-	return hash;
-}
-	
-void textIdtoUuid(const std::string& id, bool isController, Steinberg::TUID& ret) // else Processor
-{
-	// hash the id
-	const auto hash = hashString(id);// ^ (isController ? 0xff : 0);
-
-	//union helper_t
-	//{
-	//	char plain[16] = { "PluginGMPI     " }; // UUID version 4 because 'G' is 0x47
-	//	Steinberg::TUID tuid;
-	//};
-
-	//helper_t helper;
-	memcpy(ret, "PluginGMPI     ", 16);
-	ret[11] = isController ? 'C' : 'P';
-
-	memcpy(ret + 12, &hash, sizeof(hash));
-
-//	helper.plain[6] = 0x40; // UUID version 4
-}
-
 int32_t MyVstPluginFactory::getVst2Id64(int32_t pluginIndex) // generated from hash of GUID. Not compatible w 32-bit VSTs.
 {
 	initialize();
@@ -226,16 +194,20 @@ int32_t MyVstPluginFactory::getVst2Id64(int32_t pluginIndex) // generated from h
 		return kInvalidArgument;
 	}
 
-	Steinberg::PClassInfoW info;
-	getClassInfoUnicode(pluginIndex, &info);
+	auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo(pluginIndex);
+	if (!plugin)
+		return kInvalidArgument;
 
-	// generate an VST2 ID from VST3 GUIID.
+	// generate an VST2 ID from the processor's VST3 GUID, in canonical byte order so it is the same on every platform.
 	// see also CContainer::VstUniqueID()
+	unsigned char cid[16]{};
+	wrapper::canonicalBytes(wrapper::vst3ClassIds(*plugin).processor, cid);
+
 	unsigned char vst2ID[4]{};
 	int i2 = 0;
-	for (int i = 0; i < sizeof(info.cid); ++i)
+	for (int i = 0; i < sizeof(cid); ++i)
 	{
-		vst2ID[i2] = vst2ID[i2] + info.cid[i];
+		vst2ID[i2] = vst2ID[i2] + cid[i];
 		i2 = (i2 + 1) & 0x03;
 	}
 
@@ -267,20 +239,17 @@ tresult MyVstPluginFactory::getClassInfo (int32 index, PClassInfo* info)
 	if (!plugin)
 		return kResultFalse;
 
-	Steinberg::TUID procUUid{};
-	Steinberg::TUID ctrlUUid{};
-	textIdtoUuid(plugin->id, false, procUUid);
-	textIdtoUuid(plugin->id,  true, ctrlUUid);
+	const auto ids = wrapper::vst3ClassIds(*plugin);
 
 	switch(classIndex)
 	{
 	case 0:
 		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
-		memcpy(info->cid, &procUUid/*(pluginInfo_.processorId.toTUID()*/, sizeof(TUID));
+		ids.processor.toTUID(info->cid);
 		break;
 	case 1:
 		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
-		memcpy(info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID()*/, sizeof(TUID));
+		ids.controller.toTUID(info->cid);
 		break;
 	}
 
@@ -312,10 +281,7 @@ tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
 
 	const auto version = pluginVersion(*plugin);
 
-	Steinberg::TUID procUUid{};
-	Steinberg::TUID ctrlUUid{};
-	textIdtoUuid(plugin->id, false, procUUid);
-	textIdtoUuid(plugin->id, true, ctrlUUid);
+	const auto ids = wrapper::vst3ClassIds(*plugin);
 
 	info->cardinality = PClassInfo::kManyInstances;
 
@@ -332,13 +298,13 @@ tresult MyVstPluginFactory::getClassInfo2 (int32 index, PClassInfo2* info)
 		info->classFlags = Vst::kDistributable;
 		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
 		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
-		memcpy (info->cid, &procUUid/*(pluginInfo_.processorId.toTUID())*/, sizeof (TUID));
+		ids.processor.toTUID(info->cid);
 		break;
 	case 1:
 		info->classFlags = 0;
 		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
 		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
-		memcpy (info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID())*/, sizeof (TUID));
+		ids.controller.toTUID(info->cid);
 		break;
 	}
 
@@ -366,10 +332,7 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 
 	const auto version = pluginVersion(*plugin);
 
-	Steinberg::TUID procUUid{};
-	Steinberg::TUID ctrlUUid{};
-	textIdtoUuid(plugin->id, false, procUUid);
-	textIdtoUuid(plugin->id, true, ctrlUUid);
+	const auto ids = wrapper::vst3ClassIds(*plugin);
 	const auto subCategories = calcSubCategories(*plugin);
 
 	switch(classIndex)
@@ -378,13 +341,13 @@ tresult MyVstPluginFactory::getClassInfoUnicode (int32 index, PClassInfoW* info)
 		info->classFlags = Vst::kDistributable;
 		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
 		strncpy8 (info->category, kVstAudioEffectClass, PClassInfo::kCategorySize );
-		memcpy(info->cid, &procUUid/*(pluginInfo_.processorId.toTUID())*/, sizeof(TUID));
+		ids.processor.toTUID(info->cid);
 		break;
 	case 1:
 		info->classFlags = 0;
 		strncpy8 (info->subCategories, subCategories.c_str(), PClassInfo2::kSubCategoriesSize );
 		strncpy8 (info->category, kVstComponentControllerClass, PClassInfo::kCategorySize );
-		memcpy(info->cid, &ctrlUUid/*(pluginInfo_.controllerId.toTUID())*/, sizeof(TUID));
+		ids.controller.toTUID(info->cid);
 		break;
 	}
 
@@ -434,19 +397,16 @@ tresult MyVstPluginFactory::createInstance (FIDString cid, FIDString iid, void**
 	{
 		auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo(pluginIndex);
 
-		Steinberg::TUID procUUid{};
-		Steinberg::TUID ctrlUUid{};
-		textIdtoUuid(plugin->id, false, procUUid);
-		textIdtoUuid(plugin->id, true, ctrlUUid);
+		const auto ids = wrapper::vst3ClassIds(*plugin);
 
-		if (/*interfaceId == IComponent::iid ||*/ classId == Steinberg::FUID(procUUid))
+		if (/*interfaceId == IComponent::iid ||*/ classId == ids.processor)
 		{
 			auto i = new wrapper::Processor_VST3(*plugin);
-			i->setControllerClass(ctrlUUid); // associate with controller.
+			i->setControllerClass(ids.controller); // associate with controller.
 			instance = (IAudioProcessor*)i;
 			break;
 		}
-		else if(classId == Steinberg::FUID(ctrlUUid))
+		else if(classId == ids.controller)
 		{
 			instance = static_cast<Steinberg::Vst::IEditController*>(new wrapper::Controller_VST3(*plugin));
 			break;
