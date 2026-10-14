@@ -1,8 +1,10 @@
 // controller_gesture_test - what gmpi_controller_holder tells the wrapper when a GUI edits parameters.
 //
 // A GUI's Grab pin (or setParameter with Field::Grab) must open and close one host gesture around the
-// edits in between; an edit to a parameter the DAW has no tag for (private) must reach the processor
-// and, when it is saved, mark the host project modified - never a performEdit with tag -1.
+// edits in between; an edit to a parameter the DAW has no tag for (private, blob) must reach the processor
+// and, when it is saved, mark the host project modified - never a performEdit with tag -1. A change the
+// plugin's controller makes through setParameter is the plugin changing its state, and is reported the
+// same way; a state restore is the host's doing and is reported not at all.
 //
 // No CMake needed (paths relative to C:\SE or the parent of the repos):
 //
@@ -36,6 +38,8 @@ const char* xml = R"XML(
     <Parameter id="0" name="Cutoff" datatype="float"/>
     <Parameter id="1" name="Hidden" datatype="float" private="true"/>
     <Parameter id="2" name="Scratch" datatype="float" private="true" persistant="false"/>
+    <Parameter id="3" name="Document" datatype="blob"/>
+    <Parameter id="4" name="Pointer" datatype="blob" persistant="false"/>
   </Parameters>
   <GUI>
     <Pin name="Cutoff" datatype="float" parameterId="0"/>
@@ -120,6 +124,37 @@ int main()
 	log.clear();
 	holder.setParameter(1, gmpi::Field::Grab, 0, sizeof(down), reinterpret_cast<const uint8_t*>(&down));
 	check(log.empty(), "grabbing a private parameter opens no host gesture", log);
+
+	// The plugin's own <Controller/> changing its state through setParameter: all state is parameters.
+	const std::string doc1 = "<rack a/>", doc2 = "<rack b/>";
+	auto setBlob = [&](int id, const std::string& bytes) { holder.setParameter(id, gmpi::Field::Value, 0, static_cast<int32_t>(bytes.size()), reinterpret_cast<const uint8_t*>(bytes.data())); };
+
+	log.clear();
+	setBlob(3, doc1);
+	check(log == "to-processor 3;dirty;", "a controller change to a saved blob reaches the processor and dirties the project", log);
+
+	log.clear();
+	setBlob(3, doc1);
+	check(log.empty(), "re-writing the same blob changes nothing", log);
+
+	log.clear();
+	setBlob(4, doc2);
+	check(log == "to-processor 4;", "an unsaved blob (e.g. a pointer) reaches the processor, no dirty", log);
+
+	log.clear();
+	const float cutoff = 0.9f;
+	holder.setParameter(0, gmpi::Field::Value, 0, sizeof(cutoff), reinterpret_cast<const uint8_t*>(&cutoff));
+	const float normalized = 0.1f;
+	holder.setParameter(0, gmpi::Field::Normalized, 0, sizeof(normalized), reinterpret_cast<const uint8_t*>(&normalized));
+	check(log == "edit 0 (ungrabbed);edit 0 (ungrabbed);", "a controller change to a DAW parameter goes to the DAW, by value or normalized", log);
+
+	// Restoring state is the host's doing, not an edit: it must notify nothing.
+	setBlob(3, doc2);
+	const auto saved = holder.getPresetXml();
+	setBlob(3, doc1);
+	log.clear();
+	holder.setPresetXmlFromDaw(saved);
+	check(log.empty(), "restoring a preset notifies nothing", log);
 
 	std::printf("%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASS", failures, failures == 1 ? "" : "s");
 	return failures ? 1 : 0;

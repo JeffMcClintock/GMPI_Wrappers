@@ -144,6 +144,16 @@ class Controller_VST3 :
 	int nativeParamCount() const { return static_cast<int>(gmpiController.nativeParams.size()); }
 	int ccParamIndex(Steinberg::Vst::ParamID tag) const; // -1 when 'tag' is not a CC parameter
 
+	// True while the host saves or restores state: anything the plugin writes then is part of that transfer, not an edit, so it must not dirty the project.
+	bool hostStateTransfer_ = false;
+	struct StateTransferScope
+	{
+		bool& flag;
+		const bool was;
+		explicit StateTransferScope(bool& f) : flag(f), was(f) { flag = true; }
+		~StateTransferScope() { flag = was; }
+	};
+
 	std::thread::id uiThread_;
 	std::atomic<bool> latencyChangePending_ = {}; // set by notify() off the UI thread, taken by onTimer().
 
@@ -187,6 +197,7 @@ public:
 		// synchronous, SessionState::saveNow); closing it for VST3 needs a
 		// dirty-flag periodic sync, which is the VST3Adaptor's own open TODO
 		// (ControllerWrapper::onTimer).
+		StateTransferScope transfer(hostStateTransfer_);
 		if (sePluginController)
 			sePluginController->syncState();
 
@@ -202,7 +213,7 @@ public:
 	// struct further down Controller.h, so there is nothing to override for those.)
 	void ParamGrabbed(MpParameter_native* param) override;
 	void notifyDawLatencyChanged() override;
-	void notifyDawStateChanged() override { setDirty(true); } // MpController; no-op if the host lacks IComponentHandler2
+	void notifyDawStateChanged() override { if (!hostStateTransfer_) setDirty(true); } // MpController; no-op if the host lacks IComponentHandler2
 
 	void setPresetXmlFromSelf(const std::string& xml) override {}
 	void setPresetFromSelf(DawPreset const* preset) override {}
@@ -247,6 +258,7 @@ public:
 		// document chunk) into the store first -- synchronous: syncState ->
 		// exportChunkXmlForSave -> host->setParameter -> the store, all in
 		// this process on this thread.
+		StateTransferScope transfer(hostStateTransfer_);
 		if (sePluginController)
 			sePluginController->syncState();
 

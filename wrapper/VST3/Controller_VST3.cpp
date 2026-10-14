@@ -95,7 +95,8 @@ Controller_VST3::Controller_VST3(gmpi::hosting::pluginInfo& pinfo) :
 
 	gmpiController.notifyDawStateChanged = [this]()
 		{
-			setDirty(true); // no-op if the host lacks IComponentHandler2
+			if (!hostStateTransfer_)
+				setDirty(true); // no-op if the host lacks IComponentHandler2
 		};
 
 	// Blob parameters can't ride performEdit (doubles only), so the holder
@@ -546,6 +547,7 @@ tresult PLUGIN_API Controller_VST3::setComponentState (IBStream* state)
 	// exception aborts the DAW just as surely.
 	try
 	{
+		StateTransferScope transfer(hostStateTransfer_);
 		gmpiController.setPresetXmlFromDaw(chunk);
 
 		// Hand the restored parameters to the plug-in's own <Controller/>.
