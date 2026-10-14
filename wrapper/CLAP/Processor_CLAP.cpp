@@ -574,12 +574,27 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
      * and then update transport information for the display on our
      * shared state object
      */
-    if (process->transport)
+    if (const auto* transport = process->transport; transport)
     {
-        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm, process->transport->tempo);
-        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator, process->transport->tsig_num);
-        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator, process->transport->tsig_denom);
-        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, 1.0 * process->transport->song_pos_beats / CLAP_BEATTIME_FACTOR);
+        using gmpi::hosting::HostControls;
+
+        // A field whose flag the host clears is left out, so the plugin keeps its last good value.
+        if ((transport->flags & CLAP_TRANSPORT_HAS_TEMPO) != 0)
+            plugin.setHostControlFromDaw(HostControls::TimeBpm, transport->tempo);
+
+        if ((transport->flags & CLAP_TRANSPORT_HAS_TIME_SIGNATURE) != 0)
+        {
+            plugin.setHostControlFromDaw(HostControls::TimeNumerator, transport->tsig_num);
+            plugin.setHostControlFromDaw(HostControls::TimeDenominator, transport->tsig_denom);
+        }
+
+        if ((transport->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE) != 0)
+        {
+            plugin.setHostControlFromDaw(HostControls::TimeQuarterNotePosition, 1.0 * transport->song_pos_beats / CLAP_BEATTIME_FACTOR);
+            plugin.setHostControlFromDaw(HostControls::TimeBarStart, 1.0 * transport->bar_start / CLAP_BEATTIME_FACTOR);
+        }
+
+        plugin.setHostControlFromDaw(HostControls::TimeTransportPlaying, (transport->flags & CLAP_TRANSPORT_IS_PLAYING) != 0 ? 1.0 : 0.0);
     }
 
     /*

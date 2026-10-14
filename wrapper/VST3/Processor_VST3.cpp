@@ -855,76 +855,28 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 		}
 	}
 
-	// Tempo
-//	if( synthEditProject.NeedsTempo( ) )
+	// Musical time. A field whose validity bit the host clears is left out, so the plugin keeps its last good value.
+	if (data.processContext)
 	{
-		if (data.processContext)
+		using gmpi::hosting::HostControls;
+		const auto& vst3Time = *data.processContext;
+
+		if ((vst3Time.state & ProcessContext::kTempoValid) != 0)
+			plugin.setHostControlFromDaw(HostControls::TimeBpm, vst3Time.tempo);
+
+		if ((vst3Time.state & ProcessContext::kTimeSigValid) != 0)
 		{
-			auto& vst3Time = *data.processContext;
-
-            plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm,                 vst3Time.tempo);
-            plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator,           vst3Time.timeSigNumerator);
-            plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator,         vst3Time.timeSigDenominator);
-            plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, vst3Time.projectTimeMusic);
-
-//			timeInfo = vst3Time; // needed??
-#if 0
-			timeInfo.timeSigNumerator = vst3Time.timeSigNumerator;
-			timeInfo.timeSigDenominator = vst3Time.timeSigDenominator;
-			timeInfo.ppqPos = vst3Time.projectTimeMusic;
-			timeInfo.barStartPos = vst3Time.barPositionMusic;
-			timeInfo.sampleRate = processSetup.sampleRate;
-			timeInfo.tempo = vst3Time.tempo;
-			timeInfo.cycleStartPos = vst3Time.cycleStartMusic;
-			timeInfo.cycleEndPos = vst3Time.cycleEndMusic;
-
-			timeInfo.flags = 0;
-
-			if ((vst3Time.state & ProcessContext::kTimeSigValid) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstTimeSigValid;
-			}
-			if ((vst3Time.state & ProcessContext::kBarPositionValid) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstBarsValid;
-			}
-			if ((vst3Time.state & ProcessContext::kTempoValid) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstTempoValid;
-			}
-			if ((vst3Time.state & ProcessContext::kProjectTimeMusicValid) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstPpqPosValid;
-			}
-			if ((vst3Time.state & ProcessContext::kCycleValid) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstCyclePosValid;
-			}
-			if ((vst3Time.state & ProcessContext::kCycleActive) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstTransportCycleActive;
-			}
-			if (((vst3Time.state & ProcessContext::kPlaying) == 0) != ((timeInfo.flags & my_VstTimeInfo::kVstTransportPlaying) == 0))
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstTransportChanged;
-			}
-			if ((vst3Time.state & ProcessContext::kPlaying) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstTransportPlaying;
-			}
-#if 0
-			if ((vst3Time.state & ProcessContext::kSmpteValid) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstSmpteValid;
-			}
-			if ((vst3Time.state & ProcessContext::kClockValid) != 0)
-			{
-				timeInfo.flags |= my_VstTimeInfo::kVstClockValid;
-			}
-#endif
-#endif
-			//			synthEditProject.UpdateTempo(&timeInfo);
+			plugin.setHostControlFromDaw(HostControls::TimeNumerator, vst3Time.timeSigNumerator);
+			plugin.setHostControlFromDaw(HostControls::TimeDenominator, vst3Time.timeSigDenominator);
 		}
+
+		if ((vst3Time.state & ProcessContext::kProjectTimeMusicValid) != 0)
+			plugin.setHostControlFromDaw(HostControls::TimeQuarterNotePosition, vst3Time.projectTimeMusic);
+
+		if ((vst3Time.state & ProcessContext::kBarPositionValid) != 0)
+			plugin.setHostControlFromDaw(HostControls::TimeBarStart, vst3Time.barPositionMusic);
+
+		plugin.setHostControlFromDaw(HostControls::TimeTransportPlaying, (vst3Time.state & ProcessContext::kPlaying) != 0 ? 1.0 : 0.0);
 	}
 
 	// Setup audio buffers.
