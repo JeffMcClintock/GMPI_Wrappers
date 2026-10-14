@@ -50,6 +50,17 @@ if(VST3_SDK AND GMPI_SDK)
     endif()
 endif()
 
+# vst3_state_read_test - the VST3 state reads: a chunk delivered in pieces, a
+# short stream, and a corrupt size that must fail without being allocated.
+# Header-only against the VST3 SDK; also compiles in one command (see the file).
+if(VST3_SDK)
+    add_executable(vst3_state_read_test vst3_state_read_test.cpp)
+    target_include_directories(vst3_state_read_test PRIVATE ${VST3_SDK})
+    if(WIN32)
+        target_compile_definitions(vst3_state_read_test PRIVATE NOMINMAX)
+    endif()
+endif()
+
 # controller_gesture_test - what the controller holder tells a wrapper when a GUI
 # edits parameters: one host gesture per Grab, and private parameters routed to
 # the processor and marked as a state change rather than performEdit'd with tag
