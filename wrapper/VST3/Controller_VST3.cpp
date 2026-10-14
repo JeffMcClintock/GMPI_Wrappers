@@ -84,6 +84,20 @@ Controller_VST3::Controller_VST3(gmpi::hosting::pluginInfo& pinfo) :
 				endEdit(paramID);
 		};
 
+	// A GUI drag is one host gesture: begin on grab, end on release, performEdits in between.
+	gmpiController.notifyDawGrab = [this](gmpi::hosting::GmpiParameter const* param, bool grabbed)
+		{
+			if (grabbed)
+				beginEdit(param->info->dawTag);
+			else
+				endEdit(param->info->dawTag);
+		};
+
+	gmpiController.notifyDawStateChanged = [this]()
+		{
+			setDirty(true); // no-op if the host lacks IComponentHandler2
+		};
+
 	// Blob parameters can't ride performEdit (doubles only), so the holder
 	// hands them to us already framed for the processor's ui->dsp queue
 	// ("ppc3"; see GmpiParameter::getQueMessage). We only move the bytes

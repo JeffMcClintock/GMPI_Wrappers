@@ -50,6 +50,27 @@ if(VST3_SDK AND GMPI_SDK)
     endif()
 endif()
 
+# controller_gesture_test - what the controller holder tells a wrapper when a GUI
+# edits parameters: one host gesture per Grab, and private parameters routed to
+# the processor and marked as a state change rather than performEdit'd with tag
+# -1. Runs in milliseconds; also compiles in one command (see the top of the file).
+if(GMPI_SDK AND GMPI_UI_SDK)
+    add_executable(controller_gesture_test
+        controller_gesture_test.cpp
+        ${GMPI_SDK}/Hosting/controller_holder.cpp
+        ${GMPI_SDK}/Hosting/xml_spec_reader.cpp
+        ${GMPI_SDK}/Hosting/message_queues.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../wrapper/common/tinyXml2/tinyxml2.cpp
+    )
+    target_include_directories(controller_gesture_test PRIVATE
+        ${GMPI_SDK} ${GMPI_SDK}/Core ${GMPI_UI_SDK}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../wrapper/common
+    )
+    if(WIN32)
+        target_compile_definitions(controller_gesture_test PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    endif()
+endif()
+
 # Everything below this point was written for Linux and pkg-config's it
 # unconditionally, so the whole directory used to be un-configurable anywhere
 # else. Guard it by platform rather than by hand, so a Windows or macOS build

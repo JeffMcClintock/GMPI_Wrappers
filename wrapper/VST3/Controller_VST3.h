@@ -202,6 +202,7 @@ public:
 	// struct further down Controller.h, so there is nothing to override for those.)
 	void ParamGrabbed(MpParameter_native* param) override;
 	void notifyDawLatencyChanged() override;
+	void notifyDawStateChanged() override { setDirty(true); } // MpController; no-op if the host lacks IComponentHandler2
 
 	void setPresetXmlFromSelf(const std::string& xml) override {}
 	void setPresetFromSelf(DawPreset const* preset) override {}
