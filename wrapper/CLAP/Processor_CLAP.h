@@ -45,6 +45,8 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
     // AU3 gained in M4. HELD, not merely initialised: it publishes state
     // through the holder and must outlive the editor that reads it.
     gmpi::shared_ptr<gmpi::api::IController> pluginController;
+    // True while the host saves or loads state: plug-in writes then are part of that transfer, not edits, so they must not mark the project dirty.
+    bool hostStateTransfer_ = false;
     gmpi::hosting::gmpi_processor plugin;
 
     gmpi::hosting::pluginInfo& info;

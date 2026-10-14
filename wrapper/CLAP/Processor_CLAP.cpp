@@ -22,6 +22,18 @@
 namespace gmpi { namespace hosting
 {
 
+namespace
+{
+// Sets a flag for a scope, restoring it on any exit (including an exception).
+struct TransferScope
+{
+    bool& flag;
+    const bool was;
+    explicit TransferScope(bool& f) : flag(f), was(f) { flag = true; }
+    ~TransferScope() { flag = was; }
+};
+}
+
 Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& pinfo, const clap_host *host)
     : clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
                             clap::helpers::CheckingLevel::Maximal>(desc, host)
@@ -77,6 +89,13 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
     controller.gmpiController.sendNonNativeParameterToProcessor = [this](gmpi::hosting::GmpiParameter* param)
         {
             sendParameterToProcessorQueue(param);
+        };
+
+    // A saved change the host can't see (a plug-in edit to a non-DAW parameter): ask it to mark the project modified.
+    controller.gmpiController.notifyDawStateChanged = [this]()
+        {
+            if (!hostStateTransfer_ && _host.canUseState())
+                _host.stateMarkDirty();
         };
 
     // CREATE AND INITIALISE THE PLUG-IN'S OWN CONTROLLER. TIDE BACKLOG S43(ii),
@@ -940,6 +959,7 @@ bool Processor_CLAP::stateSave(const clap_ostream *stream) noexcept
     // because this one object owns both halves: no handshake, just members.
     // Fallback to the processor's store only when no <Controller/> was
     // instantiated, where nothing can have edited anything.
+    TransferScope transfer(hostStateTransfer_);
     std::string st;
     if (pluginController)
     {
@@ -1045,6 +1065,7 @@ bool Processor_CLAP::stateLoad(const clap_istream *stream) noexcept
         // then the plug-in controller, then the DSP's copy. A failed parse
         // leaves every store untouched, which is what setPresetXmlFromDaw's
         // false return means.
+        TransferScope transfer(hostStateTransfer_);
         controller.gmpiController.setPresetXmlFromDaw(dat);
         controller.gmpiController.notifyControllerOfPreset(pluginController.get());
 
