@@ -121,6 +121,7 @@ protected:
 	};
 
 	vstNoteInfo* findKey(uint8_t channel, int noteId, bool heldOnly = false);
+	vstNoteInfo* findKeyOnAnyChannel(int noteId); // note expression carries no channel
 
 	Processor_VST3::vstNoteInfo& allocateKey(const Steinberg::Vst::NoteOnEvent& note);
 

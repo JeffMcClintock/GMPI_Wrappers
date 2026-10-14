@@ -438,6 +438,22 @@ Processor_VST3::vstNoteInfo* Processor_VST3::findKey(uint8_t channel, int noteId
 	return heldOnly ? nullptr : released;
 }
 
+// Note-expression events carry a note ID but no channel, so look on every channel, preferring a sounding key.
+Processor_VST3::vstNoteInfo* Processor_VST3::findKeyOnAnyChannel(int noteId)
+{
+	vstNoteInfo* released{};
+	for (uint8_t channel = 0; channel < std::size(noteIds); ++channel)
+	{
+		if (auto keyInfo = findKey(channel, noteId, true); keyInfo)
+			return keyInfo;
+
+		if (!released)
+			released = findKey(channel, noteId);
+	}
+
+	return released;
+}
+
 Processor_VST3::vstNoteInfo& Processor_VST3::allocateKey(const NoteOnEvent& note)
 {
 	auto& ret = noteIds[note.channel][note.pitch];
@@ -773,8 +789,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 
 			case Event::kNoteExpressionValueEvent:
 			{
-				const int channel = 0; // ??? how is this sposed to find notes on other channels?
-				auto keyInfo = findKey(channel, e.noteExpressionValue.noteId);
+				auto keyInfo = findKeyOnAnyChannel(e.noteExpressionValue.noteId);
 
 				if (!keyInfo)
 					break;
@@ -794,7 +809,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 					const auto msg = gmpi::midi2::makePolyBender(
 						keyInfo->MidiKeyNumber,
 						static_cast<float>(normalized),
-						channel
+						keyInfo->channel
 					);
 
 					MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
@@ -843,7 +858,8 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 						const auto msg = gmpi::midi2::makePolyController(
 							keyInfo->MidiKeyNumber,
 							controllerId,
-							safeValue
+							safeValue,
+							keyInfo->channel
 						);
 
 						MidiIn(e.sampleOffset, (const unsigned char*)&msg, sizeof(msg));
