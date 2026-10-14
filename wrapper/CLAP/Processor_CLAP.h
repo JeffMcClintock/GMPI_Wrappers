@@ -146,6 +146,11 @@ public:
      * you can support overlapping notes, which in conjunction with CLAP_DIALECT_NOTE
      * and the Bitwig voice stack modulator lets you stack this little puppy!
      */
+    // Latency the plugin reports via IProcessorHost::setLatency. CLAP only lets it change
+    // during activate(), so a change while active asks the host to restart us.
+    bool implementsLatency() const noexcept override { return true; }
+    uint32_t latencyGet() const noexcept override;
+
     bool implementsVoiceInfo() const noexcept override { return false; }
     bool voiceInfoGet(clap_voice_info* info) noexcept override
     {
@@ -375,6 +380,12 @@ public:
 private:
 #endif
     struct Editor_CLAP* editor{ nullptr };
+
+    // A value the host has read is never notified, and a value we requested a restart for is
+    // not requested again until the host has read it; activate() rebuilds the plugin, so a
+    // plugin whose open() and first process() disagree would otherwise restart forever.
+    mutable std::atomic<int32_t> latencyReadByHost_{};
+    mutable std::atomic<int32_t> latencyRestartRequested_{ -1 }; // -1 = none outstanding.
 
     double sampleRate{ 44100.0 };
     uint32_t maxFrameCount{ 0 };

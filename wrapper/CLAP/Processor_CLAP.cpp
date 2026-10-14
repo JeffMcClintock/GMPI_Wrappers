@@ -400,7 +400,20 @@ bool Processor_CLAP::activate(double psampleRate, uint32_t minFrameCount,
 
     plugin.start_processor(&plugin, info, maxFrameCount, sampleRate);
 
+    // The one moment CLAP allows latency.changed(): the rebuilt plugin has just reported it.
+    if (_host.canUseLatency() && plugin.getLatency() != latencyReadByHost_.load(std::memory_order_relaxed))
+        _host.latencyChanged();
+
     return true;
+}
+
+uint32_t Processor_CLAP::latencyGet() const noexcept
+{
+    const auto latency = plugin.getLatency();
+    latencyReadByHost_.store(latency, std::memory_order_relaxed);
+    auto requested = latency;
+    latencyRestartRequested_.compare_exchange_strong(requested, -1); // the host has caught up with our request.
+    return static_cast<uint32_t>(latency);
 }
 
 /*
@@ -601,6 +614,15 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
     // Process audio.
     plugin_->process(process->frames_count, events.head());
     events.clear();
+
+    // Latency changed while active: only a restart (thread-safe to request) lets activate() report it.
+    if (const auto latency = plugin.getLatency(); _host.canUseLatency()
+        && latency != latencyReadByHost_.load(std::memory_order_relaxed)
+        && latency != latencyRestartRequested_.load(std::memory_order_relaxed))
+    {
+        latencyRestartRequested_.store(latency, std::memory_order_relaxed);
+        _host.requestRestart();
+    }
 
     // messages from Processor -> Editor
     plugin.pendingControllerQueueClients.ServiceWaitersIncremental(
