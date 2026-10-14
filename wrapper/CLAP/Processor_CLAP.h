@@ -136,7 +136,7 @@ public:
         clap_audio_port_info* info) const noexcept override;
 
     bool implementsNotePorts() const noexcept override { return true; }
-    uint32_t notePortsCount(bool isInput) const noexcept override { return isInput ? 1 : 0; }
+    uint32_t notePortsCount(bool isInput) const noexcept override { return isInput ? 1 : countPins(info, gmpi::PinDirection::Out, gmpi::PinDatatype::Midi); }
     bool notePortsInfo(uint32_t index, bool isInput,
         clap_note_port_info* info) const noexcept override;
 
