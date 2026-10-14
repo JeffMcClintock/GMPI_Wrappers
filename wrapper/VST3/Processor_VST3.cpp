@@ -340,10 +340,11 @@ tresult PLUGIN_API Processor_VST3::initialize (FUnknown* context)
 
 uint32 Processor_VST3::getLatencySamples()
 {
-	// see also kLatencyChanged and componentHandler->restartComponent (Vst::kLatencyChanged & Vst::kParamValuesChanged);
-	// _RPT1(_CRT_WARN, "SeProcessor::getLatencySamples() -> %d\n", synthEditProject.getLatencySamples());
-
-	return 0;// synthEditProject.getLatencySamples();
+	const auto latency = plugin.getLatency();
+	latencyReadByHost_.store(latency, std::memory_order_relaxed);
+	auto notified = latency;
+	latencyNotified_.compare_exchange_strong(notified, -1); // the host has caught up with our notification.
+	return static_cast<uint32>(latency);
 }
 
 //-----------------------------------------------------------------------------
@@ -1059,6 +1060,16 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 #endif
 #endif
 
+	// Latency the plugin reported that the host has neither read nor been told of.
+	// restartComponent is UI-thread only, so the background thread messages the controller.
+	if (const auto latency = plugin.getLatency(); latency != latencyReadByHost_.load(std::memory_order_relaxed) && latency != latencyNotified_.load(std::memory_order_relaxed))
+	{
+		latencyNotified_.store(latency, std::memory_order_relaxed);
+		latencyChangePending_.store(true, std::memory_order_release);
+	}
+	if (latencyChangePending_.load(std::memory_order_acquire))
+		onQueDataAvailable(); // re-signalled every block until taken: the background thread's wait can miss one.
+
 	// messages from Processor -> Editor
 	plugin.pendingControllerQueueClients.ServiceWaitersIncremental(
 		  &m_message_que_dsp_to_ui
@@ -1355,6 +1366,17 @@ void Processor_VST3::CommunicationProc()
 				seDspToUiQueue_->siphon2_advance(size);
 
 				seReadyBytes -= size;
+			}
+		}
+
+		if (latencyChangePending_.exchange(false, std::memory_order_acq_rel))
+		{
+			if (IMessage* message = allocateMessage(); message)
+			{
+				Steinberg::FReleaser msgReleaser(message);
+				message->setMessageID("GmpiLatency");
+				message->getAttributes()->setInt("samples", plugin.getLatency());
+				sendMessage(message);
 			}
 		}
 

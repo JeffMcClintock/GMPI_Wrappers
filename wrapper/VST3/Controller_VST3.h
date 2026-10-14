@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <map>
+#include <thread>
 #include <locale>
 #include <codecvt>
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -137,6 +139,9 @@ class Controller_VST3 :
 	StagingMemoryBuffer queueToDsp_;
 	int supportedChannels = 1;
 
+	std::thread::id uiThread_;
+	std::atomic<bool> latencyChangePending_ = {}; // set by notify() off the UI thread, taken by onTimer().
+
 public:
 	gmpi::hosting::gmpi_controller_holder gmpiController;
 
@@ -191,6 +196,7 @@ public:
 	// virtuals despite living in the same header - they belong to the unrelated IPresetsModel
 	// struct further down Controller.h, so there is nothing to override for those.)
 	void ParamGrabbed(MpParameter_native* param) override;
+	void notifyDawLatencyChanged() override;
 
 	void setPresetXmlFromSelf(const std::string& xml) override {}
 	void setPresetFromSelf(DawPreset const* preset) override {}

@@ -142,6 +142,14 @@ protected:
 	// exactly this class of deferred work.
 	std::atomic<bool> reseedPinsFromStore_ = {};
 
+	// Latency reporting. The host reads getLatencySamples after setActive(true), which rebuilds
+	// the plugin. A value the host has read is never notified, and a notified value is not
+	// notified again until the host has read it; else a plugin whose open() reports a different
+	// latency than its first process() would restart the host forever.
+	std::atomic<int32_t> latencyReadByHost_ = {};
+	std::atomic<int32_t> latencyNotified_ = -1;		// -1 = none outstanding.
+	std::atomic<bool> latencyChangePending_ = {};	// audio thread -> background thread.
+
 
 	std::vector<float*> inputBuffers;
 	std::vector<float*> outputBuffers;

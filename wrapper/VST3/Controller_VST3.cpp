@@ -201,6 +201,17 @@ tresult PLUGIN_API Controller_VST3::notify( IMessage* message )
 		}
 	}
 
+	// The plugin's latency changed (Processor_VST3::process). A host may deliver this on the
+	// processor's thread, and restartComponent is UI-thread only, so defer it to onTimer.
+	if (!strcmp(message->getMessageID(), "GmpiLatency"))
+	{
+		if (std::this_thread::get_id() == uiThread_)
+			notifyDawLatencyChanged();
+		else
+			latencyChangePending_.store(true, std::memory_order_release);
+		return kResultOk;
+	}
+
 	return EditController::notify( message );
 }
 
@@ -310,6 +321,7 @@ void Controller_VST3::initUi(gmpi::api::IParameterObserver* gui)
 tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 {
 	UpdateHandler::instance();
+	uiThread_ = std::this_thread::get_id();
 
 	tresult result = EditController::initialize (context);
 	if (result == kResultTrue)
@@ -595,14 +607,12 @@ tresult Controller_VST3::setParamNormalized( ParamID tag, ParamValue value )
 
 	return kResultTrue;
 }
-#if 0
-
-void Controller_VST3::OnLatencyChanged()
+// UI thread: from our own "GmpiLatency" message, or MpController's "ltnc".
+void Controller_VST3::notifyDawLatencyChanged()
 {
-	getComponentHandler()->restartComponent(kLatencyChanged);
-//	_RPT0(_CRT_WARN, "restartComponent(kLatencyChanged)\n");
+	if (auto* handler = getComponentHandler(); handler) // null until the host connects it
+		handler->restartComponent(kLatencyChanged);
 }
-#endif
 
 Steinberg::tresult PLUGIN_API Controller_VST3::getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized)
 {
@@ -828,6 +838,9 @@ void Controller_VST3::saveNativePreset(const char* filename, const std::string& 
 
 bool Controller_VST3::onTimer()
 {
+	if (latencyChangePending_.exchange(false, std::memory_order_acq_rel))
+		notifyDawLatencyChanged();
+
 	// parameter updates from the Processor
 	gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 
