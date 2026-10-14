@@ -31,7 +31,7 @@ namespace wrapper
 //-----------------------------------------------------------------------------
 typedef int64_t timestamp_t;
 
-class Processor_VST3 : public Steinberg::Vst::AudioEffect //, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
+class Processor_VST3 : public Steinberg::Vst::AudioEffect, public gmpi::hosting::IMidiOutputSink //, public GmpiBaseClass //, public IShellServices, public IProcessorMessageQues
 {
 	gmpi::hosting::gmpi_processor plugin;
 
@@ -169,8 +169,11 @@ protected:
 	gmpi::hosting::interThreadQue m_message_que_ui_to_dsp;
 
 	// MIDI output
-	void MidiToHost(class MidiBuffer3* mb, timestamp_t SeStartClock, int numSamples);
+	void onMidiOut(int32_t port, int32_t timestamp, std::span<const uint8_t> bytes) override;
 	gmpi::midi::MidiConverter2 midiConverter;
+	int32_t midiOutBus_ = 0;
+	std::vector<uint8_t> sysexOut_;	// SysEx events point here, so it must outlive process(). Fixed size, never grown on the audio thread.
+	size_t sysexOutUsed_ = 0;
 	float midi2NoteTune[256];
 	uint8_t midi2NoteToKey[256];
 	struct avoidRepeatedCCs

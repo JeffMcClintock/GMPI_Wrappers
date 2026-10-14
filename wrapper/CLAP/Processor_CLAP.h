@@ -38,7 +38,7 @@ namespace hosting
 {
 
 struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
-    clap::helpers::CheckingLevel::Maximal>
+    clap::helpers::CheckingLevel::Maximal>, public gmpi::hosting::IMidiOutputSink
 {
     Controller_CLAP controller;
     // The plug-in's own <Controller/>. TIDE BACKLOG S43(ii); the same object
@@ -389,6 +389,14 @@ private:
 
     double sampleRate{ 44100.0 };
     uint32_t maxFrameCount{ 0 };
+
+    // MIDI output, valid during process() only.
+    void onMidiOut(int32_t port, int32_t timestamp, std::span<const uint8_t> bytes) override;
+    const clap_output_events* midiOutEvents_{};
+    uint32_t midiOutFrames_{};
+    uint32_t midiOutLastTime_{};
+    std::vector<uint8_t> sysexOut_;	// SysEx events point here, so it must outlive process(). Fixed size, never grown on the audio thread.
+    size_t sysexOutUsed_{};
 };
 }
 } // namespace

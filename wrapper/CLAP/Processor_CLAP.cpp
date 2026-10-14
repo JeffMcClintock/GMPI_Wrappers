@@ -48,6 +48,9 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
             plugin.events.push(ge);
         })
 {
+    sysexOut_.assign(0x10000, 0);
+    plugin.midiOutputSink = this;
+
 #if 0 // moved
     controller.gmpiController.notifyDaw = [this](gmpi::hosting::GmpiParameter const* param)
         {
@@ -386,7 +389,7 @@ bool Processor_CLAP::notePortsInfo(uint32_t index, bool isInput,
         ret_info->id = index + 1;
         ret_info->supported_dialects = CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_MIDI2;
         ret_info->preferred_dialect = CLAP_NOTE_DIALECT_MIDI2;
-        strncpy(ret_info->name, "NoteInput", CLAP_NAME_SIZE);
+        strncpy(ret_info->name, isInput ? "NoteInput" : "MIDI Out", CLAP_NAME_SIZE);
         return true;
     }
     return false;
@@ -611,8 +614,13 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
         assert(outIdx == chansOut);
     }
 
-    // Process audio.
+    // Process audio. MIDI the plugin sends arrives meanwhile via onMidiOut().
+    midiOutEvents_ = process->out_events;
+    midiOutFrames_ = process->frames_count;
+    midiOutLastTime_ = 0;
+    sysexOutUsed_ = 0;
     plugin_->process(process->frames_count, events.head());
+    midiOutEvents_ = {};
     events.clear();
 
     // Latency changed while active: only a restart (thread-safe to request) lets activate() report it.
@@ -742,6 +750,56 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
     // And our host can optionally skip processing
     return CLAP_PROCESS_SLEEP;
 #endif
+}
+
+// MIDI from the plugin's MIDI output pins, during process().
+void Processor_CLAP::onMidiOut(int32_t port, int32_t timestamp, std::span<const uint8_t> bytes)
+{
+    if (!midiOutEvents_ || midiOutFrames_ == 0 || bytes.empty())
+        return;
+
+    // CLAP requires output events in time order.
+    const auto time = (std::clamp)(static_cast<uint32_t>((std::max)(timestamp, 0)), midiOutLastTime_, midiOutFrames_ - 1);
+    midiOutLastTime_ = time;
+
+    const clap_event_header header{ 0, time, CLAP_CORE_EVENT_SPACE_ID, 0, 0 };
+
+    if (gmpi::midi2::isMidi2Message(bytes))
+    {
+        // GMPI holds UMP as big-endian bytes, CLAP as native 32-bit words.
+        clap_event_midi2 evt{ header, static_cast<uint16_t>(port), {} };
+        evt.header.size = sizeof(evt);
+        evt.header.type = CLAP_EVENT_MIDI2;
+        for (size_t w = 0; w < (std::min)(bytes.size() / 4, std::size(evt.data)); ++w)
+        {
+            const auto b = bytes.data() + w * 4;
+            evt.data[w] = (uint32_t(b[0]) << 24) | (uint32_t(b[1]) << 16) | (uint32_t(b[2]) << 8) | b[3];
+        }
+        midiOutEvents_->try_push(midiOutEvents_, &evt.header);
+    }
+    else if (bytes[0] == 0xF0)
+    {
+        // The event only points at the bytes, so keep a copy until the host has read it.
+        if (sysexOutUsed_ + bytes.size() > sysexOut_.size())
+            return;
+
+        auto dest = sysexOut_.data() + sysexOutUsed_;
+        std::copy(bytes.begin(), bytes.end(), dest);
+        sysexOutUsed_ += bytes.size();
+
+        clap_event_midi_sysex evt{ header, static_cast<uint16_t>(port), dest, static_cast<uint32_t>(bytes.size()) };
+        evt.header.size = sizeof(evt);
+        evt.header.type = CLAP_EVENT_MIDI_SYSEX;
+        midiOutEvents_->try_push(midiOutEvents_, &evt.header);
+    }
+    else
+    {
+        clap_event_midi evt{ header, static_cast<uint16_t>(port), {} };
+        evt.header.size = sizeof(evt);
+        evt.header.type = CLAP_EVENT_MIDI;
+        std::copy(bytes.begin(), bytes.begin() + (std::min)(bytes.size(), std::size(evt.data)), evt.data);
+        midiOutEvents_->try_push(midiOutEvents_, &evt.header);
+    }
 }
 
 void Processor_CLAP::handleEventsFromUIQueue(const clap_output_events_t *ov)

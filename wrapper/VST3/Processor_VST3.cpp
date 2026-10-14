@@ -39,12 +39,16 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 		if (header.messageType != gmpi::midi2::ChannelVoice64 || header.channel > 15)
 			return;
 
-		auto outputEvents = dataptr->outputEvents;
+		// only within process(), and the host may provide no event list.
+		auto outputEvents = dataptr ? dataptr->outputEvents : nullptr;
+		if (!outputEvents)
+			return;
 
 		// Prepare a VST3 event
 		const uint16_t eventNotSet = 12345;
 		Steinberg::Vst::Event event{};
 		event.type = eventNotSet;
+		event.busIndex = midiOutBus_;
 		event.sampleOffset = offset;
 
 		// Parse MIDI 2.0 into a VST3 event
@@ -221,6 +225,9 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 		q.quantized = 255;
 		q.unquantized = -1.f;
 	}
+
+	sysexOut_.assign(0x10000, 0);
+	plugin.midiOutputSink = this;
     
     plugin.init(info);
 
@@ -985,80 +992,13 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 		assert(outIdx == outputBuffers.size());
 	}
 
-	// Process audio.
+	// Process audio. MIDI the plugin sends arrives meanwhile via onMidiOut().
+	dataptr = &data;
+	sysexOutUsed_ = 0;
 	plugin_->process(data.numSamples, events.head());
+	dataptr = {};
 
 	events.clear();
-#if 0
-
-	// silence flags
-	n = 0;
-	for (int bus = 0; bus < data.numOutputs; ++bus)
-	{
-		const auto channels = (std::min)((size_t)data.outputs[bus].numChannels, outputBuffers.size());
-		data.outputs[bus].silenceFlags = synthEditProject.updateSilenceFlags(n, channels);
-	}
-
-	// MIDI output.
-	auto mb = synthEditProject.getMidiOutputBuffer();
-
-#if 0 // send MIDI CCs as parameter changes
-	IParameterChanges* paramChanges = data.outputParameterChanges;
-	if (!mb->IsEmpty() && paramChanges)
-	{
-		IParamValueQueue* paramQueue[128];
-		memset(paramQueue, 0, sizeof(paramQueue));
-
-		while (!mb->IsEmpty())
-		{
-			int due_time_delta = (int)(mb->PeekNextTimestamp() - SeStartClock);
-			assert(due_time_delta >= 0);
-
-			// not due till next block?
-			if (due_time_delta >= data.numSamples)
-			{
-				break;
-			}
-			due_time_delta = (std::max)(due_time_delta, 0); // should never be nesc, but is safer to do
-
-			auto midi_msg = mb->Current();
-
-			// Handle MIDI messages.
-			{
-				unsigned char* midiData = (unsigned char*)midi_msg->data;
-
-				// normal short MIDI message?
-				int b1 = midiData[0];
-				if (b1 == CONTROL_CHANGE)
-				{
-					int controllerNumber = midiData[1];
-					Steinberg::Vst::ParamID ParameterId = MidiControllersParameterId + controllerNumber;
-
-					Steinberg::int32 returnIndex; // not used.
-					if (paramQueue[controllerNumber] == 0)
-					{
-						paramQueue[controllerNumber] = paramChanges->addParameterData(ParameterId, returnIndex);
-					}
-
-					if (paramQueue)
-					{
-						const double byteToNormal = 1.0 / 127.0;
-						double v = midiData[2] * byteToNormal;
-						paramQueue[controllerNumber]->addPoint(due_time_delta, v, returnIndex);
-					}
-				}
-			}
-
-			mb->UpdateReadPos();
-		}
-	}
-#else
-	// Send MIDI CC as legacy events.
-	dataptr = &data; // hacky back-channel
-	MidiToHost(mb, SeStartClock, data.numSamples);
-	dataptr = {};
-#endif
-#endif
 
 	// Latency the plugin reported that the host has neither read nor been told of.
 	// restartComponent is UI-thread only, so the background thread messages the controller.
@@ -1388,137 +1328,37 @@ void Processor_VST3::CommunicationProc()
 	}
 }
 
-void Processor_VST3::MidiToHost(MidiBuffer3* mb, timestamp_t SeStartClock, int numSamples)
+// MIDI from the plugin's MIDI output pins, during process().
+void Processor_VST3::onMidiOut(int32_t port, int32_t timestamp, std::span<const uint8_t> bytes)
 {
-#if 0
-	while (!mb->IsEmpty())
+	if (!dataptr || !dataptr->outputEvents || dataptr->numSamples <= 0 || bytes.empty())
+		return;
+
+	midiOutBus_ = port;
+	const auto offset = std::clamp(timestamp, 0, dataptr->numSamples - 1);
+
+	// MIDI 1.0 SysEx, passed through whole. The event only points at the bytes, so keep a copy until the host has read it.
+	if (bytes[0] == 0xF0)
 	{
-		auto due_time_delta = static_cast<int64_t>(mb->PeekNextTimestamp()) - static_cast<int64_t>(SeStartClock);
-		assert(due_time_delta >= 0);
-		due_time_delta = (std::max)(due_time_delta, int64_t(0)); // should never be nesc, but is safer to do
+		if (sysexOutUsed_ + bytes.size() > sysexOut_.size())
+			return;
 
-		// not due till next block?
-		if (due_time_delta >= numSamples)
-		{
-			break;
-		}
+		auto dest = sysexOut_.data() + sysexOutUsed_;
+		std::copy(bytes.begin(), bytes.end(), dest);
+		sysexOutUsed_ += bytes.size();
 
-		const auto midi_msg = mb->Current();
-
-		// Handle MIDI messages.
-		midiConverter.processMidi({ midi_msg->data, midi_msg->size }, due_time_delta);
-#if 0
-//		const auto midiData = midi_msg->data;
-		Steinberg::Vst::Event event{};
-		event.sampleOffset = due_time_delta;
-		event.midiCCOut.channel = midiData[0] & 0x0f;
-
-		// normal short MIDI message?
-		auto status = midiData[0] & 0xf0;
-
-		// Note offs can be note_on vel=0
-		if (status == NOTE_ON && midiData[2] == 0)
-		{
-			status = NOTE_OFF;
-		}
-
-		constexpr float recip_127 = 1.0f / 127.0f;
-
-		switch (status)
-		{
-		case NOTE_ON:
-		{
-			event.type = Steinberg::Vst::Event::kNoteOnEvent;
-			event.noteOn.noteId = midiData[1];
-			event.noteOn.pitch = midiData[1];
-			event.noteOn.velocity = recip_127 * (float)midiData[2];
-
-			outputEvents->addEvent(event);
-		}
-		break;
-
-		case NOTE_OFF:
-		{
-			event.type = Steinberg::Vst::Event::kNoteOffEvent;
-			event.noteOff.pitch = midiData[1];
-			event.noteOff.noteId = midiData[1];
-			event.noteOff.velocity = recip_127 * (float)midiData[2];
-
-			outputEvents->addEvent(event);
-		}
-		break;
-
-		case CONTROL_CHANGE:
-		{
-			event.type = Steinberg::Vst::Event::kLegacyMIDICCOutEvent;
-			event.midiCCOut.controlNumber = midiData[1];
-			event.midiCCOut.value = midiData[2];
-
-			outputEvents->addEvent(event);
-		}
-		break;
-
-		case PITCHBEND:
-		{
-			event.type = Steinberg::Vst::Event::kLegacyMIDICCOutEvent;
-			event.midiCCOut.controlNumber = Steinberg::Vst::kPitchBend;
-			event.midiCCOut.value = midiData[2];
-			event.midiCCOut.value2 = midiData[3];
-
-			outputEvents->addEvent(event);
-		}
-		break;
-
-		case CHANNEL_PRESSURE:
-		{
-			event.type = Steinberg::Vst::Event::kLegacyMIDICCOutEvent;
-			event.midiCCOut.controlNumber = Steinberg::Vst::kAfterTouch;
-			event.midiCCOut.value = midiData[2];
-
-			outputEvents->addEvent(event);
-		}
-		break;
-
-		case POLY_AFTERTOUCH:
-		{
-#if 0
-			// plain CC
-			event.type = Steinberg::Vst::Event::kLegacyMIDICCOutEvent;
-			event.midiCCOut.controlNumber = kCtrlPolyPressure;
-			event.midiCCOut.value = midiData[2];
-			event.midiCCOut.value2 = midiData[3];
-#else
-			// VST3 poly pressure event
-			event.type = Steinberg::Vst::Event::kPolyPressureEvent;
-			event.polyPressure.pitch = midiData[1];
-			event.polyPressure.noteId = midiData[1];
-			event.polyPressure.pressure = recip_127 * (float)midiData[2];
-#endif
-			outputEvents->addEvent(event);
-		}
-		break;
-
-		case SYSTEM_EXCLUSIVE:
-		{
-			event.data.type = Steinberg::Vst::DataEvent::kMidiSysEx;
-
-			// bit of a hack. the sysex data is technically 'freed' and *might* be overwritten at some future point when buffer wraps.
-			event.data.bytes = midi_msg->data;
-			event.data.size = midi_msg->size;
-
-			outputEvents->addEvent(event);
-		}
-		break;
-
-		default:
-			break;
-		}
-#endif
-
-		mb->UpdateReadPos();
+		Event event{};
+		event.busIndex = port;
+		event.sampleOffset = offset;
+		event.type = Event::kDataEvent;
+		event.data.type = DataEvent::kMidiSysEx;
+		event.data.bytes = dest;
+		event.data.size = static_cast<uint32>(bytes.size());
+		dataptr->outputEvents->addEvent(event);
+		return;
 	}
-#endif
-}
 
+	midiConverter.processMidi({ bytes.data(), bytes.size() }, offset);
+}
 
 }
