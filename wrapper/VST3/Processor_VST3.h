@@ -109,7 +109,7 @@ public:
 protected:
 	void CommunicationProc();
 	void MidiIn(int sampleOffset, const uint8_t* data, int32_t size);
-	void DoNoteOff(int channel, int32_t noteId, float velocity, int sampleOffset);
+	void DoNoteOff(int channel, int32_t noteId, int32_t key, float velocity, int sampleOffset);
 
 	struct vstNoteInfo
 	{
@@ -120,7 +120,7 @@ protected:
 		bool held;
 	};
 
-	vstNoteInfo* findKey(uint8_t channel, int noteId);
+	vstNoteInfo* findKey(uint8_t channel, int noteId, bool heldOnly = false);
 
 	Processor_VST3::vstNoteInfo& allocateKey(const Steinberg::Vst::NoteOnEvent& note);
 

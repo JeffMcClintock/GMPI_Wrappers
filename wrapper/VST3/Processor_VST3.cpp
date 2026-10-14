@@ -210,6 +210,7 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 			noteIds[c][n].MidiKeyNumber = n;
 			noteIds[c][n].pitch2 = n;
 			noteIds[c][n].channel = c;
+			noteIds[c][n].noteId = -1;
 		}
 	}
 
@@ -415,17 +416,26 @@ int SeProcessor::allocateKey(int noteId, int pitchSemiTone)
 	return key;
 }
 #endif
-Processor_VST3::vstNoteInfo* Processor_VST3::findKey(uint8_t channel, int noteId)
+// A host may reuse a released note's ID, so a held key wins over a released one.
+Processor_VST3::vstNoteInfo* Processor_VST3::findKey(uint8_t channel, int noteId, bool heldOnly)
 {
+	if (noteId < 0) // -1 marks an unused key, stored IDs are never negative
+		return {};
+
+	vstNoteInfo* released{};
 	for (auto& keyInfo : noteIds[channel])
 	{
 		if (keyInfo.noteId == noteId)
 		{
-			return &keyInfo;
+			if (keyInfo.held)
+				return &keyInfo;
+
+			if (!released)
+				released = &keyInfo;
 		}
 	}
 
-	return {};
+	return heldOnly ? nullptr : released;
 }
 
 Processor_VST3::vstNoteInfo& Processor_VST3::allocateKey(const NoteOnEvent& note)
@@ -660,7 +670,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 					if (e.noteOn.noteId == -1)
 						e.noteOn.noteId = e.noteOn.pitch;
 
-					DoNoteOff(e.noteOn.channel, e.noteOn.noteId, e.noteOn.velocity, e.sampleOffset);
+					DoNoteOff(e.noteOn.channel, e.noteOn.noteId, e.noteOn.pitch, e.noteOn.velocity, e.sampleOffset);
 				}
 				else
 				{
@@ -727,7 +737,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 				if (e.noteOff.noteId == -1)
 					e.noteOff.noteId = e.noteOff.pitch;
 
-				DoNoteOff(e.noteOff.channel, e.noteOff.noteId, e.noteOff.velocity, e.sampleOffset);
+				DoNoteOff(e.noteOff.channel, e.noteOff.noteId, e.noteOff.pitch, e.noteOff.velocity, e.sampleOffset);
 			}
 			break;
 
@@ -737,21 +747,26 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 				if (e.polyPressure.noteId == -1)
 					e.polyPressure.noteId = e.polyPressure.pitch;
 
-				if (auto keyInfo = findKey(e.polyPressure.channel, e.polyPressure.noteId); keyInfo)
+				// if we have remapped this notenumber, use the remapped value. Otherwise use the default.
+				int key = e.polyPressure.pitch;
+				int channel = e.polyPressure.channel;
+				if (auto keyInfo = findKey(channel, e.polyPressure.noteId); keyInfo)
 				{
-					const auto out = gmpi::midi2::makePolyPressure(
-						keyInfo->MidiKeyNumber,
-						e.polyPressure.pressure,
-						keyInfo->channel
-					);
-					//						_RPTN(0, "makePolyPressure %d %f\n", keyInfo->MidiKeyNumber, e.polyPressure.pressure);
-
-					MidiIn(
-						e.sampleOffset,
-						(const unsigned char*)&out,
-						sizeof(out)
-					);
+					key = keyInfo->MidiKeyNumber;
+					channel = keyInfo->channel;
 				}
+
+				const auto out = gmpi::midi2::makePolyPressure(
+					key,
+					e.polyPressure.pressure,
+					channel
+				);
+
+				MidiIn(
+					e.sampleOffset,
+					(const unsigned char*)&out,
+					sizeof(out)
+				);
 			}
 			break;
 
@@ -984,9 +999,9 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 	return kResultTrue;
 }
 
-void Processor_VST3::DoNoteOff(int channel, int32_t noteId, float velocity, int sampleOffset)
+void Processor_VST3::DoNoteOff(int channel, int32_t noteId, int32_t key, float velocity, int sampleOffset)
 {
-	if (auto keyInfo = findKey(channel, noteId); keyInfo)
+	if (auto keyInfo = findKey(channel, noteId, true); keyInfo)
 	{
 		keyInfo->held = false;
 
@@ -997,6 +1012,23 @@ void Processor_VST3::DoNoteOff(int channel, int32_t noteId, float velocity, int 
 		);
 
 		MidiIn(sampleOffset, (const unsigned char*)&out, sizeof(out));
+	}
+	else
+	{
+		// with hold pedal in Cubase, note-id may NOT be the most recent note-on for that key, but the first note-on while hold-pedal was down.
+		// i.e. turn on hold pedal, play the same key repeatedly. Check for stuck notes.
+		// in this case the original note-id will have been overwritten in the lookup table, so we're flying blind. But we need to avoid stuck notes.
+		// !! Might need to somehow track ALL note-ids, or most-recent at least (since they are infinite)
+		if (key >= 0)
+		{
+			const auto out = gmpi::midi2::makeNoteOffMessage(
+				key,
+				velocity,
+				channel
+			);
+
+			MidiIn(sampleOffset, (const unsigned char*)&out, sizeof(out));
+		}
 	}
 }
 
