@@ -574,71 +574,72 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 				int32 valueChangeCount = queue->getPointCount ();
 				ParamValue valueNormalized;
 				int32 sampleOffset{};
+				const int paramId = queue->getParameterId();
 
-				if (queue->getPoint (valueChangeCount-1, sampleOffset, valueNormalized) == kResultTrue)
+				if (paramId < MidiControllersParameterId)
 				{
-					int id = queue->getParameterId();
-
-					if( id < MidiControllersParameterId)
+					if (queue->getPoint (valueChangeCount-1, sampleOffset, valueNormalized) == kResultTrue)
 					{
 						auto prev_sampleOffset{ sampleOffset };
 						//_RPTW1( _CRT_WARN, L"Processor : %f\n", value );
 						assert(sampleOffset >= prev_sampleOffset && sampleOffset < data.numSamples);
 //						_RPT1(_CRT_WARN, "                     PRESETS-DSP: P%d Set in Process()\n", id);
 
-						plugin.setParameterNormalizedFromDaw(info, sampleOffset, id, valueNormalized);
+						plugin.setParameterNormalizedFromDaw(info, sampleOffset, paramId, valueNormalized);
 					}
-					else
+				}
+				else if (plugin.MidiInputPinIdx > -1)
+				{
+					// CC, channel pressure and pitch bend the host mapped onto parameters (Controller_VST3::getMidiControllerAssignment). Every point, so a bend keeps its shape within the block.
+					constexpr int ccsPerChannel = 130;
+					const auto channel = (paramId - MidiControllersParameterId) / ccsPerChannel;
+					const auto cc = (paramId - MidiControllersParameterId) % ccsPerChannel;
+
+					for (int32 point = 0; channel < 16 && point < valueChangeCount; ++point)
 					{
-						// TODO: CC74 (Brightness) and 128 (Channel Pressure) on all channels
-						id = id - MidiControllersParameterId;
-						if ( id >=0 )
+						if (queue->getPoint(point, sampleOffset, valueNormalized) != kResultTrue)
+							continue;
+
+						gmpi::midi::message64 msgout;
+
+						if(cc < 128 )
 						{
-							constexpr int ccsPerChannel = 130;
-							const auto channel = id / ccsPerChannel;
-							const auto cc = id % ccsPerChannel;
-
-							gmpi::midi::message64 msgout;
-
-							if(cc < 128 )
-							{
-								msgout = gmpi::midi2::makeController(
-									static_cast<uint8_t>(cc)
-									, valueNormalized
-									, channel
-								);
-							}
-							else
-							{
-								switch(cc)
-								{
-									case 128: // Channel Pressure.
-									{
-										msgout = gmpi::midi2::makeChannelPressure(
-											valueNormalized
-											, channel
-										);
-									}
-									break;
-
-									case 129: // Bender.
-									{
-//										_RPTN(0, "C%2d BDR %f\n", channel, value);
-										msgout = gmpi::midi2::makeBender(
-											valueNormalized // use normalized bender
-											, channel
-										);
-									}
-									break;
-								}
-							}
-
-							MidiIn(
-								  sampleOffset
-								, msgout.m
-								, sizeof(msgout.m)
+							msgout = gmpi::midi2::makeController(
+								static_cast<uint8_t>(cc)
+								, valueNormalized
+								, channel
 							);
 						}
+						else
+						{
+							switch(cc)
+							{
+								case 128: // Channel Pressure.
+								{
+									msgout = gmpi::midi2::makeChannelPressure(
+										valueNormalized
+										, channel
+									);
+								}
+								break;
+
+								case 129: // Bender.
+								{
+//										_RPTN(0, "C%2d BDR %f\n", channel, value);
+									msgout = gmpi::midi2::makeBender(
+										valueNormalized // use normalized bender
+										, channel
+									);
+								}
+								break;
+							}
+						}
+
+						MidiIn(
+							  sampleOffset
+							, msgout.m
+							, sizeof(msgout.m)
+						);
 					}
 				}
 			}

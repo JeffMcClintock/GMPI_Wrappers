@@ -333,44 +333,15 @@ tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 
 		MpController::Initialize();
 
-		supportedChannels = 1; // TODO countPins(info, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) == 0 ? 0 : 16;
+		// CC tags start at MidiControllersParameterId, so the native tags (their indexes) must stay below it.
+		const bool hasMidiIn = gmpiController.info && countPins(*gmpiController.info, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) > 0;
+		const bool tagsFit = nativeParamCount() <= MidiControllersParameterId;
+		assert(tagsFit);
 
-//		const auto supportedChannels = info.midiInputCount ? 16 : 0;
-		const auto supportAllCC = true; // info.vst3Emulate16ChanCcs;
-
-#if 0
-
-		// MIDI CC SUPPORT
-		char ccName[] = "MIDI CC     ";
+		supportedChannels = hasMidiIn && tagsFit ? 16 : 0;
+		ccValues.assign(supportedChannels * numMidiControllers, 0.0);
 		for (int chan = 0; chan < supportedChannels; ++chan)
-		{
-			for (int cc = 0; cc < numMidiControllers; ++cc)
-			{
-				if (chan == 0 || supportAllCC || cc > 127 || cc == 74) // Channel Presure, Pitch Bend and Brightness
-				{
-					const ParamID ParameterId = MidiControllersParameterId + chan * numMidiControllers + cc;
-					sprintf(ccName + 9, "%3d", cc);
-
-					auto param = makeNativeParameter(ParameterId, false);
-					param->datatype_ = gmpi::PinDatatype::Float32;
-					param->name_ = ccName;
-					param->minimum = 0;
-					param->maximum = 1;
-					param->hostControl_ = -1;
-					param->isPolyphonic_ = false;
-					param->parameterHandle_ = -1;
-					param->moduleHandle_ = -1;
-					param->moduleParamId_ = -1;
-					param->stateful_ = false;
-
-					auto initialVal(ParseToRaw(param->datatype_, "0"));
-					param->rawValues_.push_back(initialVal);				// preset 0/
-
-					parameters_.push_back(std::unique_ptr<MpParameter>(param));
-				}
-			}
-		}
-#endif
+			ccValues[chan * numMidiControllers + kPitchBend] = 0.5; // centred
 	}
 
 	isInitialised = true;
@@ -435,20 +406,17 @@ void Controller_VST3::update( FUnknown* changedUnknown, int32 message )
 //------------------------------------------------------------------------
 tresult PLUGIN_API Controller_VST3::getMidiControllerAssignment (int32 busIndex, int16 channel, CtrlNumber midiControllerNumber, ParamID& tag/*out*/)
 {
-#if 0 // TODO
+	if (busIndex != 0 || channel < 0 || channel >= supportedChannels || midiControllerNumber < 0 || midiControllerNumber >= numMidiControllers)
+		return kResultFalse;
 
-	if (busIndex == 0)
-	{
-		const int possibleTag = MidiControllersParameterId + channel * numMidiControllers + midiControllerNumber;
-		if (tagToParameter.find(possibleTag) != tagToParameter.end())
-		{
-			tag = possibleTag;
-			return kResultTrue;
-		}
-	}
-#endif
+	tag = MidiControllersParameterId + channel * numMidiControllers + midiControllerNumber;
+	return kResultTrue;
+}
 
-	return kResultFalse;
+int Controller_VST3::ccParamIndex(ParamID tag) const
+{
+	const auto i = static_cast<int64_t>(tag) - MidiControllersParameterId;
+	return i >= 0 && i < static_cast<int64_t>(ccValues.size()) ? static_cast<int>(i) : -1;
 }
 
 IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
@@ -600,6 +568,15 @@ tresult Controller_VST3::setParamNormalized( ParamID tag, ParamValue value )
 {
 //	_RPT2(_CRT_WARN, "setParamNormalized(%d, %f)\n", tag, value);
 
+	if (const auto i = ccParamIndex(tag); i >= 0)
+	{
+		ccValues[i] = value;
+		return kResultTrue;
+	}
+
+	if (tag >= static_cast<ParamID>(nativeParamCount()))
+		return kInvalidArgument;
+
 	if (auto p = gmpiController.patchManager.setParameterNormalised(gmpiController.nativeParams[tag]->info->id, value); p) // todo avoid lookup when we already have pointer to parameter
 	{
 		gmpiController.notifyGui(p);
@@ -614,18 +591,38 @@ void Controller_VST3::notifyDawLatencyChanged()
 		handler->restartComponent(kLatencyChanged);
 }
 
+namespace
+{
+// CC and channel pressure display as 0..127, pitch bend as -8192..8191.
+double ccToDisplay(int controller, ParamValue normalized)
+{
+	return controller == kPitchBend ? std::round(normalized * 16383.0) - 8192.0 : std::round(normalized * 127.0);
+}
+ParamValue ccFromDisplay(int controller, double display)
+{
+	const auto normalized = controller == kPitchBend ? (display + 8192.0) / 16383.0 : display / 127.0;
+	return std::clamp(normalized, 0.0, 1.0);
+}
+}
+
 Steinberg::tresult PLUGIN_API Controller_VST3::getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized)
 {
-	if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
+	const auto cc = ccParamIndex(tag);
+	if (cc < 0 && (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size())))
 		return Steinberg::kInvalidArgument;
-
-	const auto& p = *gmpiController.nativeParams[tag];
 
 	auto valueString = wrapper::JmUnicodeConversions::ToWstring(string);
 
 	wchar_t* endPtr{};
 	const auto real = wcstof(valueString.c_str(), &endPtr);
 
+	if (cc >= 0)
+	{
+		valueNormalized = ccFromDisplay(cc % numMidiControllers, real);
+		return Steinberg::kResultOk;
+	}
+
+	const auto& p = *gmpiController.nativeParams[tag];
 	valueNormalized = p.real2Normalized(real);
 
 	return Steinberg::kResultOk;
@@ -633,6 +630,25 @@ Steinberg::tresult PLUGIN_API Controller_VST3::getParamValueByString(Steinberg::
 
 tresult Controller_VST3::getParameterInfo(int32 paramIndex, ParameterInfo& returnInfo)
 {
+	if (const auto i = paramIndex - nativeParamCount(); i >= 0 && i < static_cast<int>(ccValues.size()))
+	{
+		const int channel = i / numMidiControllers;
+		const int controller = i % numMidiControllers;
+
+		std::string name = controller == kAfterTouch ? "Channel Pressure" : controller == kPitchBend ? "Pitch Bend" : "MIDI CC " + std::to_string(controller);
+		name += " [" + std::to_string(channel + 1) + "]";
+		const auto name16 = JmUnicodeConversions::ToUtf16(name);
+
+		returnInfo = {};
+		returnInfo.id = MidiControllersParameterId + i;
+		_tstrncpy(returnInfo.title, (const TChar*)name16.c_str(), static_cast<Steinberg::uint32>(std::size(returnInfo.title)));
+		_tstrncpy(returnInfo.shortTitle, (const TChar*)name16.c_str(), static_cast<Steinberg::uint32>(std::size(returnInfo.shortTitle)));
+		returnInfo.defaultNormalizedValue = controller == kPitchBend ? 0.5 : 0.0;
+		returnInfo.unitId = kRootUnitId;
+		returnInfo.flags = ParameterInfo::kIsHidden; // MIDI-mapping only: not automatable, not listed in the host's generic editor
+		return kResultOk;
+	}
+
 	if( paramIndex < 0 || paramIndex >= static_cast<int>(gmpiController.nativeParams.size()))
 		return kInvalidArgument;
 
@@ -668,8 +684,15 @@ tresult Controller_VST3::getParameterInfo(int32 paramIndex, ParameterInfo& retur
 
 tresult PLUGIN_API Controller_VST3::getParamStringByValue(ParamID tag, ParamValue valueNormalized, String128 string)
 {
+	if (const auto i = ccParamIndex(tag); i >= 0)
+	{
+		const auto s = JmUnicodeConversions::ToUtf16(std::to_string(static_cast<int>(ccToDisplay(i % numMidiControllers, valueNormalized))));
+		strncpy16(string, (const TChar*)s.c_str(), 128);
+		return kResultOk;
+	}
+
 	if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
-		return 0.0;
+		return kInvalidArgument;
 
 	const auto& p = *gmpiController.nativeParams[tag];
 

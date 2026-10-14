@@ -137,7 +137,12 @@ class Controller_VST3 :
 
 	// Hold data until timer can put it in VST3 queue mechanism.
 	StagingMemoryBuffer queueToDsp_;
-	int supportedChannels = 1;
+
+	// MIDI CC, channel pressure and pitch bend arrive as hidden parameters the host maps MIDI onto (IMidiMapping); Processor_VST3 turns them back into MIDI.
+	int supportedChannels = 0; // 16 when the plugin has a MIDI input
+	std::vector<Steinberg::Vst::ParamValue> ccValues; // normalized, indexed by channel * numMidiControllers + controller
+	int nativeParamCount() const { return static_cast<int>(gmpiController.nativeParams.size()); }
+	int ccParamIndex(Steinberg::Vst::ParamID tag) const; // -1 when 'tag' is not a CC parameter
 
 	std::thread::id uiThread_;
 	std::atomic<bool> latencyChangePending_ = {}; // set by notify() off the UI thread, taken by onTimer().
@@ -371,13 +376,16 @@ public:
 	// Parameter overrides.
 	Steinberg::int32 PLUGIN_API getParameterCount() override
 	{
-		return static_cast<Steinberg::int32>(gmpiController.nativeParams.size());
+		return static_cast<Steinberg::int32>(nativeParamCount() + ccValues.size());
 	}
 	Steinberg::tresult PLUGIN_API getParameterInfo(Steinberg::int32 paramIndex, Steinberg::Vst::ParameterInfo& info) override;
 	Steinberg::tresult PLUGIN_API getParamStringByValue(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized, Steinberg::Vst::String128 string) override;
 	Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized) override;
 	Steinberg::Vst::ParamValue PLUGIN_API normalizedParamToPlain(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized) override
 	{
+		if (ccParamIndex(tag) >= 0)
+			return valueNormalized;
+
 		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
 			return 0.0;
 
@@ -387,6 +395,9 @@ public:
 	}
 	Steinberg::Vst::ParamValue PLUGIN_API plainParamToNormalized(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue plainValue) override
 	{
+		if (ccParamIndex(tag) >= 0)
+			return plainValue;
+
 		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
 			return 0.0;
 
@@ -396,8 +407,11 @@ public:
 	}
 	Steinberg::Vst::ParamValue PLUGIN_API getParamNormalized(Steinberg::Vst::ParamID tag) override
 	{
+		if (const auto i = ccParamIndex(tag); i >= 0)
+			return ccValues[i];
+
 		if (tag < 0 || tag >= static_cast<int>(gmpiController.nativeParams.size()))
-			return Steinberg::kInvalidArgument;
+			return 0.0; // a ParamValue, not a tresult
 
 		const auto& p = *gmpiController.nativeParams[tag];
 
