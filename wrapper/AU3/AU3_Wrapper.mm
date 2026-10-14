@@ -75,6 +75,7 @@ struct AU3Core : public gmpi::api::IProcessorHost, public gmpi::TimerClient
 	// Host context, captured at allocateRenderResources. ObjC blocks held from
 	// C++; copied/released manually because this library builds without ARC.
 	AUHostMusicalContextBlock musicalContextBlock{};
+	AUHostTransportStateBlock transportStateBlock{};
 
 	float sampleRate{44100.0f};
 	int32_t maxFrames{512};
@@ -449,6 +450,17 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 			[p setValue:(AUValue)param->valueReal() originator:nil];
 	};
 
+	// A GUI drag is one host gesture: touch on grab, release on letting go.
+	core->gmpiController.notifyDawGrab = [treePtr](gmpi::hosting::GmpiParameter* param, bool grabbed)
+	{
+		AUParameter* p = [treePtr parameterWithAddress:(AUParameterAddress)param->info->dawTag];
+		if (!p)
+			return;
+
+		if (@available(macOS 10.12, iOS 10.0, *))
+			[p setValue:p.value originator:nil atHostTime:0 eventType:grabbed ? AUParameterAutomationEventTypeTouch : AUParameterAutomationEventTypeRelease];
+	};
+
 	// Hosts observe `latency` by KVO. Not retained (no ARC here): core and its timer die in dealloc.
 	GmpiAudioUnit* unit = self;
 	core->notifyLatencyChanged = [unit]()
@@ -658,6 +670,8 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 
 	if (self.musicalContextBlock)
 		core->musicalContextBlock = [self.musicalContextBlock copy];
+	if (self.transportStateBlock)
+		core->transportStateBlock = [self.transportStateBlock copy];
 
 	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
 	core->plugin.start_processor(core.get(), info, core->maxFrames, core->sampleRate);
@@ -680,6 +694,11 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 	{
 		[core->musicalContextBlock release];
 		core->musicalContextBlock = nil;
+	}
+	if (core->transportStateBlock)
+	{
+		[core->transportStateBlock release];
+		core->transportStateBlock = nil;
 	}
 
 	[super deallocateRenderResources];
@@ -717,27 +736,35 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 		// Parameter changes and presets from the main thread.
 		corePtr->queueToDsp.pollMessage(&corePtr->plugin);
 
-		// Tempo and musical time from the host, forwarded as host controls.
+		// Host time, forwarded as host controls. Only what the host actually reported, as the VST3 and CLAP wrappers do.
 		if (corePtr->musicalContextBlock)
 		{
-			double currentTempo = 120.0;
-			double timeSignatureNumerator = 4.0;
-			NSInteger timeSignatureDenominator = 4;
-			double currentBeatPosition = 0.0;
-			NSInteger sampleOffsetToNextBeat = 0;
-			double currentMeasureDownbeatPosition = 0.0;
+			double currentTempo{};
+			double timeSignatureNumerator{};
+			NSInteger timeSignatureDenominator{};
+			double currentBeatPosition{};
+			NSInteger sampleOffsetToNextBeat{};
+			double currentMeasureDownbeatPosition{};
 
 			if (corePtr->musicalContextBlock(&currentTempo, &timeSignatureNumerator, &timeSignatureDenominator,
 					&currentBeatPosition, &sampleOffsetToNextBeat, &currentMeasureDownbeatPosition))
 			{
-				if (!std::isfinite(currentBeatPosition))
-					currentBeatPosition = 0.0;
-
-				corePtr->plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm, currentTempo);
-				corePtr->plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator, timeSignatureNumerator);
-				corePtr->plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator, (double)timeSignatureDenominator);
-				corePtr->plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, currentBeatPosition);
+				using gmpi::hosting::HostControls;
+				corePtr->plugin.setHostControlFromDaw(HostControls::TimeBpm, currentTempo);
+				corePtr->plugin.setHostControlFromDaw(HostControls::TimeNumerator, timeSignatureNumerator);
+				corePtr->plugin.setHostControlFromDaw(HostControls::TimeDenominator, (double)timeSignatureDenominator);
+				if (std::isfinite(currentBeatPosition)) // AU validation passes inf
+					corePtr->plugin.setHostControlFromDaw(HostControls::TimeQuarterNotePosition, currentBeatPosition);
+				corePtr->plugin.setHostControlFromDaw(HostControls::TimeBarStart, currentMeasureDownbeatPosition);
 			}
+		}
+
+		if (corePtr->transportStateBlock)
+		{
+			AUHostTransportStateFlags transportState{};
+			double currentSamplePosition{}, cycleStartBeatPosition{}, cycleEndBeatPosition{};
+			if (corePtr->transportStateBlock(&transportState, &currentSamplePosition, &cycleStartBeatPosition, &cycleEndBeatPosition))
+				corePtr->plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeTransportPlaying, (transportState & AUHostTransportStateMoving) != 0 ? 1.0 : 0.0);
 		}
 
 		// Scheduled events: sample-accurate parameters and MIDI.

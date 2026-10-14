@@ -164,6 +164,24 @@ AU2_Wrapper::AU2_Wrapper(AudioComponentInstance inInstance)
   //              endEdit(paramID);
         };
 
+    // A GUI drag is one host gesture. Sending as our own listener keeps ParameterListener() from hearing it, as with AUParameterSet above.
+    gmpiController.notifyDawGrab = [this](gmpi::hosting::GmpiParameter* param, bool grabbed)
+        {
+            AudioUnitEvent e{};
+            e.mEventType = grabbed ? kAudioUnitEvent_BeginParameterChangeGesture : kAudioUnitEvent_EndParameterChangeGesture;
+            e.mArgument.mParameter.mAudioUnit = GetComponentInstance();
+            e.mArgument.mParameter.mParameterID = param->info->dawTag;
+            e.mArgument.mParameter.mScope = kAudioUnitScope_Global;
+            e.mArgument.mParameter.mElement = 0;
+            AUEventListenerNotify(mParameterListener, NULL, &e);
+        };
+
+    // A saved change the host can't see (a GUI edit of a private parameter): AU's "my state changed" is a ClassInfo property change.
+    gmpiController.notifyDawStateChanged = [this]()
+        {
+            PropertyChanged(kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0);
+        };
+
 	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
     plugin.init(info);
 	gmpiController.init(info);
@@ -772,33 +790,33 @@ OSStatus AU2_Wrapper::Render(AudioUnitRenderActionFlags& ioActionFlags,
 	}
 #endif
 
+    // Host time, forwarded as host controls. Only what the host actually reported, as the VST3 and CLAP wrappers do.
     {
-        Float64    currentBeat = 0;
-        Float64 currentTempo = 120;
-        
+        using gmpi::hosting::HostControls;
+
+        Float64 currentBeat{}, currentTempo{};
         if (CallHostBeatAndTempo(&currentBeat, &currentTempo) == noErr)
         {
-            if (!isfinite(currentBeat))
-            {
-                currentBeat= 0.0;
-            }
+            plugin.setHostControlFromDaw(HostControls::TimeBpm, currentTempo);
+            if (isfinite(currentBeat)) // AU validation passes inf
+                plugin.setHostControlFromDaw(HostControls::TimeQuarterNotePosition, currentBeat);
         }
-        
-        UInt32 outDeltaSampleOffsetToNextBeat{};
-        double outCurrentMeasureDownBeat{};
-        float num{4.f};
-        UInt32 den{4};
 
-        if (CallHostMusicalTimeLocation(&outDeltaSampleOffsetToNextBeat, &num, &den,
-            &outCurrentMeasureDownBeat) == noErr)
+        UInt32 deltaSampleOffsetToNextBeat{};
+        Float32 numerator{};
+        UInt32 denominator{};
+        Float64 currentMeasureDownBeat{};
+        if (CallHostMusicalTimeLocation(&deltaSampleOffsetToNextBeat, &numerator, &denominator, &currentMeasureDownBeat) == noErr)
         {
-//            timeInfo.barStartPos = outCurrentMeasureDownBeat;
+            plugin.setHostControlFromDaw(HostControls::TimeNumerator, numerator);
+            plugin.setHostControlFromDaw(HostControls::TimeDenominator, denominator);
+            plugin.setHostControlFromDaw(HostControls::TimeBarStart, currentMeasureDownBeat);
         }
-        
-        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeBpm,                 currentTempo);
-        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeNumerator,           num);
-        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeDenominator,         den);
-        plugin.setHostControlFromDaw(gmpi::hosting::HostControls::TimeQuarterNotePosition, currentBeat);       
+
+        Boolean playing{}, transportStateChanged{}, cycling{};
+        Float64 currentSampleInTimeLine{}, cycleStartBeat{}, cycleEndBeat{};
+        if (CallHostTransportState(&playing, &transportStateChanged, &currentSampleInTimeLine, &cycling, &cycleStartBeat, &cycleEndBeat) == noErr)
+            plugin.setHostControlFromDaw(HostControls::TimeTransportPlaying, playing ? 1.0 : 0.0);
     }
     
 #if 0
