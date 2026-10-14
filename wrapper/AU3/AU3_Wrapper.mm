@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -165,6 +166,14 @@ struct AU3Core : public gmpi::api::IProcessorHost, public gmpi::TimerClient
 	// gmpi::TimerClient - main thread, parameter updates from the processor.
 	bool onTimer() override
 	{
+		// The plugin reported a latency the host has neither read nor been told of.
+		if (const auto latency = plugin.getLatency(); latency != latencyReadByHost.load(std::memory_order_relaxed) && latency != latencyNotified.load(std::memory_order_relaxed))
+		{
+			latencyNotified.store(latency, std::memory_order_relaxed);
+			if (notifyLatencyChanged)
+				notifyLatencyChanged();
+		}
+
 		gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 		return true;
 	}
@@ -180,7 +189,23 @@ struct AU3Core : public gmpi::api::IProcessorHost, public gmpi::TimerClient
 	}
 	gmpi::ReturnCode setLatency(int32_t latency) override
 	{
-		return gmpi::ReturnCode::Ok;
+		return plugin.setLatency(latency); // stored there, reported by latencySeconds()
+	}
+
+	// Latency reporting, polled by onTimer (main thread). A value the host has read is never
+	// notified, and a notified value is not notified again until the host has read it; else a
+	// host that reallocates render resources on a latency change would rebuild us in a loop.
+	std::atomic<int32_t> latencyReadByHost{};
+	std::atomic<int32_t> latencyNotified{-1}; // -1 = none outstanding.
+	std::function<void()> notifyLatencyChanged; // KVO on the unit's `latency`, main thread.
+
+	double latencySeconds()
+	{
+		const auto latency = plugin.getLatency();
+		latencyReadByHost.store(latency, std::memory_order_relaxed);
+		auto notified = latency;
+		latencyNotified.compare_exchange_strong(notified, -1); // the host has caught up with our notification.
+		return sampleRate > 0.0f ? latency / static_cast<double>(sampleRate) : 0.0;
 	}
 	gmpi::ReturnCode sleep() override
 	{
@@ -424,6 +449,14 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 			[p setValue:(AUValue)param->valueReal() originator:nil];
 	};
 
+	// Hosts observe `latency` by KVO. Not retained (no ARC here): core and its timer die in dealloc.
+	GmpiAudioUnit* unit = self;
+	core->notifyLatencyChanged = [unit]()
+	{
+		[unit willChangeValueForKey:@"latency"];
+		[unit didChangeValueForKey:@"latency"];
+	};
+
 	// The DSP->UI queue needs draining whether or not any editor is open.
 	// Instantiation may be off-main; the timer wants the main run loop.
 	dispatch_async(dispatch_get_main_queue(), ^{
@@ -489,6 +522,11 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 - (AUAudioUnitBusArray*)outputBusses
 {
 	return _outputBusArray;
+}
+
+- (NSTimeInterval)latency
+{
+	return core ? core->latencySeconds() : 0.0;
 }
 
 - (AUParameterTree*)parameterTree

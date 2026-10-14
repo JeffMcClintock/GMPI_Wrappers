@@ -607,6 +607,13 @@ bool AU2_Wrapper::onTimer()
 	return MpController::OnTimer();
 #endif
 
+	// The plugin reported a latency the host has neither read nor been told of.
+	if (const auto latency = plugin.getLatency(); latency != latencyReadByHost_.load(std::memory_order_relaxed) && latency != latencyNotified_.load(std::memory_order_relaxed))
+	{
+		latencyNotified_.store(latency, std::memory_order_relaxed);
+		PropertyChanged(kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0);
+	}
+
 	// parameter updates from the Processor
     gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 
@@ -1850,7 +1857,16 @@ gmpi::ReturnCode AU2_Wrapper::setPinStreaming(int32_t timestamp, int32_t pinId, 
 
 gmpi::ReturnCode AU2_Wrapper::setLatency(int32_t latency)
 {
-    return gmpi::ReturnCode::Ok;
+    return plugin.setLatency(latency); // stored there, reported by GetLatency
+}
+
+Float64 AU2_Wrapper::GetLatency()
+{
+    const auto latency = plugin.getLatency();
+    latencyReadByHost_.store(latency, std::memory_order_relaxed);
+    auto notified = latency;
+    latencyNotified_.compare_exchange_strong(notified, -1); // the host has caught up with our notification.
+    return sampleRate > 0.0f ? latency / static_cast<Float64>(sampleRate) : 0.0;
 }
 
 gmpi::ReturnCode AU2_Wrapper::sleep()

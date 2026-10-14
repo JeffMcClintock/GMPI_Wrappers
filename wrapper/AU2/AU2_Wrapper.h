@@ -2,6 +2,7 @@
 #ifndef __SEInstrumentBase__
 #define __SEInstrumentBase__
 
+#include <atomic>
 #include <vector>
 #include <map>
 #include <mutex>
@@ -476,14 +477,13 @@ protected:
 	OSStatus GetParameterInfo(AudioUnitScope inScope, AudioUnitParameterID inParameterID,
 		AudioUnitParameterInfo& outParameterInfo) override;
 
-	Float64 GetLatency() override
-	{
-        return 0;//processor.getLatencySamples() / timeInfo.sampleRate;
-	}
-    void OnLatencyChanged() 
-    {
-        PropertyChanged(kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0);
-    }
+	Float64 GetLatency() override;
+
+	// Latency reporting, polled by onTimer (main thread). A value the host has read is never
+	// notified, and a notified value is not notified again until the host has read it; else a
+	// host that reinitializes on a latency change would rebuild the plugin in a loop.
+	std::atomic<int32_t> latencyReadByHost_{};
+	std::atomic<int32_t> latencyNotified_{ -1 }; // -1 = none outstanding.
 
 	// Presets
     void setPresetXmlFromSelf(const std::string& xml); //override;
