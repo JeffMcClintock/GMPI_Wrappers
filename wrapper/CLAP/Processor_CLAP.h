@@ -56,6 +56,17 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
     void sendParameterToProcessorQueue(gmpi::hosting::GmpiParameter* param);
     std::vector<gmpi::hosting::GmpiParameter*> waitingForRoom; // sent later by the waiting list
 
+    // A GUI edit of a DAW parameter, for the host: queued on the main thread, sent as a CLAP event by process() (or by paramsFlush() while inactive).
+    struct ToHostEvent
+    {
+        enum class Type : int32_t { Value, GestureBegin, GestureEnd } type;
+        clap_id paramId;
+        double value;
+    };
+    gmpi::hosting::lock_free_fifo toHostEvents{ 0x4000 }; // main thread -> the thread the host drains events on
+    void reportToHost(ToHostEvent::Type type, clap_id paramId, double value = 0.0); // main thread
+    void sendEventsToHost(const clap_output_events_t* out);
+
     static constexpr int max_voices = 64;
     Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& info, const clap_host* host);
     ~Processor_CLAP();

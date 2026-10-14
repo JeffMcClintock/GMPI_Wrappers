@@ -63,26 +63,6 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
     sysexOut_.assign(0x10000, 0);
     plugin.midiOutputSink = this;
 
-#if 0 // moved
-    controller.gmpiController.notifyDaw = [this](gmpi::hosting::GmpiParameter const* param)
-        {
-            assert(param->info->dawTag != -1); // should never be called for non-native param.
-
-            const auto paramID = param->info->dawTag;
-#if 0 // TODO
-            // Usually parameter will have sent beginEdit() already (if it has mouse-down connected properly, else fake it.
-            if (!param->isGrabbed)
-                beginEdit(paramID);
-
-            //   _RPT2(0, "param[%d] %f => DAW\n", paramID, param->getNormalized());
-            performEdit(paramID, param->normalisedValue()); // Send the value to DSP.
-
-            if (!param->isGrabbed)
-                endEdit(paramID);
-#endif
-        };
-#endif
-
     controller.gmpiController.init(pinfo);
 
     // Blobs the controller sets can't ride CLAP's parameter path; frame them straight into the ui->dsp queue, as AU3 does.
@@ -96,6 +76,17 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
         {
             if (!hostStateTransfer_ && _host.canUseState())
                 _host.stateMarkDirty();
+        };
+
+    // Controller_CLAP's notifyDaw only feeds the DSP. A GUI edit of a DAW parameter must also reach the host, as CLAP events.
+    controller.gmpiController.notifyDaw = [this](gmpi::hosting::GmpiParameter* param)
+        {
+            controller.pendingQueueClients.AddWaiter(param);
+            reportToHost(ToHostEvent::Type::Value, static_cast<clap_id>(param->info->dawTag), param->valueReal());
+        };
+    controller.gmpiController.notifyDawGrab = [this](gmpi::hosting::GmpiParameter* param, bool grabbed)
+        {
+            reportToHost(grabbed ? ToHostEvent::Type::GestureBegin : ToHostEvent::Type::GestureEnd, static_cast<clap_id>(param->info->dawTag));
         };
 
     // CREATE AND INITIALISE THE PLUG-IN'S OWN CONTROLLER. TIDE BACKLOG S43(ii),
@@ -648,6 +639,9 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
         assert(outIdx == chansOut);
     }
 
+    // GUI edits first, at time 0, ahead of any MIDI the plugin sends below.
+    sendEventsToHost(process->out_events);
+
     // Process audio. MIDI the plugin sends arrives meanwhile via onMidiOut().
     midiOutEvents_ = process->out_events;
     midiOutFrames_ = process->frames_count;
@@ -921,9 +915,62 @@ void Processor_CLAP::paramsFlush(const clap_input_events *in, const clap_output_
     }
 
     handleEventsFromUIQueue(out);
+    sendEventsToHost(out);
 
     // We will never generate a note end event with processing active, and we have no midi
     // output, so we are done.
+}
+
+void Processor_CLAP::reportToHost(ToHostEvent::Type type, clap_id paramId, double value)
+{
+    const ToHostEvent e{ type, paramId, value };
+    if (toHostEvents.freeSpace() < static_cast<int>(sizeof(e)))
+        return; // the host isn't draining (no process() or flush()): drop rather than block the GUI
+
+    toHostEvents.pushString(sizeof(e), reinterpret_cast<const unsigned char*>(&e));
+    toHostEvents.Send();
+
+    if (_host.canUseParams())
+        _host.paramsRequestFlush(); // while inactive the host calls paramsFlush(); while active, process() sends them
+}
+
+void Processor_CLAP::sendEventsToHost(const clap_output_events_t* out)
+{
+    ToHostEvent e{};
+    while (toHostEvents.readyBytes() >= static_cast<int>(sizeof(e)))
+    {
+        toHostEvents.popString(sizeof(e), &e);
+        if (!out)
+            continue;
+
+        if (e.type == ToHostEvent::Type::Value)
+        {
+            clap_event_param_value evt{};
+            evt.header.size = sizeof(evt);
+            evt.header.time = 0;
+            evt.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+            evt.header.type = CLAP_EVENT_PARAM_VALUE;
+            evt.header.flags = 0;
+            evt.param_id = e.paramId;
+            evt.note_id = -1;
+            evt.port_index = -1;
+            evt.channel = -1;
+            evt.key = -1;
+            evt.value = e.value;
+            out->try_push(out, &evt.header);
+        }
+        else
+        {
+            clap_event_param_gesture evt{};
+            evt.header.size = sizeof(evt);
+            evt.header.time = 0;
+            evt.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+            evt.header.type = e.type == ToHostEvent::Type::GestureBegin ? CLAP_EVENT_PARAM_GESTURE_BEGIN : CLAP_EVENT_PARAM_GESTURE_END;
+            evt.header.flags = 0;
+            evt.param_id = e.paramId;
+            out->try_push(out, &evt.header);
+        }
+    }
 }
 
 void Processor_CLAP::sendParameterToProcessorQueue(gmpi::hosting::GmpiParameter* param)
