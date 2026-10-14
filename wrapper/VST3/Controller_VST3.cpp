@@ -439,8 +439,6 @@ tresult PLUGIN_API Controller_VST3::getMidiControllerAssignment (int32 busIndex,
 	return kResultFalse;
 }
 
-IGuiHost2* g_pendingEditorGuiHost = nullptr;
-
 IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 {
 	if (ConstString (name) != ViewType::kEditor)
