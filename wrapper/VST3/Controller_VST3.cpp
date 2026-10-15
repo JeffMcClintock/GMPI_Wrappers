@@ -593,6 +593,72 @@ ParamValue ccFromDisplay(int controller, double display)
 	const auto normalized = controller == kPitchBend ? (display + 8192.0) / 16383.0 : display / 127.0;
 	return std::clamp(normalized, 0.0, 1.0);
 }
+
+bool isEnum(const gmpi::hosting::paramInfo& info)
+{
+	return (info.datatype == gmpi::PinDatatype::Int32 || info.datatype == gmpi::PinDatatype::Int64) && !info.enum_entries.empty();
+}
+
+// A plain value as the host should show it. Enums by name (a GMPI enum's value is its entry's position); floats as SynthEdit's
+// sliders show them (SliderFloatToString): 3 decimals, more for small values, never "-0.000".
+std::string realToDisplay(const gmpi::hosting::paramInfo& info, double real)
+{
+	if (isEnum(info))
+		return info.enum_entries[std::clamp(static_cast<int>(std::round(real)), 0, static_cast<int>(info.enum_entries.size()) - 1)].name;
+
+	switch (info.datatype)
+	{
+	case gmpi::PinDatatype::Bool:
+		return real >= 0.5 ? "On" : "Off";
+	case gmpi::PinDatatype::Int32:
+	case gmpi::PinDatatype::Int64:
+		return std::to_string(std::llround(real));
+	default:
+		break;
+	}
+
+	int precision = 3;
+	if (auto magnitude = std::fabs(real); magnitude > 1e-8)
+	{
+		for (magnitude *= 100.0; precision < 8 && magnitude < 1.0; magnitude *= 10.0)
+			++precision;
+	}
+
+	char text[64]{};
+	snprintf(text, sizeof(text), "%.*f", precision, real);
+	std::string result = text;
+	if (result[0] == '-' && result.find_first_not_of("-0.") == std::string::npos)
+		result.erase(0, 1);
+	return result;
+}
+
+// Text typed into the host, back to a plain value: an enum name or On/Off (any case), else a number. False if it is neither.
+bool displayToReal(const gmpi::hosting::paramInfo& info, const std::string& text, double& real)
+{
+	auto lower = [](std::string t) { for (auto& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); return t; };
+	const auto typed = lower(text);
+
+	if (isEnum(info))
+	{
+		for (size_t i = 0; i < info.enum_entries.size(); ++i)
+		{
+			if (lower(info.enum_entries[i].name) == typed)
+			{
+				real = static_cast<double>(i);
+				return true;
+			}
+		}
+	}
+	else if (info.datatype == gmpi::PinDatatype::Bool)
+	{
+		if (typed == "on" || typed == "true")  { real = 1.0; return true; }
+		if (typed == "off" || typed == "false") { real = 0.0; return true; }
+	}
+
+	char* end{};
+	real = std::strtod(text.c_str(), &end);
+	return end != text.c_str();
+}
 }
 
 Steinberg::tresult PLUGIN_API Controller_VST3::getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized)
@@ -613,8 +679,11 @@ Steinberg::tresult PLUGIN_API Controller_VST3::getParamValueByString(Steinberg::
 	}
 
 	const auto& p = *gmpiController.nativeParams[tag];
-	valueNormalized = p.real2Normalized(real);
+	double typed{};
+	if (!displayToReal(*p.info, wrapper::JmUnicodeConversions::WStringToUtf8(valueString), typed))
+		return Steinberg::kResultFalse;
 
+	valueNormalized = std::clamp(p.real2Normalized(typed), 0.0, 1.0);
 	return Steinberg::kResultOk;
 }
 
@@ -685,19 +754,8 @@ tresult PLUGIN_API Controller_VST3::getParamStringByValue(ParamID tag, ParamValu
 		return kInvalidArgument;
 
 	const auto& p = *gmpiController.nativeParams[tag];
-
-	// enums
-	if ((p.info->datatype == gmpi::PinDatatype::Int32 || p.info->datatype == gmpi::PinDatatype::Int64) && !p.info->enum_entries.empty())
-	{
-		const int index = std::clamp(static_cast<int>(std::round(p.normalized2Real(valueNormalized))), 0, static_cast<int>(p.info->enum_entries.size()) - 1);
-		auto s = JmUnicodeConversions::ToUtf16(p.info->enum_entries[index].name);
-		strncpy16(string, (const TChar*)s.c_str(), 128);
-		return kResultOk;
-	}
-
-	const auto valueString = std::to_wstring(p.normalized2Real(valueNormalized));
-	const auto s_UTF16 = JmUnicodeConversions::ToUtf16(valueString);
-	strncpy16(string, (const TChar*)s_UTF16.c_str(), 128);
+	const auto s = JmUnicodeConversions::ToUtf16(realToDisplay(*p.info, p.normalized2Real(valueNormalized)));
+	strncpy16(string, (const TChar*)s.c_str(), 128);
 	return kResultOk;
 }
 
@@ -880,34 +938,30 @@ bool Controller_VST3::onTimer()
 	return MpController::OnTimer();
 }
 
+namespace
+{
+// The note expressions offered to the host; Processor_VST3 handles each one. getPhysicalUIMapping routes MPE gestures to them.
+constexpr NoteExpressionTypeID noteExpressionTypes[] = { kTuningTypeID, kExpressionTypeID, kBrightnessTypeID };
+}
+
 int32 Controller_VST3::getNoteExpressionCount(int32 busIndex, int16 channel)
 {
     // we accept only the first bus and 1 channel
     if (busIndex != 0 || channel != 0)
         return 0;
 
-	return 1;
+	return static_cast<int32>(std::size(noteExpressionTypes));
 }
 
 tresult Controller_VST3::getNoteExpressionInfo (int32 busIndex, int16 channel, int32 noteExpressionIndex, NoteExpressionTypeInfo& info)
 {
     // we accept only the first bus and 1 channel
-    if (busIndex != 0 || channel != 0 || noteExpressionIndex > 3)
+    if (busIndex != 0 || channel != 0 || noteExpressionIndex < 0 || noteExpressionIndex >= static_cast<int32>(std::size(noteExpressionTypes)))
         return kResultFalse;
 
 	memset (&info, 0, sizeof (NoteExpressionTypeInfo));
- 
-	// might be better to support two generic types than volume and pan.
-	NoteExpressionTypeID typeIds[] =
-	{
-		//kVolumeTypeID,
-		//kPanTypeID,
-		kTuningTypeID,
-		kExpressionTypeID,
-		kBrightnessTypeID,
-	};
 
-	info.typeId = typeIds[noteExpressionIndex];
+	info.typeId = noteExpressionTypes[noteExpressionIndex];
 	info.valueDesc.minimum = 0.0;
 	info.valueDesc.maximum = 1.0;
 	info.valueDesc.defaultValue = 0.5;

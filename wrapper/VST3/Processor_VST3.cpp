@@ -364,7 +364,21 @@ tresult PLUGIN_API Processor_VST3::setBusArrangements (SpeakerArrangement* input
 	if (numIns == 1 && numOuts == 1 && inputs[0] == outputs[0])
 		return AudioEffect::setBusArrangements (inputs, numIns, outputs, numOuts);
 
-	return kResultFalse;
+	// Otherwise accept exactly the buses we already have, e.g. an instrument's: no inputs, its outputs.
+	auto matches = [this](BusDirection dir, const SpeakerArrangement* requested, int32 count)
+	{
+		if (count != getBusCount(kAudio, dir))
+			return false;
+		for (int32 i = 0; i < count; ++i)
+		{
+			SpeakerArrangement current{};
+			if (getBusArrangement(dir, i, current) != kResultTrue || current != requested[i])
+				return false;
+		}
+		return true;
+	};
+
+	return matches(kInput, inputs, numIns) && matches(kOutput, outputs, numOuts) ? kResultTrue : kResultFalse;
 }
 
 //-----------------------------------------------------------------------------
@@ -537,48 +551,6 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
     assert(!plugin_.isNull());
 
 	m_message_que_ui_to_dsp.pollMessage(&plugin);
-
-	// TIDE BACKLOG E88 -- finish a restore that arrived while we were active.
-	//
-	// setState wrote the stores on the UI thread and set the flag; this is the
-	// other half. Seeding a pin means pushing a PinSet event, and this is the
-	// thread that owns that queue -- the same thread, and the same call, that
-	// the poll on the line above uses when a blob parameter change arrives
-	// from the controller (gmpi_processor::onQueMessageReady's "ppc3" arm
-	// ends in exactly this sendParameterToProcessor).
-	//
-	// So this is not a new mechanism: it makes a state restore look to the DSP
-	// like the live parameter change it already knows how to receive. For TIDE
-	// that means the document lands on its pin, onSetPins runs and the rack is
-	// rebuilt -- which TIDE already does on this thread at a block boundary
-	// for a host-control change (SynthEditSem/SynthEdit.cpp's subProcess,
-	// "Same synchronous audio-thread cost as a chunk arrival").
-	//
-	// Every parameter, not only the ones the preset mentioned: setPresetUnsafe
-	// also RESETS parameters absent from the preset to their defaults, so those
-	// stores moved too and are just as unannounced. sendParameterToProcessor
-	// is a no-op for a parameter with no matching input pin.
-	//
-	// sampleOffset 0: the restore is not a timed automation point, it is the
-	// state this block starts in.
-	if (reseedPinsFromStore_.exchange(false, std::memory_order_acquire))
-	{
-		for (auto& [handle, param] : plugin.patchManager.parameters)
-		{
-			// Skip a blob whose store is EMPTY, which is what start_processor's
-			// own seeding does -- "nothing stored yet; a later change will
-			// deliver it". This loop exists to do what that block would have
-			// done, so it has no business doing more. It also keeps us off the
-			// throwing std::get in sendParameterToProcessor's Blob arm, where
-			// the startup path uses std::get_if.
-			if (const auto* v = std::get_if<std::vector<uint8_t>>(&param.value_);
-			    v && v->empty())
-				continue;
-
-			plugin.sendParameterToProcessor(info, &param, 0);
-		}
-	}
-
 
 	if (data.inputParameterChanges)
 	{
@@ -831,14 +803,9 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 					case kPanTypeID:
 						controllerId = gmpi::midi2::PolyPan;
 						break;
-						/*
-											case kVibratoTypeID:
-												controllerId = gmpi::midi2::PolySoundController8; // Vibrato Depth
-												break;
-											case kExpressionTypeID:
-												controllerId = gmpi::midi2::PolyExpression;
-												break;
-						*/
+					case kExpressionTypeID: // offered by Controller_VST3, MPE pressure
+						controllerId = gmpi::midi2::PolyExpression;
+						break;
 					case kBrightnessTypeID:
 						controllerId = gmpi::midi2::PolySoundController5; // Brightness. MPE Vertical (Y)
 						break;
@@ -911,6 +878,9 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 
 		plugin.setHostControlFromDaw(HostControls::TimeTransportPlaying, (vst3Time.state & ProcessContext::kPlaying) != 0 ? 1.0 : 0.0);
 	}
+
+	// 2 = offline, as SynthEdit's HC_PROCESS_RENDERMODE; sent only on a change, and only a plug-in with a Process/Rendermode pin sees it.
+	plugin.setHostControlFromDaw(gmpi::hosting::HostControls::ProcessRendermode, data.processMode == kOffline ? 2.0 : 0.0);
 
 	// Setup audio buffers.
 	int numChannelsIn = 0;
@@ -1066,51 +1036,49 @@ tresult Processor_VST3::setState (IBStream* state)
 	// restore failed, which is the honest answer.
 	try
 	{
-		plugin.setPresetUnsafe(chunk);
+		if (!active_)
+		{
+			plugin.setPresetUnsafe(chunk); // nothing is processing: write the store, and the next activation seeds the DSP's pins from it
+		}
+		else
+		{
+			// While active the audio thread owns the store (host controls and queued edits land in it every block), so writing it
+			// here would race process(). VST3 allows setState while processing (TIDE E88). Read the preset into a scratch store and
+			// send each saved value through the ui->dsp queue, the way a live edit travels: process() applies it at a block
+			// boundary and updates the DSP's pins (onQueMessageReady -> sendParameterToProcessor), as the CLAP wrapper does.
+			gmpi::hosting::PatchManager restored;
+			restored.init(info);
+			gmpi::hosting::gmpi_processor::readPreset(restored, chunk);
 
-		// TIDE BACKLOG E88 -- AND THIS IS WHERE THE DOCUMENT USED TO STOP.
-		//
-		// setPresetUnsafe writes the parameter STORES
-		// (gmpi_processor::patchManager) and nothing else. A store reaches a
-		// live DSP graph by exactly one route -- a PinSet event in
-		// gmpi_processor::events -- and the only thing that pushes those at
-		// startup is start_processor's "initialise pins" block, reached from
-		// setActive(true) -> reInitialise(). GMPI says so itself, in the
-		// comment on that block's Blob arm: "blobs only reach it when they
-		// CHANGE". A restore is a change that nothing announced.
-		//
-		// So in the state-then-activate order the restore works, because the
-		// seeding is still to come; in the activate-then-state order the
-		// document is written to a store nothing will read again, and a
-		// plug-in whose patch IS a blob parameter plays silence.
-		//
-		// THIS ORDER IS NOT A HOST MISBEHAVING. The SDK annotates
-		// IComponent::setState "[UI-thread & (Initialized | Connected | Setup
-		// Done | Activated | Processing)]" (ivstcomponent.h) -- Activated and
-		// Processing are both named as legal, so a host may restore onto a
-		// running component and even onto one mid-process, which is simply
-		// what changing a preset IS. REAPER happens to restore during setup,
-		// which is why this has never been met on VST3 here.
-		//
-		// MEASURED on Linux 2026-10-06 and on macOS 2026-10-05, 3/3 each, with
-		// tests/e80_vst3_feedback_probe.cpp --activate-first (TideSynth): no
-		// `building rack` line at all and -inf dBFS, against -6.3 dBFS for the
-		// same document in the other order.
-		//
-		// WHY A FLAG AND NOT THE WORK. Finishing the restore means pushing
-		// PinSet events, and EventQue is an unsynchronised std::vector that
-		// the audio thread owns. Doing it here would race process(); calling
-		// reInitialise() here would be worse, because start_processor
-		// CONSTRUCTS A NEW PROCESSOR and would swap it out from under a
-		// process() call in flight. So the flag, consumed at a block boundary
-		// in process() -- which is where onQueMessageReady already lands a
-		// blob parameter change for exactly this reason.
-		//
-		// Guarded on active_ so the ordinary project load, where the seeding
-		// has not happened yet, is untouched and costs nothing.
-		if (active_)
-			reseedPinsFromStore_.store(true, std::memory_order_release);
+			// Saved values only; an empty blob is 'nothing stored yet', as start_processor's seeding treats it.
+			auto toSend = [](const gmpi::hosting::GmpiParameter& param)
+			{
+				if (gmpi::hosting::HostControls::None != param.info->hostConnect || !param.info->is_stateful)
+					return false;
+				const auto* v = std::get_if<std::vector<uint8_t>>(&param.value_);
+				return !(v && v->empty());
+			};
 
+			// All of it fits, or none is sent: a half-applied preset is worse than a refused one.
+			int needed{};
+			for (auto& [handle, param] : restored.parameters)
+			{
+				if (toSend(param))
+					needed += param.queryQueMessageLength(0) + 64; // + frame header
+			}
+			if (needed > m_message_que_ui_to_dsp.freeSpace())
+				return kResultFalse;
+
+			for (auto& [handle, param] : restored.parameters)
+			{
+				if (!toSend(param))
+					continue;
+
+				gmpi::hosting::my_msg_que_output_stream strm(&m_message_que_ui_to_dsp); // getQueMessage writes the whole frame
+				param.getQueMessage(strm, param.queryQueMessageLength(0));
+				strm.Send();
+			}
+		}
 	}
 	catch (...)
 	{

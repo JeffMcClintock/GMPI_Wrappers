@@ -182,7 +182,7 @@ int32 MyVstPluginFactory::countClasses ()
 {
 	initialize();
 
-	return static_cast<int32>(2);
+	return static_cast<int32>(gmpi::hosting::factory::getInstance().getPlugincount() * 2); // a processor and a controller each
 }
 
 int32_t MyVstPluginFactory::getVst2Id64(int32_t pluginIndex) // generated from hash of GUID. Not compatible w 32-bit VSTs.

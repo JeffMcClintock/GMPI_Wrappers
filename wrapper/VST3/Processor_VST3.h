@@ -127,22 +127,6 @@ protected:
 
 	bool active_;
 
-	// TIDE BACKLOG E88 -- a state restore that arrives while we are ACTIVE.
-	//
-	// setState writes the parameter STORES and nothing else. The one route by
-	// which a store reaches a live DSP graph is a PinSet event in
-	// gmpi_processor::events, and the only writer of that queue outside
-	// start_processor is sendParameterToProcessor -- which must run on the
-	// AUDIO thread, because EventQue is a bare std::vector with a sorted
-	// insert and no synchronisation of any kind.
-	//
-	// So the restore has to be FINISHED on the audio thread, and this flag is
-	// the handoff. Set on the host's UI thread at the end of setState, after
-	// the store write it describes; test-and-cleared at the top of process(),
-	// beside the m_message_que_ui_to_dsp poll that is already there for
-	// exactly this class of deferred work.
-	std::atomic<bool> reseedPinsFromStore_ = {};
-
 	// Latency reporting. The host reads getLatencySamples after setActive(true), which rebuilds
 	// the plugin. A value the host has read is never notified, and a notified value is not
 	// notified again until the host has read it; else a plugin whose open() reports a different

@@ -69,7 +69,7 @@ public:
 class StagingMemoryBuffer : public gmpi::hosting::IWriteableQue
 {
 public:
-	StagingMemoryBuffer(size_t bufferSize = 1000000) : writePos_(0)
+	StagingMemoryBuffer(size_t bufferSize = 0x500000) : writePos_(0) // 5 MB, as se_vst3: a message that doesn't fit is dropped (MpController::ParamToDsp)
 	{
 		storage_.assign(bufferSize, 0);
 	}
