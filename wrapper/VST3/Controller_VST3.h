@@ -12,8 +12,6 @@
 #include <pluginterfaces/vst/ivstphysicalui.h>
 #include "Hosting/controller_holder.h"
 #include "helpers/Timer.h"
-#include "Controller.h"
-#include "MpParameter.h"
 
 namespace wrapper {
 	class Controller_VST3;
@@ -27,96 +25,18 @@ struct nativeParamInfo
 	int gmpi_id{};
 };
 
-// The SynthEdit panel's internal parameter set (from parameters.se.xml, via MpController -
-// see Controller_VST3's class comment), as distinct from gmpiController.nativeParams (the
-// small, statically-declared, DAW-automatable set from plugin.gmpi.xml's <Parameters>).
-// Construction-only wiring is complete: makeNativeParameter() below builds one of these per
-// parameters.se.xml entry, so MpController::Initialize() has a native-tag handle to track.
-// updateProcessor() forwards a GUI-originated edit the same way gmpiController.notifyDaw
-// already does for its own parameters (beginEdit/performEdit/endEdit) - but THESE tags are
-// not registered with getParameterCount()/getParameterInfo() (both still read only
-// gmpiController.nativeParams, unchanged), so the host has no way to recognise the id yet.
-// That registration - merging two parameter-id spaces without collision - is deliberately
-// left undone: it needs its own careful design pass, not a guess bolted on here. Until then
-// this call is a safe no-op from the host's point of view (unrecognised ids are routinely
-// ignored), and the DSP<->UI byte queue (SeBinaryMessage, see Processor_VST3) is what
-// actually carries the engine's own feedback to/from the panel regardless.
-class MpParameterVst3 : public MpParameter_native
-{
-	wrapper::Controller_VST3* vst3Controller = {};
-	int hostTag = -1;	// index as set in SE, not nesc sequential.
-
-public:
-	bool isInverted_ = false;
-
-	MpParameterVst3(wrapper::Controller_VST3* controller, int ParameterTag, bool isInverted);
-
-	int getNativeTag() override { return hostTag; }
-
-	// some hosts can't handle parameter min > max, if so calculate normalize in reverse.
-	float convertNormalized(float normalised) const
-	{
-		return isInverted_ ? 1.0f - normalised : normalised;
-	}
-
-	void updateProcessor(gmpi::FieldType fieldId, int32_t voice) override;
-
-	// not required for VST3.
-	void upDateImmediateValue() override {}
-	void updateDawUnsafe(const std::string& rawValue) override {}
-};
-
-class StagingMemoryBuffer : public gmpi::hosting::IWriteableQue
-{
-public:
-	StagingMemoryBuffer(size_t bufferSize = 0x500000) : writePos_(0) // 5 MB, as se_vst3: a message that doesn't fit is dropped (MpController::ParamToDsp)
-	{
-		storage_.assign(bufferSize, 0);
-	}
-
-	int writePos_;
-	std::vector<char> storage_;
-
-	int size() { return writePos_; }
-	inline char* data() { return storage_.data(); }
-	inline void clear() { writePos_ = 0; }
-	inline int freeSpace() override { return (int)(storage_.size() - writePos_); }
-	inline int totalSpace() override { return (int)storage_.size(); }
-	inline bool empty() { return writePos_ == 0; }
-
-	// IWriteableQue
-	void pushString(int p_length, const unsigned char* p_data) override
-	{
-		if (p_length <= totalSpace() - writePos_)
-		{
-			memcpy(data() + writePos_, p_data, p_length);
-			writePos_ += p_length;
-		}
-		else
-		{
-			// Buffer full.
-			assert(false);
-		}
-	}
-	void Send() override
-	{
-		// for compatibility only.
-	}
-};
-
-// Manages plugin parameters.
+// Manages plugin parameters: the GMPI parameter set from plugin.gmpi.xml, held in
+// gmpiController's store. Knows nothing about what the plug-in is.
 //
-// MpController base: hosts a SynthEdit-exported document's full internal parameter set
-// (parameters.se.xml, via MpController::Initialize() - see its call site in initialize()
-// below), independent of and in addition to gmpiController's own small, statically-declared
-// native-parameter set (plugin.gmpi.xml's <Parameters>). The two are genuinely separate
-// systems sharing this one object: see MpParameterVst3's class comment for exactly how far
-// the SynthEdit side is wired, and Processor_VST3.h's seMsgQues_ comment for the DSP-side
-// transport ("SeBinaryMessage") that carries the SynthEdit engine's own feedback, kept
-// deliberately off gmpiController's "BinaryMessage" channel.
+// A SynthEdit export used to also live here (this class inherited MpController and carried
+// the SynthEdit engine's traffic on a private "SeBinaryMessage" channel). Since Stage 3 of
+// TideSynth docs/state-management-consolidation-plan.md the export's own <Controller/>
+// (SE16/se_gmpi SeGmpiController) owns that, and reaches this wrapper only through the two
+// calls every wrapper makes - sePluginController->syncState() and
+// gmpiController.notifyControllerOfPreset / notifyPluginController - and through ordinary
+// blob parameters the exporter declares.
 //-----------------------------------------------------------------------------
 class Controller_VST3 :
-	public MpController,
 	public gmpi::TimerClient,
 	public Steinberg::Vst::EditController,
 	public Steinberg::Vst::IMidiMapping,
@@ -129,14 +49,6 @@ class Controller_VST3 :
 	bool isInitialised;
 	bool isConnected;
 	std::vector<gmpi::hosting::GmpiParameter*> blobsSetBeforeConnect; // no peer yet: sent by connect()
-	// Non-owning: MpController::Initialize() stores the real owning unique_ptr in its own
-	// parameters_ (Controller.cpp:357's makeNativeParameter call site), these are just for
-	// fast lookup by tag.
-	std::map<int, MpParameterVst3* > tagToParameter;
-	std::vector<MpParameterVst3* > vst3Parameters;
-
-	// Hold data until timer can put it in VST3 queue mechanism.
-	StagingMemoryBuffer queueToDsp_;
 
 	// MIDI CC, channel pressure and pitch bend arrive as hidden parameters the host maps MIDI onto (IMidiMapping); Processor_VST3 turns them back into MIDI.
 	int supportedChannels = 0; // 16 when the plugin has a MIDI input
@@ -204,48 +116,12 @@ public:
 		return Steinberg::kResultOk;
 	}
 
-	// MpController pure virtuals. ParamGrabbed and makeNativeParameter are the two that
-	// matter for live sync (see MpParameterVst3's class comment); the preset-related ones
-	// below are a deliberate, safe "no presets" stub - preset browsing is a separate feature
-	// nothing in this pass needs. (getPresetCount/getPresetIndex/setPresetIndex/getPresetInfo/
-	// CategorisePresetName/SavePresetAs/DeletePreset/isPresetModified are NOT MpController
-	// virtuals despite living in the same header - they belong to the unrelated IPresetsModel
-	// struct further down Controller.h, so there is nothing to override for those.)
-	void ParamGrabbed(MpParameter_native* param) override;
-	void notifyDawLatencyChanged() override;
-	void notifyDawStateChanged() override { if (!hostStateTransfer_) setDirty(true); } // MpController; no-op if the host lacks IComponentHandler2
-
-	void setPresetXmlFromSelf(const std::string& xml) override {}
-	void setPresetFromSelf(DawPreset const* preset) override {}
-
-	std::wstring getNativePresetExtension() override
-	{
-		return L"vstpreset";
-	}
-	std::vector< MpController::presetInfo > scanFactoryPresets() override { return {}; }
-	std::string getFactoryPresetXml(std::string filename) override { return {}; }
-	void saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml) override {}
-	std::string loadNativePreset(std::wstring sourceFilename) override { return {}; }
-
-	MpParameter_native* makeNativeParameter(int ParameterTag, bool isInverted) override
-	{
-		auto param = new wrapper::MpParameterVst3(
-			this,
-			ParameterTag,
-			isInverted
-		);
-
-		tagToParameter.insert({ ParameterTag, param });
-		vst3Parameters.push_back(param);
-
-		return param;
-	}
-
-	void ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice = 0);
+	// UI thread: from our own "GmpiLatency" message, or the processor's latency change.
+	void notifyDawLatencyChanged();
 
 	// TIDE BACKLOG E68 -- mint the plugin's state NOW, from the controller's
 	// live store, for the paired processor's getState to write. The
-	// controller is never stale (edits land in its patch manager the moment
+	// controller is never stale (edits land in its store the moment
 	// they happen), so a state minted here is complete -- knobs, patch
 	// cables, document -- regardless of what the async controller->processor
 	// hop has or has not delivered yet, and regardless of which side's
@@ -255,9 +131,9 @@ public:
 	std::string mintFreshPresetXml()
 	{
 		// The plugin's <Controller/> refreshes lazily-maintained state (TIDE's
-		// document chunk) into the store first -- synchronous: syncState ->
-		// exportChunkXmlForSave -> host->setParameter -> the store, all in
-		// this process on this thread.
+		// document chunk, a SynthEdit export's engine preset) into the store
+		// first -- synchronous: syncState -> host->setParameter -> the store,
+		// all in this process on this thread.
 		StateTransferScope transfer(hostStateTransfer_);
 		if (sePluginController)
 			sePluginController->syncState();
@@ -266,24 +142,6 @@ public:
 	}
 	bool onTimer() override;
 
-	gmpi::hosting::IWriteableQue* getQueueToDsp() override
-	{
-		return &queueToDsp_;
-	}
-
-//	void ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice = 0);
-
-	//MpParameterVst3* getDawParameter(int nativeTag)
-	//{
-	//	auto it = tagToParameter.find(nativeTag);
-	//	if (it != tagToParameter.end())
-	//	{
-	//		return (*it).second;
-	//	}
-
-	//	return {};
-	//}
-
 	virtual Steinberg::tresult PLUGIN_API setParamNormalized(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue value ) override;
 
 	// IDependent
@@ -291,8 +149,6 @@ public:
 
 	// MIDI Mapping.
 	Steinberg::tresult PLUGIN_API getMidiControllerAssignment (Steinberg::int32 busIndex, Steinberg::int16 channel, Steinberg::Vst::CtrlNumber midiControllerNumber, Steinberg::Vst::ParamID& tag/*out*/) override;
-
-//	static FUnknown* createInstance (void*) { return (IEditController*)new VST3Controller (); }
 
 	//-----------------------------
 	DELEGATE_REFCOUNT (EditController)
@@ -333,36 +189,12 @@ public:
 	/** Gets for a given index the Program List Info. */
 	Steinberg::tresult PLUGIN_API getProgramListInfo(Steinberg::int32 listIndex, Steinberg::Vst::ProgramListInfo& info /*out*/) override
 	{
-#if 0
-		if (listIndex == 0)
-		{
-			info.id = Steinberg::Vst::kRootUnitId;
-			info.name[0] = 0;
-//			info.programCount = (Steinberg::int32) factoryPresetNames.size();
-			info.programCount = (Steinberg::int32) presets.size();
-			return Steinberg::kResultOk;
-		}
-#endif
 		return Steinberg::kResultFalse;
 	}
 
 	/** Gets for a given program list ID and program index its program name. */
 	Steinberg::tresult PLUGIN_API getProgramName(Steinberg::Vst::ProgramListID listId, Steinberg::int32 programIndex, Steinberg::Vst::String128 name /*out*/) override
 	{
-#if 0
-		const int kVstMaxProgNameLen = 24;
-//		if (programIndex < (int32)factoryPresetNames.size())
-		if (programIndex < (Steinberg::int32)presets.size())
-		{
-//			for (int i = 0; i < kVstMaxProgNameLen && i <= (int)factoryPresetNames[programIndex].size(); ++i)
-			for (int i = 0; i < kVstMaxProgNameLen && i <= (int)presets[programIndex].name.size(); ++i)
-			{
-//				name[i] = factoryPresetNames[programIndex][i];
-				name[i] = presets[programIndex].name[i];
-			}
-			return Steinberg::kResultOk;
-		}
-#endif
 		return Steinberg::kResultFalse;
 	}
 
@@ -454,25 +286,7 @@ public:
 	parameter - in this case parameter programIndex is < 0). */
 	Steinberg::tresult PLUGIN_API setUnitProgramData(Steinberg::int32 listOrUnitId, Steinberg::int32 programIndex, Steinberg::IBStream* data) override { return Steinberg::kResultOk; }
 
-//	platform_string calcFactoryPresetFolder();
-
 	bool sendMessageToProcessor(const void* data, int size, const char* messageId = "BinaryMessage");
-
-//	MpParameter* nativeGetParameterByIndex(int nativeIndex)
-//	{
-////		assert(isInitialized);
-//
-//		if (nativeIndex >= 0 && nativeIndex < static_cast<int>(vst3Parameters.size()))
-//			return vst3Parameters[nativeIndex];
-//
-//		return nullptr;
-//	}
-
-
-
-//	void setPinFromUi(int32_t pinId, int32_t voice, int32_t size, const void* data);
-//	void initUi(gmpi::api::IParameterObserver* gui);
 };
 
 }
-

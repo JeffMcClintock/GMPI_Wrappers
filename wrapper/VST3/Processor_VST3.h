@@ -10,7 +10,6 @@
 #include "Hosting/xml_spec_reader.h"
 #include "Hosting/processor_holder.h"
 #include "Hosting/message_queues.h"
-#include "IProcessorMessageQues.h"
 
 static const int MidiControllersParameterId = 10000;
 
@@ -45,17 +44,6 @@ class Processor_VST3 : public Steinberg::Vst::AudioEffect, public gmpi::hosting:
 	// store exactly as before.
 	class Controller_VST3* pairedController_ = {};
 
-	// Set once, right after plugin.init() creates the processor (constructor), if the
-	// created IProcessor also exposes IProcessorMessageQues - a SynthEdit-exported GMPI
-	// plugin's SeGmpiProcessor does. When present, its DSP<->UI byte stream (the whole
-	// SynthEdit engine's internal panel-parameter traffic, not individual VST3-automatable
-	// parameters) rides this wrapper's existing VST3 IMessage pump under a SEPARATE message
-	// id ("SeBinaryMessage") from the one gmpiController's own native parameters already use
-	// ("BinaryMessage") - two independent protocols, so they must not share a channel.
-	// See GMPI_Wrappers/wrapper/VST3/Controller_VST3.cpp's matching notify()/onTimer() code.
-	IProcessorMessageQues* seMsgQues_ = {};
-	// Cached once in the constructor (dynamic_cast is unwelcome on the audio thread's hot path).
-	gmpi::hosting::lock_free_fifo* seDspToUiQueue_ = {};
 
 public:
 	Processor_VST3 (gmpi::hosting::pluginInfo& pinfo);
