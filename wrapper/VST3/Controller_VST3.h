@@ -189,16 +189,19 @@ public:
 	/** Gets UnitInfo for a given index in the flat list of unit. */
 	Steinberg::tresult PLUGIN_API getUnitInfo(Steinberg::int32 unitIndex, Steinberg::Vst::UnitInfo& info /*out*/) override
 	{
+		if (unitIndex != 0)
+			return Steinberg::kResultFalse;
+
 		info.id = Steinberg::Vst::kRootUnitId;
 		info.name[0] = 0;
 		info.parentUnitId = Steinberg::Vst::kNoParentUnitId;
-		info.programListId = 0;
+		info.programListId = Steinberg::Vst::kNoProgramListId; // GMPI has no program lists; presets travel as state.
 		return Steinberg::kResultOk;
 	}
 
 	/** Component intern program structure. */
 	/** Gets the count of Program List. */
-	Steinberg::int32 PLUGIN_API getProgramListCount() override { return 1; } // number of program lists. Always 1.
+	Steinberg::int32 PLUGIN_API getProgramListCount() override { return 0; }
 
 	/** Gets for a given index the Program List Info. */
 	Steinberg::tresult PLUGIN_API getProgramListInfo(Steinberg::int32 listIndex, Steinberg::Vst::ProgramListInfo& info /*out*/) override
@@ -298,7 +301,7 @@ public:
 	stream is the program specified by list-Id and program index (first and second parameter)
 	- If the component supports unit data (IUnitData), the destination is the unit specified by the first
 	parameter - in this case parameter programIndex is < 0). */
-	Steinberg::tresult PLUGIN_API setUnitProgramData(Steinberg::int32 listOrUnitId, Steinberg::int32 programIndex, Steinberg::IBStream* data) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setUnitProgramData(Steinberg::int32 listOrUnitId, Steinberg::int32 programIndex, Steinberg::IBStream* data) override { return Steinberg::kResultFalse; }
 
 	bool sendMessageToProcessor(const void* data, int size, const char* messageId = "BinaryMessage");
 };
