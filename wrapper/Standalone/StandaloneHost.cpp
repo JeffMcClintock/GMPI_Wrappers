@@ -187,7 +187,13 @@ bool StandaloneHost::init()
     {
         pluginController_ = controllerUnknown.as<gmpi::api::IController>();
         if (pluginController_)
+        {
             pluginController_->initialize(static_cast<gmpi::api::IControllerHost*>(&controller_), 0);
+
+            // Its IParameterObserver side: the holder tells it of processor-originated changes
+            // (a SynthEdit export's panel follows its engine this way).
+            controller_.pluginController = pluginController_.as<gmpi::api::IParameterObserver>().get();
+        }
     }
 
     // Instantiate the editor now rather than when the window opens: the window

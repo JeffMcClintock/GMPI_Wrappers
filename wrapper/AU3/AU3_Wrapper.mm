@@ -501,6 +501,10 @@ void processUmpWords(AU3Core& core, const uint32_t* words, uint32_t wordCount, i
 				core->pluginController = pluginController;
 				pluginController->initialize(
 					static_cast<gmpi::api::IControllerHost*>(&core->gmpiController), 0);
+
+				// Its IParameterObserver side: the holder tells it of processor-originated changes
+				// (a SynthEdit export's panel follows its engine this way). Not compiled here (mac).
+				core->gmpiController.pluginController = pluginController.as<gmpi::api::IParameterObserver>().get();
 			}
 		}
 	}

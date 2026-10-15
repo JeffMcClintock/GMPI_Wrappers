@@ -110,10 +110,23 @@ public:
 		// dirty-flag periodic sync, which is the VST3Adaptor's own open TODO
 		// (ControllerWrapper::onTimer).
 		StateTransferScope transfer(hostStateTransfer_);
+		drainProcessorFeedback();
 		if (sePluginController)
 			sePluginController->syncState();
 
 		return Steinberg::kResultOk;
+	}
+
+	// Everything the processor has sent the controller and nobody has read yet (its queue is
+	// drained by onTimer, and on a Linux host with no editor open no timer ticks: BACKLOG E74).
+	// A save must see it, or the chunk is as stale as the last tick - measured 2026-10-15: a
+	// MIDI-learned parameter moved by a CC saved its OLD value until this ran. The processor
+	// shadow the old wrapper kept (ProcessorStateMgrVst3) drained its FIFO at getPreset for
+	// exactly this reason; this is that one behaviour, kept. Host main thread, the queue's
+	// reader side, same as onTimer.
+	void drainProcessorFeedback()
+	{
+		gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 	}
 
 	// UI thread: from our own "GmpiLatency" message, or the processor's latency change.
@@ -135,6 +148,7 @@ public:
 		// first -- synchronous: syncState -> host->setParameter -> the store,
 		// all in this process on this thread.
 		StateTransferScope transfer(hostStateTransfer_);
+		drainProcessorFeedback();
 		if (sePluginController)
 			sePluginController->syncState();
 
