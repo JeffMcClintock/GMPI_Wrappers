@@ -179,12 +179,40 @@ AU2_Wrapper::AU2_Wrapper(AudioComponentInstance inInstance)
     // A saved change the host can't see (a GUI edit of a private parameter): AU's "my state changed" is a ClassInfo property change.
     gmpiController.notifyDawStateChanged = [this]()
         {
-            PropertyChanged(kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0);
+            if (!hostStateTransfer_)
+                PropertyChanged(kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0);
+        };
+
+    // Blobs the controller sets can't ride AU's scalar parameter path; frame them straight
+    // into the ui->dsp queue (drained at the top of Render), as AU3 and CLAP do. Until this,
+    // AU2 had no controller->processor transport for a non-DAW parameter at all.
+    gmpiController.sendNonNativeParameterToProcessor = [this](gmpi::hosting::GmpiParameter* param)
+        {
+            sendParameterToProcessorQueue(param);
         };
 
 	auto& info = *gmpi::hosting::factory::getInstance().getPluginInfo();
     plugin.init(info);
 	gmpiController.init(info);
+
+	// CREATE AND INITIALISE THE PLUG-IN'S OWN CONTROLLER, as Processor_CLAP's constructor and
+	// AU3Core do (TIDE BACKLOG S43(ii)). AU2 was the one wrapper that never did: a SynthEdit
+	// export's SeGmpiController never ran, so its panel never got its controller pointer, and
+	// its engine-only state (MIDI learn, private parameters, the preset name: the
+	// SE/EnginePreset blob) was never minted at a save. After gmpiController.init: initialize()
+	// may set parameters, and the parameter store has to exist for them to land anywhere.
+	if (auto controllerUnknown = gmpi::hosting::factory::getInstance().createInstance(info.id.c_str(), gmpi::api::PluginSubtype::Controller); controllerUnknown)
+	{
+		pluginController = controllerUnknown.as<gmpi::api::IController>();
+		if (pluginController)
+		{
+			pluginController->initialize(static_cast<gmpi::api::IControllerHost*>(&gmpiController), 0);
+
+			// Its IParameterObserver side: the holder tells it of processor-originated changes
+			// (an export's panel follows its engine this way), and ParameterListener of the DAW's.
+			gmpiController.pluginController = pluginController.as<gmpi::api::IParameterObserver>().get();
+		}
+	}
 
 //	memset(&timeInfo, 0, sizeof(timeInfo));
 
@@ -596,6 +624,7 @@ void AU2_Wrapper::ParameterListener(void* inCallbackRefCon, void* inObject, cons
         if (auto p2 = au->gmpiController.patchManager.setParameterReal(p->info->id, inParameterValue); p2) // todo avoid lookup when we already have pointer to parameter
         {
             au->gmpiController.notifyGui(p2);
+            au->gmpiController.notifyPluginController(p2);
         }
 #if 1
 //		if (auto p = au->getDawParameter(inEvent->mArgument.mParameter.mParameterID); p)
@@ -1718,8 +1747,18 @@ OSStatus AU2_Wrapper::GetParameterValueStrings(
 	return noErr;
 }
 
+// Sets a flag for the scope of a host state transfer, restoring it after (Processor_CLAP's TransferScope).
+struct StateTransferScope
+{
+	bool& flag;
+	bool was;
+	explicit StateTransferScope(bool& f) : flag(f), was(f) { flag = true; }
+	~StateTransferScope() { flag = was; }
+};
+
 OSStatus AU2_Wrapper::SaveState(CFPropertyListRef* outData)
 {
+	StateTransferScope transfer(hostStateTransfer_);
 	auto result = AUBase::SaveState(outData);
 
 	if (result == noErr)
@@ -1729,8 +1768,15 @@ OSStatus AU2_Wrapper::SaveState(CFPropertyListRef* outData)
 // seems not (sawdemo)        assert(std::this_thread::get_id() == mainThreadID );
 //        const auto chunk = getPreset()->toString(wrapper::BundleInfo::instance()->getPluginId());
 
-//		std::string chunk;
-//		processor.getPresetState(chunk, true);
+		// TIDE BACKLOG E68 -- the controller's store, freshly synced. Feedback the processor has
+		// sent and no timer has read yet must be in it (Controller_VST3::drainProcessorFeedback:
+		// measured there, a MIDI-learned parameter moved by a CC saved its OLD value until the
+		// drain), and lazily-maintained controller state (an SE export's SE/EnginePreset blob,
+		// TIDE's document chunk) is not in it at all until syncState() mints it.
+		gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
+		if (pluginController)
+			pluginController->syncState();
+
 		const auto chunk = gmpiController.getPreset();
 
 		// CFStringCreateWithCString answers NULL - it does not fail loudly -
@@ -1780,6 +1826,14 @@ void AU2_Wrapper::flushPendingParameterUpdates()
 	parameterChanges[current].clear();
 }
 
+void AU2_Wrapper::sendParameterToProcessorQueue(gmpi::hosting::GmpiParameter* param)
+{
+	const auto messageLength = param->queryQueMessageLength(0);
+	gmpi::hosting::my_msg_que_output_stream strm(&queueToDsp_); // no header args: getQueMessage writes the whole frame.
+	param->getQueMessage(strm, messageLength);
+	strm.Send();
+}
+
 OSStatus AU2_Wrapper::RestoreState(CFPropertyListRef plist)
 {
 	//   std::cout << "AU2_Wrapper::RestoreState() - START" << std::endl;
@@ -1812,7 +1866,28 @@ OSStatus AU2_Wrapper::RestoreState(CFPropertyListRef plist)
 // moved		setPresetFromDaw(chunk, false);
 //        stateMgr.setPresetFromXml(chunk);
 
-		gmpiController.setPresetXmlFromDaw(chunk);
+		StateTransferScope transfer(hostStateTransfer_);
+		if (!gmpiController.setPresetXmlFromDaw(chunk))
+			return result; // a failed parse leaves every store untouched.
+
+		// TIDE BACKLOG E71 -- hand the restored parameters to the plug-in's own <Controller/>,
+		// which is not one of the editors and would otherwise never hear its state had been
+		// restored. Same order as VST3, CLAP, AU3 and the standalone: the controller's store
+		// first, then the plug-in controller, then the processor's and the editors' copies.
+		gmpiController.notifyControllerOfPreset(pluginController.get());
+
+		// Deliver the restored values to the processor (through its queue, drained at the top of
+		// the next Render) and to any open editor - until this, an AU2 restore wrote only the
+		// controller's store. The host's own parameter values arrive through AUBase::RestoreState
+		// -> SetParameter above, so they are not mirrored here.
+		for (auto& [handle, param] : gmpiController.patchManager.parameters)
+		{
+			if (gmpi::hosting::HostControls::None != param.info->hostConnect || !param.info->is_stateful)
+				continue;
+
+			sendParameterToProcessorQueue(&param);
+			gmpiController.notifyGui(&param);
+		}
 	}
 	//    std::cout << "AU2_Wrapper::RestoreState() - END" << std::endl;
 
