@@ -14,26 +14,14 @@
 #include "MyVstPluginFactory.h"
 #include "Controller_VST3.h"
 #include "Processor_VST3.h"
-//#include "Common.h"
-//#include "wrapper/common/dynamic_linking.h"
 #include "Hosting/gmpi_factory.h"
 #include "Vst3ClassIds.h"
-
 
 #if defined( _WIN32 )
 extern HINSTANCE ghInst;
 #elif __APPLE__
 	#include <dlfcn.h>
 	#include <CoreFoundation/CoreFoundation.h>
-
-/*
-// Hacky, access functions meant only for VSTGUI.
-namespace VSTGUI
-{
-    static void CreateVSTGUIBundleRef();
-    static void ReleaseVSTGUIBundleRef();
-}
-*/
 
 #if 0
 // Copied from: public.sdk/source/vst/vstguieditor.cpp
@@ -79,17 +67,6 @@ void ReleasePluginBundleRef (CFBundleRef bundleRef)
 	CFRelease (bundleRef);
 }
 #endif
-/*
-//------------------------------------------------------------------------
-void ReleaseVSTGUIBundleRef ()
-{
-	openCount--;
-	if (gBundleRef)
-		CFRelease (gBundleRef);
-	if (openCount == 0)
-		gBundleRef = 0;
-}
- */
 #endif
 
 #if __APPPLE__
@@ -171,7 +148,9 @@ tresult MyVstPluginFactory::getFactoryInfo (PFactoryInfo* info)
 
 	strncpy8 (info->vendor, plugin->vendorName.c_str() , PFactoryInfo::kNameSize);
 	strncpy8 (info->url   , plugin->vendorUrl.c_str()  , PFactoryInfo::kURLSize);
-	strncpy8 (info->email , plugin->vendorEmail.c_str(), PFactoryInfo::kEmailSize);
+	// VST3 writes the email as a link.
+	const auto email = plugin->vendorEmail.empty() || plugin->vendorEmail.rfind("mailto:", 0) == 0 ? plugin->vendorEmail : "mailto:" + plugin->vendorEmail;
+	strncpy8 (info->email , email.c_str(), PFactoryInfo::kEmailSize);
 	info->flags = PFactoryInfo::kUnicode;
 	return kResultOk;
 }
