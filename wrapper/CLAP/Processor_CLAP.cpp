@@ -542,23 +542,7 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
                 case CLAP_EVENT_PARAM_VALUE:
                 {
                     auto v = reinterpret_cast<const clap_event_param_value*>(evt);
-					const auto& inID = v->param_id;
-
-                    //*paramToValue[v->param_id] = v->value;
-                    //pushParamsToVoices();
-
-                    if (inID >= 0 && inID < plugin.nativeParams.size())
-                    {
-                        auto p = plugin.nativeParams[inID];
-
-                        plugin.setParameterNormalizedFromDaw(
-                             *plugin.info
-                            , evt->time
-                            , p->info->id
-                            , plugin.nativeParams[inID]->real2Normalized(v->value)
-							, true // send to editor
-                        );
-                    }
+                    applyParamValue(v, evt->time);
 
 #if HAS_GUI
                     if (editor)
@@ -903,15 +887,29 @@ void Processor_CLAP::handleEventsFromUIQueue(const clap_output_events_t *ov)
  * result in this being called on the main thread, and generating all the appropriate
  * param updates.
  */
+// A host parameter change (a plain value, under its dawTag) into the store, the DSP's next block and the editor.
+void Processor_CLAP::applyParamValue(const clap_event_param_value* v, uint32_t time)
+{
+    if (v->param_id >= plugin.nativeParams.size())
+        return;
+
+    const auto* p = plugin.nativeParams[v->param_id];
+    // info, not plugin.info: that is only set once start_processor runs, and flush can arrive before the first activation.
+    plugin.setParameterNormalizedFromDaw(info, time, p->info->id, p->real2Normalized(v->value), true /* send to editor */);
+}
+
 void Processor_CLAP::paramsFlush(const clap_input_events *in, const clap_output_events *out) noexcept
 {
     auto sz = in->size(in);
 
     // This pointer is the sentinel to our next event which we advance once an event is processed
+    // Host parameter changes while we're not processing: handled as process() handles them, at the start of the next block.
+    // Safe either way: flush runs on the audio thread while active, and while inactive nothing is processing.
     for (auto e = 0U; e < sz; ++e)
     {
-        auto nextEvent = in->get(in, e);
-// TODO        handleInboundEvent(nextEvent);
+        auto evt = in->get(in, e);
+        if (evt && evt->space_id == CLAP_CORE_EVENT_SPACE_ID && evt->type == CLAP_EVENT_PARAM_VALUE)
+            applyParamValue(reinterpret_cast<const clap_event_param_value*>(evt), 0);
     }
 
     handleEventsFromUIQueue(out);

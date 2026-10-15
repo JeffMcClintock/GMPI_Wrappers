@@ -66,6 +66,7 @@ struct Processor_CLAP : public clap::helpers::Plugin<clap::helpers::Misbehaviour
     gmpi::hosting::lock_free_fifo toHostEvents{ 0x4000 }; // main thread -> the thread the host drains events on
     void reportToHost(ToHostEvent::Type type, clap_id paramId, double value = 0.0); // main thread
     void sendEventsToHost(const clap_output_events_t* out);
+    void applyParamValue(const clap_event_param_value* v, uint32_t time); // process(), or paramsFlush() while not processing
 
     static constexpr int max_voices = 64;
     Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting::pluginInfo& info, const clap_host* host);

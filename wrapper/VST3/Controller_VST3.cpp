@@ -714,7 +714,7 @@ tresult Controller_VST3::getParameterInfo(int32 paramIndex, ParameterInfo& retur
 	const auto& p = *gmpiController.nativeParams[paramIndex];
 
 	returnInfo.flags = Steinberg::Vst::ParameterInfo::kCanAutomate;
-	returnInfo.defaultNormalizedValue = 0.0;
+	returnInfo.defaultNormalizedValue = std::clamp(p.real2Normalized(atof(p.info->default_value_s.c_str())), 0.0, 1.0); // as GmpiParameter::setToDefault reads it
 
 	auto temp = JmUnicodeConversions::ToUtf16(p.info->name);
 
