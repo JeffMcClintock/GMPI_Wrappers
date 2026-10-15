@@ -229,6 +229,15 @@ class AU2_Wrapper : public ausdk::AUBase, public ausdk::AUMIDIBase
 	gmpi::hosting::gmpi_processor plugin;
 	gmpi::hosting::gmpi_controller_holder gmpiController;
 
+	// The plug-in's own <Controller/>, created and initialised in the constructor as
+	// Processor_CLAP and AU3Core do. HELD: it publishes state through the holder and
+	// must outlive the editor that reads it. Null for a plug-in that declares none.
+	gmpi::shared_ptr<gmpi::api::IController> pluginController;
+
+	// True while the host saves or loads state: plug-in writes then are part of that
+	// transfer, not edits, so they must not mark the project modified (Processor_CLAP::hostStateTransfer_).
+	bool hostStateTransfer_ = false;
+
 	std::vector<parameterChange> parameterChanges[2];
 	int latencyCompensation; // enum.
 	bool wantsMidi = false;
@@ -286,6 +295,9 @@ public:
 	// IShellServices
 	void onQueDataAvailable() {}
 	void flushPendingParameterUpdates();
+
+	// Frame one parameter ("ppc2" scalar / "ppc3" blob) into the ui->dsp queue, as AU3Core does. Main thread only.
+	void sendParameterToProcessorQueue(gmpi::hosting::GmpiParameter* param);
 	void EnableIgnoreProgramChange()
 	{
 //		stateMgr.enableIgnoreProgramChange();
