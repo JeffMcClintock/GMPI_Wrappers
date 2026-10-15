@@ -563,13 +563,13 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 
 				if (paramId < MidiControllersParameterId)
 				{
-					if (queue->getPoint (valueChangeCount-1, sampleOffset, valueNormalized) == kResultTrue)
+					// Every point, so automation keeps its shape within the block.
+					for (int32 point = 0; point < valueChangeCount; ++point)
 					{
-						auto prev_sampleOffset{ sampleOffset };
-						//_RPTW1( _CRT_WARN, L"Processor : %f\n", value );
-						assert(sampleOffset >= prev_sampleOffset && sampleOffset < data.numSamples);
-//						_RPT1(_CRT_WARN, "                     PRESETS-DSP: P%d Set in Process()\n", id);
+						if (queue->getPoint(point, sampleOffset, valueNormalized) != kResultTrue)
+							continue;
 
+						assert(sampleOffset >= 0 && sampleOffset < data.numSamples);
 						plugin.setParameterNormalizedFromDaw(info, sampleOffset, paramId, valueNormalized);
 					}
 				}
