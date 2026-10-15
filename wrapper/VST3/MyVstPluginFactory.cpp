@@ -69,7 +69,7 @@ void ReleasePluginBundleRef (CFBundleRef bundleRef)
 #endif
 #endif
 
-#if __APPPLE__
+#if 0 // was misspelt __APPPLE__
  // divert these functions from main executable to VST3 Wrapper lib functions
 bool bundleEntry_internal(CFBundleRef ref)
 {
@@ -83,13 +83,6 @@ bool bundleExit_internal(void)
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
-
-#if 0
-SMTG_EXPORT_SYMBOL IPluginFactory* PLUGIN_API GetPluginFactory ()
-{
-	return MyVstPluginFactory::GetInstance();
-}
-#endif
 
 bool InitModule() { return true; }
 bool DeinitModule() { return true; }
