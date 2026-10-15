@@ -24,6 +24,14 @@
  *                            is not a DAW parameter, that frequency is the
  *                            one number that proves a restored preset reached
  *                            the ENGINE and not just a store.
+ *   --cc <n> <value>         on block --cc-block (default 4), deliver MIDI controller n
+ *                            (channel 1) at normalized <value> as the VST3 parameter the
+ *                            wrapper maps MIDI onto (Controller_VST3::getMidiControllerAssignment:
+ *                            id 10000 + n). The wrapper turns it back into MIDI, the engine's
+ *                            MIDI learn moves the parameter it is assigned to, and that change
+ *                            must travel engine -> controller -> saved blob. With the fixture's
+ *                            pitch learned to that CC, MEASURED audio Hz shows the engine
+ *                            moved and the blob's pitch shows the controller heard about it.
  *   --no-controller          never create the edit controller. CONTROL: on the
  *                            GMPI wrapper getState then falls back to the
  *                            processor's own store (Processor_VST3::getState).
@@ -66,6 +74,7 @@
 #include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/vst/ivsthostapplication.h"
 #include "pluginterfaces/vst/ivstmessage.h"
+#include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "se_gmpi_state_analysis.h"
 
 using namespace Steinberg;
@@ -212,6 +221,48 @@ public:
     }
 };
 
+/* ---- one parameter change in one block: the host's IParameterChanges ------ */
+
+class ParamValueQueue : public IParamValueQueue
+{
+public:
+    ParamID id = 0;
+    ParamValue value = 0.0;
+    tresult PLUGIN_API queryInterface(const TUID _iid, void** obj) SMTG_OVERRIDE
+    {
+        if (iidIs(_iid, IParamValueQueue_iid) || iidIs(_iid, FUnknown_iid)) { *obj = static_cast<IParamValueQueue*>(this); return kResultOk; }
+        *obj = nullptr;
+        return kNoInterface;
+    }
+    PROBE_REFCOUNT
+    ParamID PLUGIN_API getParameterId() SMTG_OVERRIDE { return id; }
+    int32 PLUGIN_API getPointCount() SMTG_OVERRIDE { return 1; }
+    tresult PLUGIN_API getPoint(int32 index, int32& sampleOffset, ParamValue& v) SMTG_OVERRIDE
+    {
+        if (index != 0) return kResultFalse;
+        sampleOffset = 0;
+        v = value;
+        return kResultOk;
+    }
+    tresult PLUGIN_API addPoint(int32, ParamValue, int32&) SMTG_OVERRIDE { return kNotImplemented; }
+};
+
+class ParameterChanges : public IParameterChanges
+{
+public:
+    ParamValueQueue queue;
+    tresult PLUGIN_API queryInterface(const TUID _iid, void** obj) SMTG_OVERRIDE
+    {
+        if (iidIs(_iid, IParameterChanges_iid) || iidIs(_iid, FUnknown_iid)) { *obj = static_cast<IParameterChanges*>(this); return kResultOk; }
+        *obj = nullptr;
+        return kNoInterface;
+    }
+    PROBE_REFCOUNT
+    int32 PLUGIN_API getParameterCount() SMTG_OVERRIDE { return 1; }
+    IParamValueQueue* PLUGIN_API getParameterData(int32 index) SMTG_OVERRIDE { return index == 0 ? &queue : nullptr; }
+    IParamValueQueue* PLUGIN_API addParameterData(const ParamID&, int32&) SMTG_OVERRIDE { return nullptr; }
+};
+
 class ComponentHandler : public IComponentHandler
 {
 public:
@@ -237,6 +288,9 @@ int main(int argc, char** argv)
     const char* resourcesDir = nullptr;
     int blocks = 8;
     bool wantController = true;
+    int ccNumber = -1;      /* --cc */
+    double ccValue = 0.0;
+    int ccBlock = 4;        /* --cc-block */
 
     for (int i = 1; i < argc; ++i)
     {
@@ -245,6 +299,8 @@ int main(int argc, char** argv)
         else if (!strcmp(argv[i], "--resources") && i + 1 < argc) resourcesDir = argv[++i];
         else if (!strcmp(argv[i], "--process") && i + 1 < argc) blocks = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--no-controller")) wantController = false;
+        else if (!strcmp(argv[i], "--cc") && i + 2 < argc) { ccNumber = atoi(argv[++i]); ccValue = atof(argv[++i]); }
+        else if (!strcmp(argv[i], "--cc-block") && i + 1 < argc) ccBlock = atoi(argv[++i]);
         else if (argv[i][0] == '-') { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
         else bundle = argv[i];
     }
@@ -428,6 +484,11 @@ int main(int argc, char** argv)
         double peak = 0.0;
         int processFailures = 0;
         FrequencyEstimate freq; /* over the second half of the blocks, channel 0 */
+        ParameterChanges ccChange;
+        ccChange.queue.id = static_cast<ParamID>(10000 + ccNumber); /* MidiControllersParameterId + channel 0 * 130 + cc */
+        ccChange.queue.value = ccValue;
+        if (ccNumber >= 0)
+            printf("      --cc: MIDI controller %d = %.3f on block %d (as VST3 parameter %u)\n", ccNumber, ccValue, ccBlock, (unsigned)ccChange.queue.id);
         for (int b = 0; b < blocks; ++b)
         {
             ProcessData data{};
@@ -436,6 +497,7 @@ int main(int argc, char** argv)
             data.numSamples = 256;
             data.numOutputs = outBuses;
             data.outputs = outBuses > 0 ? buses.data() : nullptr;
+            data.inputParameterChanges = (ccNumber >= 0 && b == ccBlock) ? static_cast<IParameterChanges*>(&ccChange) : nullptr;
             if (processor->process(data) != kResultOk) ++processFailures;
             if (outBuses > 0)
             {

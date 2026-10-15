@@ -1013,6 +1013,9 @@ bool Processor_CLAP::stateSave(const clap_ostream *stream) noexcept
     std::string st;
     if (pluginController)
     {
+        // Feedback the processor has sent and no timer has read yet (none ticks on a Linux host
+        // with no editor): a save must see it, as Controller_VST3::drainProcessorFeedback.
+        controller.gmpiController.message_que_dsp_to_ui.pollMessage(&controller.gmpiController);
         pluginController->syncState();
         st = controller.gmpiController.getPresetXml();
     }
