@@ -112,8 +112,13 @@ Processor_CLAP::Processor_CLAP(const clap_plugin_descriptor* desc, gmpi::hosting
         {
             pluginController = controllerUnknown.as<gmpi::api::IController>();
             if (pluginController)
+            {
                 pluginController->initialize(
                     static_cast<gmpi::api::IControllerHost*>(&controller.gmpiController), 0);
+
+                // Its IParameterObserver side: the holder tells it of processor-originated changes.
+                controller.gmpiController.pluginController = pluginController.as<gmpi::api::IParameterObserver>().get();
+            }
         }
     }
 

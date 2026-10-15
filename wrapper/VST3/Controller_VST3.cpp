@@ -36,26 +36,6 @@ typedef gmpi::ReturnCode(*MP_DllEntry)(void**);
 namespace wrapper
 {
 
-MpParameterVst3::MpParameterVst3(Controller_VST3* controller, int ParameterTag, bool isInverted) :
-	MpParameter_native(controller),
-	vst3Controller(controller),
-	hostTag(ParameterTag)
-{
-	isInverted_ = isInverted;
-}
-
-void MpParameterVst3::updateProcessor(gmpi::FieldType fieldId, int32_t voice)
-{
-	switch (fieldId)
-	{
-	case gmpi::MP_FT_VALUE:
-	case gmpi::MP_FT_NORMALIZED:
-		vst3Controller->ParamToProcessorViaHost(this, voice);
-		break;
-	}
-}
-
-
 Controller_VST3::Controller_VST3(gmpi::hosting::pluginInfo& pinfo) :
 //	MpController(pinfo)
 	 isInitialised(false)
@@ -201,22 +181,6 @@ tresult PLUGIN_API Controller_VST3::notify( IMessage* message )
 		}
 	}
 
-	// SynthEdit engine feedback, on its own message id - see Processor_VST3.h's seMsgQues_
-	// comment for why this can't share "BinaryMessage" with gmpiController's own traffic.
-	// MpController::OnTimer() (called from our own onTimer() below) is what actually drains
-	// this into the panel's modules.
-	if (!strcmp(message->getMessageID(), "SeBinaryMessage"))
-	{
-		const void* data;
-		uint32 size;
-		if (message->getAttributes()->getBinary("MyData", data, size) == kResultOk)
-		{
-			message_que_dsp_to_ui.pushString(size, (unsigned char*)data);
-			message_que_dsp_to_ui.Send();
-			return kResultOk;
-		}
-	}
-
 	// The plugin's latency changed (Processor_VST3::process). A host may deliver this on the
 	// processor's thread, and restartComponent is UI-thread only, so defer it to onTimer.
 	if (!strcmp(message->getMessageID(), "GmpiLatency"))
@@ -245,38 +209,6 @@ bool Controller_VST3::sendMessageToProcessor(const void* data, int size, const c
 
 	return true;
 }
-void Controller_VST3::ParamGrabbed(MpParameter_native* param)
-{
-	auto paramID = param->getNativeTag();
-
-	if (param->isGrabbed())
-	{
-		beginEdit(paramID);
-	}
-	else
-	{
-		endEdit(paramID);
-	}
-}
-
-// See MpParameterVst3's class comment: paramID here is not registered with
-// getParameterCount()/getParameterInfo(), so beginEdit/performEdit/endEdit are a safe
-// no-op from the host's perspective until that registration exists - unrecognised ids
-// are routinely ignored. Written now so updateProcessor() has something to call and
-// the shape matches gmpiController.notifyDaw's already-working equivalent exactly.
-void Controller_VST3::ParamToProcessorViaHost(MpParameterVst3* param, int32_t voice)
-{
-	const auto paramID = param->getNativeTag();
-
-	if (!param->isGrabbed())
-		beginEdit(paramID);
-
-	performEdit(paramID, param->convertNormalized(param->getNormalized()));
-
-	if (!param->isGrabbed())
-		endEdit(paramID);
-}
-
 enum class ElatencyContraintType
 {
 	Off, Constrained, Full
@@ -300,39 +232,6 @@ struct pluginInformation
 	std::vector<std::string> outputNames;
 };
 
-#if 0
-void Controller_VST3::setPinFromUi(int32_t pinId, int32_t voice, int32_t size, const void* data)
-{
-	for (auto& pin : info.guiPins)
-	{
-		if (pin.id == pinId && /*pin.direction == gmpi::PinDirection::In && pin.datatype == gmpi::PinDatatype::Float32 &&*/ pin.parameterId != -1)
-		{
-			for (auto& param : info.parameters)
-			{
-				if (param.id == pin.parameterId)
-				{
-					auto param = tagToParameter[pin.parameterId];
-					setParameterValue({ data, static_cast<size_t>(size)}, param->parameterHandle_, pin.parameterFieldType, voice);
-					break;
-				}
-			}
-			break;
-		}
-	}
-}
-#endif
-
-#if 0
-// send initial value of all parameters to GUI
-void Controller_VST3::initUi(gmpi::api::IParameterObserver* gui)
-{
-	for (auto& it : tagToParameter)
-	{
-		initializeGui(gui, it.second->parameterHandle_, gmpi::Field::Value);
-	}
-}
-#endif
-
 //-----------------------------------------------------------------------------
 tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 {
@@ -346,8 +245,6 @@ tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 		{
 //?			ModuleFactory()->RegisterExternalPluginsXmlOnce(nullptr);
 		}
-
-		MpController::Initialize();
 
 		// CC tags start at MidiControllersParameterId, so the native tags (their indexes) must stay below it.
 		const bool hasMidiIn = gmpiController.info && countPins(*gmpiController.info, gmpi::PinDirection::In, gmpi::PinDatatype::Midi) > 0;
@@ -377,6 +274,10 @@ tresult PLUGIN_API Controller_VST3::initialize (FUnknown* context)
 				if (sePluginController)
 				{
 					sePluginController->initialize(static_cast<gmpi::api::IControllerHost*>(&gmpiController), 0);
+
+					// Its IParameterObserver side, for the holder to tell of processor- and
+					// DAW-originated changes (a SynthEdit export's panel follows the DAW this way).
+					gmpiController.pluginController = sePluginController.as<gmpi::api::IParameterObserver>().get();
 				}
 			}
 		}
@@ -445,10 +346,6 @@ IPlugView* PLUGIN_API Controller_VST3::createView (FIDString name)
 	if (!info)
 		return {};
 
-	// See IGuiHost2.h's g_pendingEditorGuiHost comment: the only way to hand this
-	// (an IGuiHost2 via the MpController base) to the editor the next line constructs.
-	g_pendingEditorGuiHost = this;
-
 	auto pluginUnknown = gmpi::hosting::factory::getInstance().createInstance(info->id.c_str(), gmpi::api::PluginSubtype::Editor);
 
 	if (!pluginUnknown )
@@ -512,10 +409,6 @@ tresult PLUGIN_API Controller_VST3::setComponentState (IBStream* state)
 	if (!gmpi_vst3::readSizedChunk(state, chunk))
 		return kResultFalse; // short or corrupt stream: keep the current state.
 
-#if 0
-	DawPreset preset(parametersInfo, chunk);
-	setPreset(&preset);
-#endif
 	// Fail safe, for the same reason as Processor_VST3::setState - this is the
 	// controller half of the same main-thread project-load path, so an escaping
 	// exception aborts the DAW just as surely.
@@ -570,11 +463,12 @@ tresult Controller_VST3::setParamNormalized( ParamID tag, ParamValue value )
 	if (auto p = gmpiController.patchManager.setParameterNormalised(gmpiController.nativeParams[tag]->info->id, value); p) // todo avoid lookup when we already have pointer to parameter
 	{
 		gmpiController.notifyGui(p);
+		gmpiController.notifyPluginController(p); // the plug-in's own controller follows the DAW too
 	}
 
 	return kResultTrue;
 }
-// UI thread: from our own "GmpiLatency" message, or MpController's "ltnc".
+// UI thread: from our own "GmpiLatency" message.
 void Controller_VST3::notifyDawLatencyChanged()
 {
 	if (auto* handler = getComponentHandler(); handler) // null until the host connects it
@@ -759,154 +653,6 @@ tresult PLUGIN_API Controller_VST3::getParamStringByValue(ParamID tag, ParamValu
 	return kResultOk;
 }
 
-#if 0 // TODO
-std::string Controller_VST3::loadNativePreset(std::wstring sourceFilename)
-{
-	auto filetype = GetExtension(sourceFilename);
-
-	if (filetype == L"vstpreset")
-	{
-		return VstPresetUtil::ReadPreset(sourceFilename);
-	}
-
-	if (filetype == L"aupreset")
-	{
-		return AuPresetUtil::ReadPreset(sourceFilename);
-	}
-
-	if (filetype == L"fxp")
-	{
-		auto factory = MyVstPluginFactory::GetInstance();
-		const int pluginIndex = 0;
-		const auto xml = Vst2PresetUtil::ReadPreset(ToPlatformString(sourceFilename), factory->getVst2Id(pluginIndex), factory->getVst2Id64(pluginIndex));
-
-		if(!xml.empty())
-		{
-			return xml;
-		}
-
-		// Prior to v1.4.518 - 2020-08-04, Preset Browser saves VST3 format instead of VST2 format. Fallback to VST3.
-		return VstPresetUtil::ReadPreset(sourceFilename);
-	}
-	return {};
-}
-#endif
-
-#if 0 // todo
-std::vector< MpController::presetInfo > Controller_VST3::scanFactoryPresets()
-{
-	platform_string factoryPresetsFolder(_T("vst2FactoryPresets/"));
-	auto factoryPresetFolder = ToPlatformString(BundleInfo::instance()->getImbeddedFileFolder());
-	auto fullpath = combinePathAndFile(factoryPresetFolder, factoryPresetsFolder);
-
-	if (fullpath.empty())
-	{
-		return {};
-	}
-
-	return scanPresetFolder(fullpath, _T("xmlpreset"));
-	return {};
-}
-#endif
-
-#if 0 // TODO
-void Controller_VST3::loadFactoryPreset(int index, bool fromDaw)
-{
-	platform_string vst2FactoryPresetsFolder(_T("vst2FactoryPresets/"));
-	auto PresetFolder = ToPlatformString(BundleInfo::instance()->getImbeddedFileFolder());
-	PresetFolder = combinePathAndFile(PresetFolder, vst2FactoryPresetsFolder);
-
-	auto fullFilePath = PresetFolder + ToPlatformString(presets[index].filename);
-	auto filenameUtf8 = ToUtf8String(fullFilePath);
-	ImportPresetXml(filenameUtf8.c_str());
-}
-
-void Controller_VST3::setPresetFromSelf(DawPreset const* preset)
-{
-	// since there is no explicit sharing between controller and processor, we need to send entire preset in one hit via queue
-	const auto xml = preset->toString(BundleInfo::instance()->getPluginId());
-	setPresetXmlFromSelf(xml);
-}
-
-void Controller_VST3::setPresetXmlFromSelf(const std::string& xml)
-{
-	// send to processor
-	auto message = allocateMessage();
-	if (message)
-	{
-		FReleaser msgReleaser(message);
-		message->setMessageID("BinaryMessage");
-
-		message->getAttributes()->setBinary("Preset", xml.data(), static_cast<uint32>(xml.size()));
-		sendMessage(message);
-	}
-
-	// send to controller
-	DawPreset preset(parametersInfo, xml);
-	setPreset(&preset);
-
-#if 0
-	// since there is not explicit sharing between controller and processor, we need to send entire preset in one hit via queue
-	
-	const auto freespace = getQueueToDsp()->freeSpace();
-	const uint32_t messageSize = static_cast<uint32_t>(sizeof(int32_t) + xml.size());
-
-	if (freespace < messageSize)
-	{
-		assert(false); // Preset too large for message queue
-		return;
-	}
-
-	my_msg_que_output_stream s(getQueueToDsp(), UniqueSnowflake::APPLICATION, "PROG"); // Program Change
-
-	s << messageSize;
-	s << xml;
-
-	s.Send();
-#endif
-}
-#endif
-
-#if 0
-platform_string Controller_VST3::calcFactoryPresetFolder()
-{
-	// TODO
-	return {};
-}
-
-std::string Controller_VST3::getFactoryPresetXml(std::string filename)
-{
-	auto PresetFolder = calcFactoryPresetFolder();
-	auto fullFilePath = PresetFolder + ToPlatformString(filename);
-	return loadNativePreset(toWstring(fullFilePath));
-}
-#endif
-
-#if 0
-void Controller_VST3::saveNativePreset(const char* filename, const std::string& presetName, const std::string& xml)
-{
-	const auto filetype = GetExtension(std::string(filename));
-
-	// VST2 preset format.
-	if(filetype == "fxp")
-	{
-		auto factory = MyVstPluginFactory::GetInstance();
-		Vst2PresetUtil::WritePreset(ToPlatformString(filename), factory->getVst2Id64(0), presetName, xml);
-		return;
-	}
-
-	// VST3 preset format.
-	{
-		// Add Company name.
-		auto factory = MyVstPluginFactory::GetInstance();
-		auto processorId = factory->getPluginInfo().processorId;
-
-		std::string categoryName; // TODO !!!
-		VstPresetUtil::WritePreset(JmUnicodeConversions::Utf8ToWstring(filename), categoryName, factory->getVendorName(), factory->getProductName(), &processorId, xml);
-	}
-}
-#endif
-
 bool Controller_VST3::onTimer()
 {
 	if (latencyChangePending_.exchange(false, std::memory_order_acq_rel))
@@ -915,27 +661,7 @@ bool Controller_VST3::onTimer()
 	// parameter updates from the Processor
 	gmpiController.message_que_dsp_to_ui.pollMessage(&gmpiController);
 
-	// parameter updates to the Processor
-/* TODO, rationalise with clap controller, who should own the queue?
-	gmpi::hosting::my_msg_que_output_stream toProcessor(&queueToDsp_);
-	gmpiController.pendingControllerQueueClients.ServiceWaiters(
-		toProcessor,
-		queueToDsp_.freeSpace(),
-		queueToDsp_.freeSpace()
-	);
-*/
-	if (!queueToDsp_.empty())
-	{
-		// SynthEdit engine feedback's own id - see Processor_VST3.h's seMsgQues_ comment.
-		sendMessageToProcessor(queueToDsp_.data(), queueToDsp_.size(), "SeBinaryMessage");
-		queueToDsp_.clear();
-	}
-
-	// Drains message_que_dsp_to_ui (fed by notify()'s "SeBinaryMessage" handler above) into
-	// the panel's modules, plus MpController's own startup/watchdog/preset-rescan bookkeeping -
-	// see VST3Controller::OnTimer (se_vst3/source/adelaycontroller.cpp) for the precedent this
-	// mirrors.
-	return MpController::OnTimer();
+	return true;
 }
 
 namespace

@@ -61,6 +61,22 @@ if(VST3_SDK)
     endif()
 endif()
 
+# se_gmpi_state_probe - which of a SynthEdit export's parameters survive a VST3
+# save (TideSynth docs/state-management-consolidation-plan.md, Stage 0). A bare
+# host: restore a chunk, run a few blocks, save, and list the parameters.se.xml
+# handles the chunk carries. Header-only against the VST3 SDK; also compiles in
+# one command (see the top of the file).
+if(VST3_SDK)
+    add_executable(se_gmpi_state_probe se_gmpi_state_probe.cpp)
+    target_include_directories(se_gmpi_state_probe PRIVATE ${VST3_SDK})
+    if(WIN32)
+        target_compile_definitions(se_gmpi_state_probe PRIVATE NOMINMAX)
+        target_link_libraries(se_gmpi_state_probe PRIVATE ole32)
+    else()
+        target_link_libraries(se_gmpi_state_probe PRIVATE ${CMAKE_DL_LIBS})
+    endif()
+endif()
+
 # controller_gesture_test - what the controller holder tells a wrapper when a GUI
 # edits parameters: one host gesture per Grab, and private parameters routed to
 # the processor and marked as a state change rather than performEdit'd with tag
