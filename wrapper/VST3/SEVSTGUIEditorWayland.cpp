@@ -110,15 +110,7 @@ SEVSTGUIEditorWayland::SEVSTGUIEditorWayland(gmpi::hosting::pluginInfo const& in
                                              int pwidth, int pheight)
     : VST3EditorBase(info, peditor, pcontroller, pwidth, pheight)
 {
-    wireTextStack(drawingframe.drawingFactory());
-    drawingframe.setMenuFont(menuFont(drawingframe.drawingFactory()));
-
-    // Before any setHost call - the plugin resolves IEditorHost during setHost,
-    // and the frame can only forward that once it knows where to.
-    drawingframe.setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&pcontroller->gmpiController));
-
-    if (pluginParameters_GMPI)
-        pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&drawingframe));
+    createFrame();
 
     if (auto drawingClient = peditor.as<gmpi::api::IDrawingClient>(); drawingClient)
     {
@@ -135,17 +127,61 @@ SEVSTGUIEditorWayland::~SEVSTGUIEditorWayland()
     if (pluginParameters_GMPI)
         controller->gmpiController.unRegisterGui(pluginParameters_GMPI.get());
 
-    // The connection is the host's to close, not ours. Connection::adopt left
-    // owned_ false so its destructor will not call wl_display_disconnect - but
-    // the destructor still runs first, so the close must happen after it, and
-    // the frame must be gone before either. Sequencing is handled in removed();
-    // this is the belt-and-braces path for a view destroyed without it.
+    // Normally removed() has already done this and it is a no-op; this is the
+    // belt-and-braces path for a view destroyed without it. It cannot be left
+    // to member teardown: that runs after this body, i.e. after the close.
+    releaseDisplay();
+}
+
+void SEVSTGUIEditorWayland::createFrame()
+{
+    connection.emplace();
+    drawingframe.emplace(*connection);
+
+    wireTextStack(drawingframe->drawingFactory());
+    drawingframe->setMenuFont(menuFont(drawingframe->drawingFactory()));
+
+    // Before any setHost call - the plugin resolves IEditorHost during setHost,
+    // and the frame can only forward that once it knows where to.
+    drawingframe->setFallbackHost(static_cast<gmpi::api::IEditorHost*>(&controller->gmpiController));
+
+    if (pluginParameters_GMPI)
+        pluginParameters_GMPI->setHost(static_cast<gmpi::api::IDrawingHost*>(&*drawingframe));
+}
+
+// The connection is the host's to close, not ours. Connection::adopt left
+// owned_ false so its destructor will not call wl_display_disconnect - but that
+// destructor still talks to the display (it closes live popups and round-trips),
+// so it must run before the close, and the frame must be gone before either.
+// A real IWaylandHost tears the plugin's connection down inside
+// closeWaylandConnection; any proxy still alive after it is a request on a dead
+// connection.
+void SEVSTGUIEditorWayland::releaseDisplay()
+{
+    // 1. Popups first. A popup menu unregisters itself from the FRAME's input
+    //    dispatcher as it closes, so left to ~Connection it would reach into
+    //    a frame that is already gone.
+    if (connection)
+        connection->closeLivePopups();
+
+    // 2. The plugin keeps the frame as its host; it must not outlive it. The
+    //    drawing client is the same object and setHost is shared, but an
+    //    editor with no drawing client is never detached by the frame.
+    if (drawingframe && pluginParameters_GMPI)
+        pluginParameters_GMPI->setHost(nullptr);
+
+    // 3. The frame: frame callback, subsurface, libdecor, wl_surface, and its
+    //    InputDispatch's seat, pointer, keyboard and cursor.
+    drawingframe.reset();
+
+    // 4. The connection: final roundtrip, and no wl_display_disconnect.
+    connection.reset();
+
+    // 5. Only now hand the display back.
     if (connectionOpen && waylandHost && display)
-    {
         waylandHost->closeWaylandConnection(display);
-        connectionOpen = false;
-        display = {};
-    }
+    connectionOpen = false;
+    display = {};
 }
 
 tresult PLUGIN_API SEVSTGUIEditorWayland::queryInterface(const TUID iid, void** obj)
@@ -187,18 +223,18 @@ tresult PLUGIN_API SEVSTGUIEditorWayland::setFrame(IPlugFrame* frame)
 
 void SEVSTGUIEditorWayland::resolvePopupParent()
 {
-    if (!waylandFrame || !display)
+    if (!waylandFrame || !display || !drawingframe)
         return;
 
     // Dialogs of ours must be children of the host's toplevel, or a modal
     // question can fall behind the DAW window - which the user experiences as a
     // hang, with no way to answer it.
-    drawingframe.setParentToplevel(waylandFrame->getParentToplevel(display));
+    drawingframe->setParentToplevel(waylandFrame->getParentToplevel(display));
 
     ViewRect parentSize{};
     if (auto* xdg = waylandFrame->getParentSurface(parentSize, display))
     {
-        drawingframe.setPopupParent(
+        drawingframe->setPopupParent(
             xdg,
             { static_cast<float>(parentSize.left),  static_cast<float>(parentSize.top),
               static_cast<float>(parentSize.right), static_cast<float>(parentSize.bottom) });
@@ -214,6 +250,10 @@ tresult PLUGIN_API SEVSTGUIEditorWayland::attached(void* parent, FIDString type)
     if (!waylandHost)
         return kResultFalse;
 
+    // Re-attached after removed(), which released the last frame.
+    if (!drawingframe)
+        createFrame();
+
     display = waylandHost->openWaylandConnection();
     if (!display)
         return kResultFalse;
@@ -221,14 +261,14 @@ tresult PLUGIN_API SEVSTGUIEditorWayland::attached(void* parent, FIDString type)
 
     // adopt, not open: this display belongs to the host and must never be
     // wl_display_disconnect'd - closeWaylandConnection is its counterpart.
-    if (!connection.adopt(display))
+    if (!connection->adopt(display))
         return kResultFalse;
 
     if (pluginGraphics_GMPI)
     {
-        drawingframe.attachClient(pluginGraphics_GMPI.get());
+        drawingframe->attachClient(pluginGraphics_GMPI.get());
 
-        if (!drawingframe.create(static_cast<wl_surface*>(parent), width, height))
+        if (!drawingframe->create(static_cast<wl_surface*>(parent), width, height))
             return kResultFalse;
     }
 
@@ -245,7 +285,7 @@ tresult PLUGIN_API SEVSTGUIEditorWayland::attached(void* parent, FIDString type)
     if (runLoop)
     {
         runLoop->registerEventHandler(static_cast<Linux::IEventHandler*>(this),
-                                      drawingframe.displayFd());
+                                      drawingframe->displayFd());
         runLoop->registerTimer(static_cast<Linux::ITimerHandler*>(this), kTimerIntervalMs);
         registeredWithRunLoop = true;
     }
@@ -268,21 +308,15 @@ tresult PLUGIN_API SEVSTGUIEditorWayland::removed()
     if (pluginParameters_GMPI)
         controller->gmpiController.unRegisterGui(pluginParameters_GMPI.get());
 
-    drawingframe.detachClient();
-
-    if (connectionOpen && waylandHost && display)
-    {
-        waylandHost->closeWaylandConnection(display);
-        connectionOpen = false;
-        display = {};
-    }
+    releaseDisplay();
 
     return kResultTrue;
 }
 
 void PLUGIN_API SEVSTGUIEditorWayland::onFDIsSet(Linux::FileDescriptor)
 {
-    drawingframe.dispatch();
+    if (drawingframe)
+        drawingframe->dispatch();
 }
 
 void PLUGIN_API SEVSTGUIEditorWayland::onTimer()
@@ -306,7 +340,8 @@ void PLUGIN_API SEVSTGUIEditorWayland::onTimer()
     // editors pumping the one process-wide manager cannot make it run fast.
     gmpi::TimerManager::instance()->pump();
 
-    drawingframe.tick();
+    if (drawingframe)
+        drawingframe->tick();
 }
 
 tresult PLUGIN_API SEVSTGUIEditorWayland::getSize(ViewRect* size)
@@ -319,7 +354,8 @@ tresult PLUGIN_API SEVSTGUIEditorWayland::onSize(ViewRect* newSize)
 {
     width  = newSize->right - newSize->left;
     height = newSize->bottom - newSize->top;
-    drawingframe.resize(width, height);
+    if (drawingframe)
+        drawingframe->resize(width, height);
 
     // The parent moved relative to us, or we to it; popup anchoring is
     // expressed in that offset, so it has to be re-read.

@@ -63,7 +63,9 @@ sleep 3
 DISPLAY=$DISP "$TOOLS/usr/bin/xdotool" key Escape   # leave the Overview if it started there
 sleep 1
 
-env WAYLAND_DISPLAY="$SOCK" "$HOSTBIN" "$PLUGIN" 4000 >"$OUT/host.log" 2>&1 & HOST_PID=$!
+# WAYLAND_DEBUG=client so teardown order can be checked below.
+env WAYLAND_DISPLAY="$SOCK" WAYLAND_DEBUG=client "$HOSTBIN" "$PLUGIN" 4000 \
+    >"$OUT/host.log" 2>"$OUT/wayland-debug.log" & HOST_PID=$!
 
 # BEFORE: the host holds its window mapped and plugin-free for two seconds
 # exactly so this can be taken. Wait for the window rather than guessing.
@@ -79,9 +81,25 @@ xwd -display "$DISP" -root -silent > "$OUT/after.xwd" 2>/dev/null
 wait $HOST_PID
 RC=$?
 cat "$OUT/host.log"
+grep -v '^\[' "$OUT/wayland-debug.log"   # the host's own stderr, without the protocol trace
 
 [ $RC -eq 77 ] && { echo "SKIP"; exit 77; }
 [ $RC -eq 0 ] || { echo "FAIL: host exited $RC"; exit 1; }
+
+# closeWaylandConnection is where a real host tears the plugin's connection
+# down. A request after it - destroying the frame's surface, releasing a seat,
+# a final roundtrip - goes out on a connection that no longer exists. This host
+# shares its display, so it survives that; the check is what notices.
+LATE=$(awk '/^host: closeWaylandConnection/ {on=1; next}
+            /^host: plugin released/        {on=0}
+            on && / -> /' "$OUT/wayland-debug.log")
+if [ -n "$LATE" ]; then
+    echo "FAIL: plugin sent requests after closeWaylandConnection:"
+    echo "$LATE" | head -40
+    exit 1
+fi
+grep -q '^host: closeWaylandConnection' "$OUT/wayland-debug.log" ||
+    { echo "FAIL: removed() never called closeWaylandConnection"; exit 1; }
 
 python3 "$(dirname "$0")/check_wayland_capture.py" "$OUT/before.xwd" "$OUT/after.xwd" || exit 1
 

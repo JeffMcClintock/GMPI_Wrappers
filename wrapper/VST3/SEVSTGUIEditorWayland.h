@@ -24,6 +24,7 @@
 //     register the connection fd and a timer, never poll ourselves.
 // ---------------------------------------------------------------------------
 
+#include <optional>
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/gui/iwaylandframe.h"
 #include "base/source/fobject.h"
@@ -84,8 +85,20 @@ private:
     // relative to OUR surface, so it is only meaningful once we have one.
     void resolvePopupParent();
 
-    gmpi::wayland::Connection connection;
-    gmpi::wayland::WaylandSubsurfaceFrame drawingframe{ connection };
+    // The frame, the connection and the plugin's host pointer, set up together
+    // so a view re-attached after removed() gets a fresh set.
+    void createFrame();
+
+    // Teardown of everything above, then the host's connection, in the only
+    // order that is safe - see the definition.
+    void releaseDisplay();
+
+    // Optional rather than by-value: both hold proxies on `display`, so both
+    // must be destroyed BEFORE closeWaylandConnection, which happens well
+    // before member teardown would get to them. The frame refers to the
+    // connection, so it is declared after it and reset before it.
+    std::optional<gmpi::wayland::Connection> connection;
+    std::optional<gmpi::wayland::WaylandSubsurfaceFrame> drawingframe;
 
     Steinberg::IPtr<Steinberg::Linux::IRunLoop> runLoop;
     Steinberg::IPtr<Steinberg::IWaylandHost>    waylandHost;

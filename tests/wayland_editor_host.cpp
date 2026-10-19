@@ -155,7 +155,11 @@ public:
     tresult PLUGIN_API closeWaylandConnection(wl_display* d) override
     {
         // Shared with the host here, so there is nothing to close. A real host
-        // would tear down the plugin's connection at this point.
+        // would tear down the plugin's connection at this point, so from here
+        // on the plugin must send nothing. stderr, unbuffered, so the run
+        // script can find this line among WAYLAND_DEBUG=client output and
+        // check that no request follows it before "plugin released".
+        std::fprintf(stderr, "host: closeWaylandConnection\n");
         return (d == g_wl.display) ? kResultTrue : kInvalidArgument;
     }
 
@@ -501,6 +505,8 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // Everything of the plugin's is gone; requests after this line are ours.
+    std::fprintf(stderr, "host: plugin released\n");
     wl_display_roundtrip(g_wl.display);
     std::printf("PASS\n");
     return 0;
