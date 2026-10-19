@@ -371,6 +371,7 @@ endif()
 list(APPEND standalone_include_dirs
     ${WL_GEN}
     ${WL_INCLUDE_DIRS}
+    ${WLCURSOR_INCLUDE_DIRS}
     ${XKB_INCLUDE_DIRS}
     ${DECOR_INCLUDE_DIRS}
     ${DBUS_INCLUDE_DIRS}
@@ -384,6 +385,7 @@ list(APPEND standalone_include_dirs
 
 list(APPEND standalone_libs
     ${WL_LIBRARIES}
+    ${WLCURSOR_LIBRARIES}
     ${XKB_LIBRARIES}
     ${DECOR_LIBRARIES}
     ${DBUS_LIBRARIES}
@@ -400,6 +402,7 @@ list(APPEND standalone_libs
 # prefix (see the WSL note in the repo's build docs).
 list(APPEND standalone_library_dirs
     ${WL_LIBRARY_DIRS}
+    ${WLCURSOR_LIBRARY_DIRS}
     ${XKB_LIBRARY_DIRS}
     ${DECOR_LIBRARY_DIRS}
     ${DBUS_LIBRARY_DIRS}

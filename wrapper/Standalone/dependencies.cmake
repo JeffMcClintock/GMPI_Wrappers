@@ -52,6 +52,7 @@ else()
 # name <-> pkg-config module. Probed without REQUIRED so a miss is recoverable.
 foreach(dep
     "WL:wayland-client"
+    "WLCURSOR:wayland-cursor"   # XCursor fallback where cursor-shape-v1 is absent
     "XKB:xkbcommon"
     "DECOR:libdecor-0"
     "DBUS:dbus-1"

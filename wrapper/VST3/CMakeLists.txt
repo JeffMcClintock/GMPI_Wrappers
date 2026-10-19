@@ -88,7 +88,7 @@ ${GMPI_UI_SDK}/helpers/DecodeImage.h
 # predates 3.8.0, or a build machine without the Wayland development packages,
 # gets the X11 editor and nothing else changes.
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(GMPI_WL      wayland-client)
+pkg_check_modules(GMPI_WL      wayland-client wayland-cursor)
 pkg_check_modules(GMPI_XKB     xkbcommon)
 pkg_check_modules(GMPI_DECOR   libdecor-0)
 
