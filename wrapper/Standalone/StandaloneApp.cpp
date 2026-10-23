@@ -15,6 +15,9 @@
 #include "StandaloneSettings.h"
 
 #include "mcp/CommandChannelHost.h"
+#if GMPI_UI_GPU_BACKEND
+#include "backends/GpuGfx.h"
+#endif
 
 namespace gmpi
 {
@@ -150,6 +153,18 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
 
     Settings settings(host.pluginName());
     settings.load();
+
+#if GMPI_UI_GPU_BACKEND
+    // A build that compiled in gmpi_ui's GPU renderer draws with it unless the
+    // user ticked Options > Disable GPU. Stated here, before the first window
+    // presents, because that is when the frame picks its renderer for good:
+    // every brush and bitmap belongs to the factory that made it, so a change
+    // applies from the next launch. GMPI_UI_GPU in the environment still wins,
+    // and a machine that cannot initialise the renderer keeps the CPU path.
+    gmpi::gpugfx::hostPreference() = settings.getBool(Settings::keyDisableGpu, false)
+        ? gmpi::gpugfx::HostPreference::Software
+        : gmpi::gpugfx::HostPreference::Gpu;
+#endif
 
     // --- the plugin's patch --------------------------------------------------
     // What the DAW does for the VST3 and CLAP builds of this same plugin. It
@@ -335,6 +350,22 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
                 {},
                 [&] { return layout->currentPage() == pageSettings; }
             },
+#if GMPI_UI_GPU_BACKEND
+            {
+                // Ticked = the SAVED setting, which takes effect at the next
+                // launch (see where hostPreference() is set above). The same
+                // Settings object the settings page saves through, so neither
+                // overwrites the other's keys.
+                "Disable GPU",
+                [&]
+                {
+                    settings.setBool(Settings::keyDisableGpu, !settings.getBool(Settings::keyDisableGpu, false));
+                    settings.save();
+                },
+                {},
+                [&] { return settings.getBool(Settings::keyDisableGpu, false); }
+            },
+#endif
             {},   // separator
             { "Quit", [&shell] { shell.requestClose(); } },
         } });

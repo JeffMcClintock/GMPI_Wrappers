@@ -94,6 +94,7 @@ public:
     static constexpr const char* keyBufferFrames  = "bufferFrames";
     static constexpr const char* keyMidiInputs    = "midiInputs";
     static constexpr const char* keyMidiInputsSet = "midiInputsConfigured";
+    static constexpr const char* keyDisableGpu    = "disableGpu";
 
 private:
     std::filesystem::path path_;
