@@ -13,7 +13,6 @@
 //#include "wrapper/common/se_datatypes.h" // kill this
 #include "wrapper/common/unicode_conversion.h"
 #include "Hosting/gmpi_factory.h"
-#include "BundleInfo.h"
 
 
 #ifdef _WIN32
