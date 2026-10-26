@@ -77,9 +77,9 @@ Portable — no window-system headers, shared by every platform:
 | `AudioMidiDevices.h` | the `AudioDriver` / `MidiDriver` seam the shells implement |
 | `StandaloneSettings.*` | persisted device selection (`~/.config/<plugin>/standalone.conf` and its Windows/macOS equivalents) |
 | `SessionState.*` | the plugin's patch, kept across runs (`session.xml`, beside `standalone.conf`) |
-| `AppLayout.*` | the window's root: menu bar strip + one of several content pages |
+| `AppLayout.*` | the window's root: menu bar strip + the plugin's editor below it |
 | `MenuBarView.*` | the menu bar, drawn (gmpi_ui, no toolkit) |
-| `SettingsPane.*` | the Audio/MIDI page, a `gmpi::ui::Form` |
+| `SettingsPane.*` | the Audio/MIDI settings, a `gmpi::ui::Form` shown in a window of its own (`IDialogHost::createChildWindow`), modeless |
 
 Per platform:
 
@@ -135,12 +135,12 @@ Two WASAPI details that surprise people:
   the engine owns the buffer and hands back its own size — asking for 512
   frames typically yields 1056. `getBufferFrames()` reports what was granted,
   and `StandaloneHost` starts the processor against that, so the status line on
-  the settings page reads e.g. `Running: 48000 Hz, 1056 frames`.
+  the settings window reads e.g. `Running: 48000 Hz, 1056 frames`.
 - **The sample rate belongs to the endpoint, not to the settings file.** Shared
   mode clocks the engine at the endpoint's mix format, and this shell does not
   resample — the `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM` that used to be here is
   gone, along with the wish-list of rates it made plausible. `sampleRates()`
-  now probes the endpoint with `IsFormatSupported`, so the settings page offers
+  now probes the endpoint with `IsFormatSupported`, so the settings window offers
   what the device will really take (normally its one mix rate, changed on the
   endpoint's Advanced page in Sound settings). Ask for anything else and the
   stream opens at a rate the endpoint does have, with `getSampleRate()`
@@ -243,13 +243,14 @@ the staging protocols the backend binds.
 
 ## Behaviour worth knowing
 
-- **Audio failing to open is not fatal.** The app comes up on the settings page
-  with the error on it, rather than refusing to start — the settings page is
-  the only thing that can fix a busy or missing device.
+- **Audio failing to open is not fatal.** The app comes up with the settings
+  window open over the plugin's editor and the error in it, rather than
+  refusing to start — the settings window is the only thing that can fix a busy
+  or missing device.
 - **"Never configured" and "configured to nothing" are different things.** With
   nothing saved, every readable MIDI input is connected, so a fresh install
   plays as soon as a keyboard is plugged in. Only actually ticking or unticking
-  an input saves a list — opening the settings page and closing it again does
+  an input saves a list — opening the settings window and closing it again does
   not — and from then on that list is honoured exactly, so unticking every box
   stops MIDI input rather than connecting all of it. The driver seam only speaks
   in id lists, where empty means "everything", so `MidiInputSelection` is what

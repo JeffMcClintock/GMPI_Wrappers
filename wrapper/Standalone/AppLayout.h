@@ -123,6 +123,17 @@ public:
         {
             return owner->dialogHost_ ? owner->dialogHost_->createColorDialog(initialColor, o) : gmpi::ReturnCode::NoSupport;
         }
+        // A window of its own: no offset to apply.
+        gmpi::ReturnCode createChildWindow(const char* title, int32_t width, int32_t height, int32_t flags,
+                                           gmpi::api::IUnknown* client, gmpi::api::IUnknown** o) override
+        {
+            if (!owner->dialogHost_)
+            {
+                *o = {};
+                return gmpi::ReturnCode::NoSupport;
+            }
+            return owner->dialogHost_->createChildWindow(title, width, height, flags, client, o);
+        }
 
         gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
         {
@@ -164,6 +175,10 @@ public:
 
     void showPage(int index);
     int  currentPage() const { return activePage_; }
+
+    // The window's own dialog host, unoffset - for windows of the app's own,
+    // such as the settings window. Null until setHost.
+    gmpi::api::IDialogHost* windowDialogHost() const { return dialogHost_.get(); }
 
     // --- IGraphicsRedrawClient ---
     // Forwarded to the visible page only: a hidden page's DSP->GUI queue can

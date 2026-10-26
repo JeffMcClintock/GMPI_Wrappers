@@ -139,6 +139,10 @@ public:
 
     void closeWindow() override
     {
+        // Child windows (the settings window) now, while the app's locals they
+        // host and report to are alive; ~WaylandShell is too late for them.
+        frame_.closeChildWindows();
+
         // Only the client. The surface itself goes with frame_ in
         // ~WaylandShell, because a Wayland client's window IS its surface and
         // tearing it down before ~Connection's cleanup roundtrip is what

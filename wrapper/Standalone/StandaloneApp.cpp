@@ -275,14 +275,58 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
     layout->setMenuBarHeight(MenuBarView::kHeight);
     layout->setMenuBar(static_cast<gmpi::api::IDrawingClient*>(menuBar.get()));
 
-    const int pageEditor   = layout->addPage(host.editorDrawingClient());
-    const int pageSettings = layout->addPage(static_cast<gmpi::api::IDrawingClient*>(settingsPane.get()));
+    layout->addPage(host.editorDrawingClient());
 
-    // The way OUT of the settings page. A menu opens it; its own Close button
-    // dismisses it, the way a settings screen anywhere else does. Only offered
-    // when there is a plugin editor to go back to.
-    if (host.editorDrawingClient())
-        settingsPane->setOnClose([&] { layout->showPage(pageEditor); });
+    // Audio/MIDI settings live in a window of their own, beside the plugin's
+    // editor rather than in place of it, and modeless: the editor stays usable
+    // while it is open. One window - asking again brings the open one forward,
+    // where the platform allows it (not Wayland, which keeps that to the
+    // compositor).
+    //
+    // The pane is made once and hosted by each window in turn (Form re-hosts
+    // cleanly), so a device change still queued for pumpDeferred survives the
+    // window closing. The window holds a reference to the pane; the shell's
+    // closeWindow() closes it before this function's locals go.
+    gmpi::shared_ptr<gmpi::api::IChildWindow> settingsWindow;
+    gmpi::shared_ptr<gmpi::sdk::ChildWindowCallback> settingsClosed(
+        new gmpi::sdk::ChildWindowCallback([&] { settingsWindow = {}; }));
+
+    auto openSettings = [&]
+    {
+        if (settingsWindow)
+        {
+            settingsWindow->activate();
+            return;
+        }
+
+        // Re-read the device lists on the way in: keyboards and endpoints come
+        // and go while the app runs.
+        settingsPane->reload();
+
+        constexpr int32_t widthDips  = 460;
+        constexpr int32_t heightDips = 400;
+
+        gmpi::shared_ptr<gmpi::api::IUnknown> window;
+        auto* dialogHost = layout->windowDialogHost();
+        if (dialogHost)
+        {
+            dialogHost->createChildWindow("Audio/MIDI Settings", widthDips, heightDips,
+                static_cast<int32_t>(gmpi::api::ChildWindowFlags::None),
+                static_cast<gmpi::api::IDrawingClient*>(settingsPane.get()), window.put());
+        }
+
+        if (window)
+            settingsWindow = window.as<gmpi::api::IChildWindow>();
+
+        if (!settingsWindow || settingsWindow->showAsync(settingsClosed.get()) != gmpi::ReturnCode::Ok)
+        {
+            settingsWindow = {};
+            shell.reportStatus("Could not open the Audio/MIDI Settings window.");
+        }
+    };
+
+    // The pane's own Close button, beside the window's title-bar close.
+    settingsPane->setOnClose([&] { if (settingsWindow) settingsWindow->close(); });
 
     // What File > New Project has asked for, applied by the tick.
     // Declared before the menus so the item can capture it, and beside them
@@ -320,20 +364,11 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
 
         menus.push_back({ "Options", {
             {
-                // No "Plugin Editor" item beside it. Two items that switch
-                // between two pages is a radio pair, and nobody looks in a menu
-                // for the way out of a settings screen - they look for a button
-                // on the screen itself, which is where it now is.
+                // Ticked while the settings window is open.
                 "Audio/MIDI Settings...",
-                [&]
-                {
-                    // Re-read the device lists on the way in: keyboards and
-                    // endpoints come and go while the app runs.
-                    settingsPane->reload();
-                    layout->showPage(pageSettings);
-                },
+                [&] { openSettings(); },
                 {},
-                [&] { return layout->currentPage() == pageSettings; }
+                [&] { return settingsWindow.get() != nullptr; }
             },
             {},   // separator
             { "Quit", [&shell] { shell.requestClose(); } },
@@ -378,7 +413,7 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
         // reclocks the hardware to it, and PipeWire turns it into node.rate -
         // asking the daemon to move the WHOLE graph, every other client in the
         // session with it, on behalf of a preference nobody expressed. Only a
-        // user who has applied a rate on the settings page writes this key, and
+        // user who has applied a rate in the settings window writes this key, and
         // only then does anything get asked of the device.
         const int sampleRate   = settings.getInt(Settings::keySampleRate, 0);
         const int bufferFrames = settings.getInt(Settings::keyBufferFrames, 512);
@@ -388,13 +423,12 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
             // Not fatal, and not a message box either. A standalone that refuses
             // to open its window because the soundcard is busy has removed the
             // only UI that could pick a different one - so say why for whoever
-            // is reading a log, then open ON the settings page instead of the
-            // plugin's editor, where the failure is named next to the device
-            // list that fixes it.
+            // is reading a log, then open the settings window over the plugin's
+            // editor, where the failure is named next to the device list that
+            // fixes it.
             shell.reportStatus("Audio: " + host.lastError());
 
-            settingsPane->reload();
-            layout->showPage(pageSettings);
+            openSettings();
         }
 
         if (host.wantsMidiInput())
@@ -403,7 +437,7 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
             // three shells share. With nothing saved, every readable input is
             // connected, so a fresh install plays the moment a keyboard is
             // plugged in. Only actually ticking or unticking an input saves a
-            // list - opening the settings page and closing it again does not -
+            // list - opening the settings window and closing it again does not -
             // and from then on that list is honoured exactly, including an empty
             // one, which means no MIDI input at all rather than all of them.
             if (!host.startMidi(MidiInputSelection::saved(
@@ -514,10 +548,10 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
         // already open and this compares against what they now have.
         //
         // Reported and no more. Nothing reopens a device here - see the same
-        // note on isStreamRunning - and the page is NOT switched to as it is on
-        // a failed startup: the plugin's editor is on screen and the user is
-        // using it, and a settings page appearing over the top of a knob being
-        // dragged is its own fault report. Startup could switch because there
+        // note on isStreamRunning - and the settings window is NOT opened as it
+        // is on a failed startup: the plugin's editor is on screen and the user
+        // is using it, and a window appearing over the top of a knob being
+        // dragged is its own fault report. Startup could open it because there
         // was nothing to interrupt.
         const bool audioIsRunning = host.isAudioRunning();
 
@@ -530,7 +564,7 @@ int runStandaloneApp(PlatformShell& shell, int argc, char** argv)
             {
                 // No "Audio: " prefix, unlike the startup report above: the
                 // driver's sentence already names itself, and this one goes out
-                // whole so a log and the settings page say the same words.
+                // whole so a log and the settings window say the same words.
                 shell.reportStatus(why);
 
                 // The page's status line is built by reload(), so without this
