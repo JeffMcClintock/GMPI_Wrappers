@@ -236,16 +236,7 @@ Processor_VST3::Processor_VST3 (gmpi::hosting::pluginInfo& pinfo)
 
 Processor_VST3::~Processor_VST3 ()
 {
-	if (background.joinable())
-	{
-		{
-			std::unique_lock<std::mutex> lk(backgroundMutex);
-			killBackgroundthread.store(true);
-		}
-		backgroundSignal.notify_one();
-
-		background.join();
-	}
+	stopBackgroundThread(); // a host that skipped terminate()
 
 //	gmpi_dynamic_linking::MP_DllUnload(plugin_dllHandle_to_unload);
 }
@@ -332,6 +323,7 @@ tresult PLUGIN_API Processor_VST3::initialize (FUnknown* context)
 
 	if (!background.joinable()) // protect against double initialize (Steinberg validator)
 	{
+		killBackgroundthread.store(false); // initialize() again after terminate()
 		background = std::thread(
 			[this]
 			{
@@ -341,6 +333,29 @@ tresult PLUGIN_API Processor_VST3::initialize (FUnknown* context)
 	}
 
 	return result;
+}
+
+tresult PLUGIN_API Processor_VST3::terminate ()
+{
+	// First: the background thread sends through the host context and peer
+	// connection that AudioEffect::terminate() releases.
+	stopBackgroundThread();
+
+	return AudioEffect::terminate();
+}
+
+void Processor_VST3::stopBackgroundThread()
+{
+	if (!background.joinable())
+		return;
+
+	{
+		std::lock_guard<std::mutex> lk(backgroundMutex);
+		killBackgroundthread.store(true);
+	}
+	backgroundSignal.notify_one();
+
+	background.join();
 }
 
 uint32 Processor_VST3::getLatencySamples()
@@ -959,7 +974,7 @@ tresult PLUGIN_API Processor_VST3::process (ProcessData& data)
 		latencyChangePending_.store(true, std::memory_order_release);
 	}
 	if (latencyChangePending_.load(std::memory_order_acquire))
-		onQueDataAvailable(); // re-signalled every block until taken: the background thread's wait can miss one.
+		onQueDataAvailable(); // re-signalled every block until the background thread takes it.
 
 	// messages from Processor -> Editor
 	plugin.pendingControllerQueueClients.ServiceWaitersIncremental(
@@ -1151,8 +1166,12 @@ tresult PLUGIN_API Processor_VST3::notify( IMessage* message )
 
 void Processor_VST3::onQueDataAvailable()
 {
-	// TODO!!! This is INCORRECT. The que write pointer must be updated under the lock, else waiting thread can miss it.
-	std::unique_lock<std::mutex> lk(backgroundMutex);
+	{
+		// Set under the lock, so the background thread cannot miss it between
+		// checking for work and waiting.
+		std::lock_guard<std::mutex> lk(backgroundMutex);
+		backgroundWorkPending = true;
+	}
 	backgroundSignal.notify_one();
 }
 
@@ -1201,7 +1220,8 @@ void Processor_VST3::CommunicationProc()
 		// wait to be signalled.
 		{
 			std::unique_lock<std::mutex> lk(backgroundMutex);
-			backgroundSignal.wait(lk);
+			backgroundSignal.wait(lk, [this] { return backgroundWorkPending || killBackgroundthread.load(); });
+			backgroundWorkPending = false;
 		}
 	}
 }

@@ -50,6 +50,7 @@ public:
 	~Processor_VST3 ();
 	
 	Steinberg::tresult PLUGIN_API initialize (FUnknown* context) override;
+	Steinberg::tresult PLUGIN_API terminate () override;
 	Steinberg::uint32 PLUGIN_API getLatencySamples() override;
 	Steinberg::tresult PLUGIN_API setBusArrangements(Steinberg::Vst::SpeakerArrangement* inputs, Steinberg::int32 numIns, Steinberg::Vst::SpeakerArrangement* outputs, Steinberg::int32 numOuts) override;
 
@@ -128,11 +129,15 @@ protected:
 	std::vector<float*> outputBuffers;
 	bool outputsAsStereoPairs;
 
-	// Background communication thread.
+	// Background communication thread. Runs from initialize() to terminate():
+	// it messages the controller through the host context and peer connection,
+	// which terminate() releases.
     std::thread background;
     std::mutex backgroundMutex;
     std::condition_variable backgroundSignal;
+	bool backgroundWorkPending = false; // guarded by backgroundMutex
 	std::atomic<bool> killBackgroundthread = {};
+	void stopBackgroundThread();
 
 	// MIDI 2.0 allocation
 	vstNoteInfo noteIds[16][128] = {};
