@@ -17,12 +17,23 @@ ClapFactory::ClapFactory()
 {
     auto plugin = gmpi::hosting::factory::getInstance().getPluginInfo();
 
-	const bool hasMidiInput = 0 < countPins(*plugin, gmpi::PinDirection::In, gmpi::PinDatatype::Midi);
+	// Without a category attribute, guess from the MIDI input.
+	bool isInstrument = 0 < countPins(*plugin, gmpi::PinDirection::In, gmpi::PinDatatype::Midi);
 
 	static const char* instrument_features[] = { CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER, nullptr };
 	static const char* effect_features[] = { CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, nullptr };
 
+#ifdef GMPI_HOSTING_PLUGININFO_HAS_CLAP_FIELDS
+	// The CLAP id is what saved projects refer to, so prefer the stable explicit one.
+	clap_desciptor.id          = plugin->clapId.empty() ? plugin->id.c_str() : plugin->clapId.c_str();
+	// Only the exporter's two values decide; other categories are module-browser folders ("TiDE", "Filters").
+	if (plugin->category == "Instrument")
+		isInstrument = true;
+	else if (plugin->category == "Fx")
+		isInstrument = false;
+#else
 	clap_desciptor.id          = plugin->id.c_str();
+#endif
 	clap_desciptor.name        = plugin->name.c_str();
 	clap_desciptor.vendor      = plugin->vendorName.c_str();
 	clap_desciptor.url         = plugin->vendorUrl.c_str();
@@ -51,7 +62,7 @@ ClapFactory::ClapFactory()
 	clap_desciptor.version     = "1.0.0";
 #endif
 	clap_desciptor.description = plugin->name.c_str();
-	clap_desciptor.features    = hasMidiInput ? instrument_features : effect_features;
+	clap_desciptor.features    = isInstrument ? instrument_features : effect_features;
 }
 
 const clap_plugin* ClapFactory::createInstance(const clap_host* host, const char* plugin_id)

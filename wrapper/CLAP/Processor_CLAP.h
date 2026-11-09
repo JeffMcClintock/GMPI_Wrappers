@@ -29,6 +29,8 @@
 #include <array>
 #include <unordered_map>
 #include <memory>
+#include <algorithm>
+#include <vector>
 #include "Hosting/processor_holder.h"
 #include "Controller_CLAP.h"
 #include "GmpiMidi.h"
@@ -150,7 +152,12 @@ public:
         clap_audio_port_info* info) const noexcept override;
 
     bool implementsNotePorts() const noexcept override { return true; }
-    uint32_t notePortsCount(bool isInput) const noexcept override { return isInput ? 1 : countPins(info, gmpi::PinDirection::Out, gmpi::PinDatatype::Midi); }
+    // Input: one port, only with a MIDI-in pin (all host MIDI goes to the first one). Output: one per MIDI-out pin.
+    uint32_t notePortsCount(bool isInput) const noexcept override
+    {
+        const auto count = countPins(info, isInput ? gmpi::PinDirection::In : gmpi::PinDirection::Out, gmpi::PinDatatype::Midi);
+        return static_cast<uint32_t>(isInput ? (std::min)(count, 1) : count);
+    }
     bool notePortsInfo(uint32_t index, bool isInput,
         clap_note_port_info* info) const noexcept override;
 
@@ -403,6 +410,8 @@ private:
 
     double sampleRate{ 44100.0 };
     uint32_t maxFrameCount{ 0 };
+    std::vector<float> silentInput_;     // for an audio input the host left out
+    std::vector<float> discardedOutput_; // for an audio output the host left out
 
     // MIDI output, valid during process() only.
     void onMidiOut(int32_t port, int32_t timestamp, std::span<const uint8_t> bytes) override;

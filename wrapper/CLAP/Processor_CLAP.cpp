@@ -366,31 +366,34 @@ bool Processor_CLAP::implementsAudioPorts() const noexcept
         || countPins(info, gmpi::PinDirection::Out, gmpi::PinDatatype::Audio) > 0;
 }
 
+// Ports as Processor_VST3's buses: stereo pairs, then one mono port for an odd pin. Audio pin k is port k/2, channel k%2.
 uint32_t Processor_CLAP::audioPortsCount(bool isInput) const noexcept
 {
     const auto count = countPins(info, isInput ? gmpi::PinDirection::In : gmpi::PinDirection::Out, gmpi::PinDatatype::Audio);
-
-    // assume stereo pairs
-    return count / 2;
+    return static_cast<uint32_t>((count + 1) / 2);
 }
 
 bool Processor_CLAP::audioPortsInfo(uint32_t index, bool isInput,
                                  clap_audio_port_info *ret_info) const noexcept
 {
-	const auto count = countPins(info, isInput ? gmpi::PinDirection::In : gmpi::PinDirection::Out, gmpi::PinDatatype::Audio);
+    const auto direction = isInput ? gmpi::PinDirection::In : gmpi::PinDirection::Out;
+    const auto count = countPins(info, direction, gmpi::PinDatatype::Audio);
 
-    // assume stereo pairs
-	const auto steroPairCount = count / 2;
-
-    if (index >= steroPairCount)
+    if (index >= audioPortsCount(isInput))
         return false;
 
-    ret_info->id = 0;
+    const auto channels = (std::min)(2, count - static_cast<int>(index) * 2);
+
+    ret_info->id = index;
     ret_info->in_place_pair = CLAP_INVALID_ID;
-    strncpy(ret_info->name, "main", sizeof(ret_info->name));
-    ret_info->flags = CLAP_AUDIO_PORT_IS_MAIN;
-    ret_info->channel_count = 2;
-    ret_info->port_type = CLAP_PORT_STEREO;
+    auto name = getPinName(info, direction, static_cast<int>(index) * 2);
+    if (name.empty())
+        name = index == 0 ? "main" : "aux " + std::to_string(index);
+    strncpy(ret_info->name, name.c_str(), sizeof(ret_info->name) - 1);
+    ret_info->name[sizeof(ret_info->name) - 1] = 0;
+    ret_info->flags = index == 0 ? CLAP_AUDIO_PORT_IS_MAIN : 0;
+    ret_info->channel_count = channels;
+    ret_info->port_type = channels == 2 ? CLAP_PORT_STEREO : CLAP_PORT_MONO;
     return true;
 }
 
@@ -415,6 +418,8 @@ bool Processor_CLAP::activate(double psampleRate, uint32_t minFrameCount,
 {
     sampleRate = psampleRate;
     maxFrameCount = pmaxFrameCount;
+    silentInput_.assign(maxFrameCount, 0.0f);
+    discardedOutput_.assign(maxFrameCount, 0.0f);
 
     plugin.start_processor(&plugin, info, maxFrameCount, sampleRate);
 
@@ -604,28 +609,44 @@ clap_process_status Processor_CLAP::process(const clap_process *process) noexcep
      * and other events with audio generation. Here we do everything completely sample accurately
      * by maintaining a pointer to the 'nextEvent' which we check at every sample.
      */
-    float** inputBuffers = process->audio_inputs ? process->audio_inputs[0].data32 : nullptr;
-    float** outputBuffers = process->audio_outputs ? process->audio_outputs[0].data32 : nullptr;
-	auto chansIn = process->audio_inputs? process->audio_inputs->channel_count : 0;
-    auto chansOut = process->audio_outputs ? process->audio_outputs->channel_count : 0;
-
-    // pass buffer pointers to plugin
+    // pass buffer pointers to plugin. A channel the host did not supply gets silence in, or is discarded out.
     {
+        auto channelBuffer = [](const clap_audio_buffer* ports, uint32_t portCount, int pinIndex) -> float*
+        {
+            const auto port = static_cast<uint32_t>(pinIndex / 2);
+            const auto channel = static_cast<uint32_t>(pinIndex % 2);
+            if (!ports || port >= portCount || channel >= ports[port].channel_count || !ports[port].data32)
+                return nullptr;
+            return ports[port].data32[channel];
+        };
+
         int inIdx = 0;
         int outIdx = 0;
+        bool usedSilence = false;
         for (auto& pin : info.dspPins)
         {
             if (pin.datatype != gmpi::PinDatatype::Audio)
                 continue;
 
             if (pin.direction == gmpi::PinDirection::In)
-                plugin_->setBuffer(pin.id, process->audio_inputs[0].data32[inIdx++]);
+            {
+                auto buffer = channelBuffer(process->audio_inputs, process->audio_inputs_count, inIdx++);
+                if (!buffer)
+                {
+                    buffer = silentInput_.data();
+                    usedSilence = true;
+                }
+                plugin_->setBuffer(pin.id, buffer);
+            }
             else
-                plugin_->setBuffer(pin.id, process->audio_outputs[0].data32[outIdx++]);
+            {
+                auto buffer = channelBuffer(process->audio_outputs, process->audio_outputs_count, outIdx++);
+                plugin_->setBuffer(pin.id, buffer ? buffer : discardedOutput_.data());
+            }
         }
 
-        assert(inIdx == chansIn);
-        assert(outIdx == chansOut);
+        if (usedSilence)
+            std::fill(silentInput_.begin(), silentInput_.end(), 0.0f);
     }
 
     // GUI edits first, at time 0, ahead of any MIDI the plugin sends below.
