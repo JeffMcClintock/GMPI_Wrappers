@@ -414,6 +414,18 @@ constexpr int32_t kContactFlags =
     | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence)
     | static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
 
+// A real button-down also carries New -- "the arrival of a new pointer". Every
+// backend sets it (DrawingFrameWin.h makePointerFlags, DrawingFrameMac.mm,
+// Wayland, X11, iOS); this channel did not, so a gesture gated on it could not
+// be expressed here however faithful the rest of the sequence was. SynthEditLib
+// gates its MODULE DRAG on exactly that flag (ViewBase::onPointerDown), which
+// is why a rack module would not drag over this channel while a widget inside
+// it obeyed the same verbs -- TideSynth BACKLOG E95. Down only: a move or an up
+// never carries it.
+constexpr int32_t kDownFlags =
+      kContactFlags
+    | static_cast<int32_t>(gmpi::api::PointerFlags::New);
+
 constexpr int32_t kHoverFlags =
       static_cast<int32_t>(gmpi::api::PointerFlags::Primary)
     | static_cast<int32_t>(gmpi::api::PointerFlags::Confidence);
@@ -437,7 +449,9 @@ std::string cmdPointer(AppContext& context, PointerAction action,
         return errorLine(cmd, "no window is attached");
 
     const gmpi::drawing::Point point{ x, y };
-    int32_t flags = (action == PointerAction::Hover) ? kHoverFlags : kContactFlags;
+    int32_t flags = (action == PointerAction::Hover) ? kHoverFlags
+                  : (action == PointerAction::Down)  ? kDownFlags
+                                                     : kContactFlags;
 
     // `--double` sets PointerFlags::Double, and it is the ONLY way to express a
     // double-click over this channel.
@@ -526,7 +540,7 @@ std::string cmdDrag(AppContext& context, const std::vector<std::string>& args)
     // to the main thread rather than one per step. A drag issued as separate
     // commands would take steps * tick milliseconds and, worse, let the app
     // repaint mid-gesture in a way no real mouse ever produces.
-    client->onPointerDown({ x1, y1 }, kContactFlags);
+    client->onPointerDown({ x1, y1 }, kDownFlags);
 
     for (int i = 1; i <= steps; ++i)
     {
