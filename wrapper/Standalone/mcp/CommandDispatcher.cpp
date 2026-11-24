@@ -1054,13 +1054,9 @@ std::string cmdScroll(AppContext& context, const std::vector<std::string>& args)
 /// X11 backend says so where it drops key-up), so a string is just a loop and
 /// there is no down/up pairing for a caller to get wrong.
 ///
-/// WHAT THIS DELIBERATELY DOES NOT COVER: keys that are not characters --
-/// arrows, function keys, plain modifiers. Those do not fit in a wchar_t and
-/// the backends route them through a separate key sink
-/// (DrawingFrameX11's `keySink->handleKey`), which this channel does not reach.
-/// Naming that boundary here rather than shipping a --key verb that silently
-/// ignores "Left": if arrow keys are needed, that is a second, larger change.
-/// Control characters that DO fit are usable today -- \n, \t, \b, and \x7f.
+/// Arrows and Delete are typed as their gmpi::api::keys values with \uXXXX
+/// (Left is , Delete ). Function keys and plain modifiers are not
+/// covered. Control characters work as \xNN: \n, \t, \b, \x1b.
 ///
 /// AND ONE LIMIT THAT IS NOT OURS TO LIFT: while a NATIVE field editor holds
 /// first responder -- the NSTextView macOS puts up when a properties value is
@@ -1075,7 +1071,7 @@ std::string cmdScroll(AppContext& context, const std::vector<std::string>& args)
 std::string cmdType(AppContext& context, const std::vector<std::string>& args)
 {
     if (args.size() < 2)
-        return errorLine("type", "usage: --type <text>   (\\n \\t \\b \\\\ and \\xNN understood)");
+        return errorLine("type", "usage: --type <text>   (\\n \\t \\b \\\\ \\xNN and \\uXXXX understood)");
     if (!context.inputClient)
         return errorLine("type", "this build has no input path");
 
@@ -1119,6 +1115,20 @@ std::string cmdType(AppContext& context, const std::vector<std::string>& args)
                 return errorLine("type", "'" + hex + "' is not two hex digits");
             out += static_cast<wchar_t>(v);
             i += 2;
+            break;
+        }
+        case 'u':
+        {
+            // \uXXXX, exactly four hex digits: a gmpi::api::keys value
+            if (i + 4 >= text.size())
+                return errorLine("type", "\\u needs four hex digits");
+            const std::string hex = text.substr(i + 1, 4);
+            char* end = nullptr;
+            const long v = std::strtol(hex.c_str(), &end, 16);
+            if (end != hex.c_str() + 4)
+                return errorLine("type", "'" + hex + "' is not four hex digits");
+            out += static_cast<wchar_t>(v);
+            i += 4;
             break;
         }
         default:
