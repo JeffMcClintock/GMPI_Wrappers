@@ -424,7 +424,7 @@ std::string cmdPointer(AppContext& context, PointerAction action,
                        std::string_view cmd, const std::vector<std::string>& args)
 {
     if (args.size() < 2)
-        return errorLine(cmd, std::string("usage: ") + std::string(cmd) + " <x,y> [--double] [--right]");
+        return errorLine(cmd, std::string("usage: ") + std::string(cmd) + " <x,y> [--double] [--right] [--shift] [--ctrl]");
     if (!context.inputClient)
         return errorLine(cmd, "this build has no input path");
 
@@ -478,6 +478,11 @@ std::string cmdPointer(AppContext& context, PointerAction action,
             flags &= ~static_cast<int32_t>(gmpi::api::PointerFlags::FirstButton);
             flags |= static_cast<int32_t>(gmpi::api::PointerFlags::SecondButton);
         }
+        // modifier keys held through the gesture: Shift/Ctrl+click selection
+        else if (args[i] == "--shift")
+            flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
+        else if (args[i] == "--ctrl")
+            flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
         else
             return errorLine(cmd, "unknown option '" + args[i] + "'");
     }
