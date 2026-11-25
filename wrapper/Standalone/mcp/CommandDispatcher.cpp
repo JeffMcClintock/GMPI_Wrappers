@@ -1070,17 +1070,32 @@ std::string cmdScroll(AppContext& context, const std::vector<std::string>& args)
 /// and the same command moves the selection.
 std::string cmdType(AppContext& context, const std::vector<std::string>& args)
 {
-    if (args.size() < 2)
-        return errorLine("type", "usage: --type <text>   (\\n \\t \\b \\\\ \\xNN and \\uXXXX understood)");
     if (!context.inputClient)
         return errorLine("type", "this build has no input path");
+
+    // leading --shift/--ctrl/--alt are held for every key
+    int32_t flags{};
+    size_t first = 1;
+    for (; first < args.size(); ++first)
+    {
+        if (args[first] == "--shift")
+            flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyShift);
+        else if (args[first] == "--ctrl")
+            flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyControl);
+        else if (args[first] == "--alt")
+            flags |= static_cast<int32_t>(gmpi::api::PointerFlags::KeyAlt);
+        else
+            break;
+    }
+    if (first >= args.size())
+        return errorLine("type", "usage: --type [--shift] [--ctrl] [--alt] <text>   (\\n \\t \\b \\\\ \\xNN and \\uXXXX understood)");
 
     // Everything after the verb, space-joined: a caller should not have to
     // quote a sentence to type one.
     std::string text;
-    for (size_t i = 1; i < args.size(); ++i)
+    for (size_t i = first; i < args.size(); ++i)
     {
-        if (i > 1)
+        if (i > first)
             text += ' ';
         text += args[i];
     }
@@ -1143,7 +1158,7 @@ std::string cmdType(AppContext& context, const std::vector<std::string>& args)
     // One dispatched job for the whole string, matching --drag: a repaint
     // between two characters of one word is not something a typist produces.
     for (const wchar_t c : out)
-        client->onKeyPress(c);
+        gmpi::api::sendKeyPress(client, c, flags);
 
     return JsonObject().str("cmd", "type").boolean("ok", true)
         .num("characters", static_cast<double>(out.size()))

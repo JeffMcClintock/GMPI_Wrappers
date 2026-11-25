@@ -337,12 +337,12 @@ gmpi::ReturnCode AppLayout::populateContextMenu(gmpi::drawing::Point p, gmpi::ap
                                    : gmpi::ReturnCode::Unhandled;
 }
 
-gmpi::ReturnCode AppLayout::onKeyPress(wchar_t c)
+gmpi::ReturnCode AppLayout::onKeyStroke(int32_t key, int32_t flags)
 {
     // Keys go to the content, never the menu bar: there is no keyboard focus
     // model here, and a menu bar with no open drop-down wants no keystrokes.
     auto* page = activeContent();
-    return (page && page->input) ? page->input->onKeyPress(c) : gmpi::ReturnCode::Unhandled;
+    return (page && page->input) ? gmpi::api::sendKeyPress(page->input.get(), static_cast<wchar_t>(key), flags) : gmpi::ReturnCode::Unhandled;
 }
 
 gmpi::ReturnCode AppLayout::getToolTip(gmpi::drawing::Point p, gmpi::api::IString* s)

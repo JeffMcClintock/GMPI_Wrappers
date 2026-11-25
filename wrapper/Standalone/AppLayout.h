@@ -32,7 +32,7 @@ namespace standalone
 
 class AppLayout :
       public gmpi::api::IDrawingClient
-    , public gmpi::api::IInputClient
+    , public gmpi::api::IInputClient2
     , public gmpi::api::IGraphicsRedrawClient
 {
 public:
@@ -192,7 +192,7 @@ public:
     gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* dc) override;
     gmpi::ReturnCode getClipArea(gmpi::drawing::Rect* returnRect) override;
 
-    // --- IInputClient ---
+    // --- IInputClient2 ---
     gmpi::ReturnCode setHover(bool over) override;
     gmpi::ReturnCode hitTest(gmpi::drawing::Point p, int32_t flags) override;
     gmpi::ReturnCode onPointerDown(gmpi::drawing::Point p, int32_t flags) override;
@@ -200,7 +200,8 @@ public:
     gmpi::ReturnCode onPointerUp(gmpi::drawing::Point p, int32_t flags) override;
     gmpi::ReturnCode onMouseWheel(gmpi::drawing::Point p, int32_t flags, int32_t delta) override;
     gmpi::ReturnCode populateContextMenu(gmpi::drawing::Point p, gmpi::api::IUnknown* sink) override;
-    gmpi::ReturnCode onKeyPress(wchar_t c) override;
+    gmpi::ReturnCode onKeyPress(wchar_t c) override { return onKeyStroke(c, 0); }
+    gmpi::ReturnCode onKeyStroke(int32_t key, int32_t flags) override;
     gmpi::ReturnCode getToolTip(gmpi::drawing::Point p, gmpi::api::IString* s) override;
 
     gmpi::ReturnCode queryInterface(const gmpi::api::Guid* iid, void** returnInterface) override
@@ -208,6 +209,7 @@ public:
         *returnInterface = {};
         GMPI_QUERYINTERFACE(gmpi::api::IDrawingClient);
         GMPI_QUERYINTERFACE(gmpi::api::IInputClient);
+        GMPI_QUERYINTERFACE(gmpi::api::IInputClient2);
         GMPI_QUERYINTERFACE(gmpi::api::IGraphicsRedrawClient);
         return gmpi::ReturnCode::NoSupport;
     }
