@@ -100,9 +100,6 @@ Per platform:
 | `mac/FrameCapture.*` | `--screenshot`: draws the view into a bitmap of our own |
 | `mac/Info.plist.in` | the `.app`'s bundle description; `gmpi_plugin()` substitutes it |
 
-`compat/it_enum_list.h` is a shim, not a component — see the comment at the top
-of it.
-
 The Linux drivers are adapted from SynthEdit's Wayland editor
 (`SE16/SynthEditWayland/IO_PipeWire.*` and `MidiDriverAlsa.*`), which is where
 the stream setup, the negotiation wait, the capture ring buffer and the

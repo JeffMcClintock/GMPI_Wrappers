@@ -426,12 +426,6 @@ add_library(${PROJECT_NAME} STATIC ${standalone_srcs})
 # the platform's main() itself, which includes both.
 target_include_directories(${PROJECT_NAME} PUBLIC ${standalone_include_dirs})
 
-# PRIVATE, not PUBLIC: compat/ holds a shim for a SynthEdit SDK header that
-# gmpi_ui's widget set includes (see compat/it_enum_list.h). Only the
-# translation units compiled here need it, and leaking it to consumers could
-# shadow the real thing in a project that has both.
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/compat)
-
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     $<$<CONFIG:Debug>:_DEBUG>
     $<$<CONFIG:Release>:NDEBUG>
