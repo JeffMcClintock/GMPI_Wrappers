@@ -72,14 +72,11 @@ public:
     // there.
     void setOnClose(std::function<void()> onClose) { onClose_ = std::move(onClose); }
 
+    // A theme change rebuilds the page only when it is painted (Form::render), and
+    // setThemeMode() paints nothing. MenuBarView::preGraphicsRedraw is what repaints
+    // it: it invalidates the whole window when the theme counter moves. Without that
+    // the menu strip would recolour and this page would keep the old theme.
     void Body() override;
-
-    // Form's base arrange/render neither lay out nor clear - a Form subclass
-    // owns that. Without these the page has zero bounds and paints black.
-    gmpi::ReturnCode arrange(const gmpi::drawing::Rect* finalRect) override;
-    gmpi::ReturnCode measure(const gmpi::drawing::Size*, gmpi::drawing::Size*) override
-    { return gmpi::ReturnCode::Ok; }
-    gmpi::ReturnCode render(gmpi::drawing::api::IDeviceContext* dc) override;
 
 private:
     void applyAudio();
@@ -90,9 +87,6 @@ private:
     Settings& settings_;
 
     std::function<void()> onClose_;
-
-    bool formIsDirty_ = true;
-    gmpi::ui::ThemeMode lastRenderedTheme_ = gmpi::ui::ThemeMode::Dark;
 
     // What pumpDeferred has to do, set from the widget callbacks.
     bool audioRestartPending_ = false;

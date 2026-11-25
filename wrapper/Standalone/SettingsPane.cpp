@@ -54,6 +54,7 @@ SettingsPane::SettingsPane(StandaloneHost& host, Settings& settings)
     : host_(host)
     , settings_(settings)
 {
+    background = &gmpi::ui::ColorTheme::controlBackground;
     reload();
 }
 
@@ -78,7 +79,7 @@ void SettingsPane::reload()
 	// death if anything still watches it, which is what makes a future
 	// regression here loud instead of a heap corruption.
 	clear();
-	formIsDirty_ = true; // the page is blank until Body() rebuilds at the next render
+	invalidateView(); // the page is blank until Body() rebuilds at the next render
 
     auto* audio = host_.audioDriver();
     auto* midi  = host_.midiDriver();
@@ -246,8 +247,7 @@ void SettingsPane::reload()
     // whenever audio is not running at all.
     audioWarning_ = host_.audioWarning();
 
-    formIsDirty_ = true;
-    redraw();
+    invalidateView();
 }
 
 void SettingsPane::pumpDeferred()
@@ -342,8 +342,7 @@ void SettingsPane::applyMidi()
     // would destroy the State objects the visuals are still bound to. Whether
     // the line is there at all changes the layout, so the form is rebuilt.
     midiStatus_ = host_.midiError();
-    formIsDirty_ = true;
-    redraw();
+    invalidateView();
 }
 
 void SettingsPane::writeMidiInputs()
@@ -358,54 +357,6 @@ void SettingsPane::writeMidiInputs()
     settings_.setStringList(Settings::keyMidiInputs, enabled);
     settings_.setBool(Settings::keyMidiInputsSet, true);
     settings_.save();
-}
-
-gmpi::ReturnCode SettingsPane::arrange(const gmpi::drawing::Rect* finalRect)
-{
-    bounds = *finalRect;
-    formIsDirty_ = true;
-    Invalidate({});
-    return gmpi::ReturnCode::Ok;
-}
-
-gmpi::ReturnCode SettingsPane::render(gmpi::drawing::api::IDeviceContext* dc)
-{
-    // A theme change repaints every colour, so it needs the same full rebuild
-    // a layout change does. The mode comparison below is what decides that.
-    //
-    // consumeThemeChanged() used to be called here as well, to beat
-    // Form::DoUpdates to the flag. It no longer has to: DoUpdates consumes
-    // against its own counter through the versioned overload, so it cannot
-    // take anything this page needed. The no-argument overload it used keeps
-    // ONE static shared by every caller in the process, which is why
-    // MenuBarView tracks its own version instead of reaching for it.
-    //
-    // THIS PAGE CANNOT NOTICE A THEME CHANGE ON ITS OWN. It watches for one only
-    // while it is being rendered, and setThemeMode() invalidates nothing - it
-    // bumps a counter - so on an idle window nothing here ever runs again and
-    // the page keeps the palette it was last drawn with.
-    //
-    // What saves it is MenuBarView::preGraphicsRedraw: the bar IS ticked every
-    // frame, and when it sees the counter move it calls invalidate() with a null
-    // rect, which ChildHost passes straight through to the frame and so marks the
-    // whole window - this page included. Delete that invalidate and the strip
-    // will still recolour itself while everything below it stays in the old
-    // theme, which looks like a bug in this file and is not one.
-    const auto mode = gmpi::ui::themeModeStorage();
-    if (mode != lastRenderedTheme_)
-        formIsDirty_ = true;
-
-    if (formIsDirty_)
-    {
-        formIsDirty_ = false;
-        lastRenderedTheme_ = mode;
-        renderVisuals();
-    }
-
-    gmpi::drawing::Graphics g(dc);
-    g.clear(gmpi::ui::currentTheme().controlBackground);
-
-    return Form::render(dc);
 }
 
 void SettingsPane::Body()
